@@ -14,19 +14,18 @@ import java.util.HashSet;
 
 
 /**
- * 语义分析 Visitor。
+ * Semantic analysis visitor.
  *
- * <p>基于 Visitor 模式遍历 AST，执行以下静态语义检查：</p>
+ * <p>Traverses the AST using the Visitor pattern to perform static semantic checks:</p>
  * <ul>
- *   <li><b>类型检查</b>：赋值、运算、方法调用的类型一致性</li>
- *   <li><b>变量检查</b>：未声明变量、使用前未赋值</li>
- *   <li><b>方法检查</b>：未定义方法、重复定义、参数个数/类型匹配</li>
- *   <li><b>控制流检查</b>：if/while 条件必须是 bool 类型</li>
- *   <li><b>返回值检查</b>：返回类型与方法声明一致、main 方法必须是 void</li>
+ *   <li><b>Type checking</b>: type consistency in assignments, operations, and method calls</li>
+ *   <li><b>Variable checking</b>: undeclared variables, variables used before assignment</li>
+ *   <li><b>Method checking</b>: undefined methods, duplicate definitions, parameter count/type matching</li>
+ *   <li><b>Control flow checking</b>: if/while conditions must be bool</li>
+ *   <li><b>Return value checking</b>: return type matches declaration, main method must be void</li>
  * </ul>
  *
- * <p>发现错误时抛出 {@link SemanticException}，错误信息格式为
- * {@code [语义分析] 行 N: 错误描述}。</p>
+ * <p>Throws {@link SemanticException} when errors are found.</p>
  *
  * @author andy
  * @see site.ilemon.visitor.ISemanticVisitor
@@ -101,7 +100,7 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     private String typeName(Ast.Type.T type) {
         if (type == null) {
-            return "未知";
+            return "unknown";
         }
         String name = type.toString();
         return name.startsWith("@") ? name.substring(1) : name;
@@ -110,8 +109,10 @@ public class SemanticVisitor implements ISemanticVisitor {
     private void checkSameOperandTypes(int lineNum, String operator, Ast.Type.T leftType, Ast.Type.T rightType) {
         if (isArrayType(leftType) || isArrayType(rightType)) {
             error(lineNum, String.format(
-                    "运算符 '%s' 不支持数组操作数：左侧为 %s，右侧为 %s",
+                    "operator '%s' does not support array operands: left is %s, right is %s",
                     operator, typeName(leftType), typeName(rightType)));
+            this.currType = unknownType();
+            return;
         }
         Ast.Type.T promoted = promoteNumeric(leftType, rightType);
         if (promoted != null) {
@@ -131,6 +132,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             typeError(DiagnosticCodes.TYPE_OPERATOR, "bool", typeName(leftType) + " and " + typeName(rightType),
                     "binary expression", lineNum, null, "operator '" + operator + "'", "use boolean operands");
         }
+        this.currType = new Ast.Type.Bool();
     }
 
     @Override
@@ -284,9 +286,9 @@ public class SemanticVisitor implements ISemanticVisitor {
             return;
         }
         if( currMethodLocalVar.contains(obj.getId()))
-            error(obj.getLineNum(),String.format("变量 '%s' 在使用前未赋值",obj.getId()));
+            error(obj.getLineNum(), String.format("variable '%s' may be used before assignment", obj.getId()));
         if( obj.getType() == null ) {
-            // 类型可能在 Parser 阶段未成功解析（变量未在 varTable 中注册）
+            // Type may not have been resolved during Parser phase (variable not registered in varTable)
             obj.setType(mTable.get(obj.getId()));
         }
         this.currType = obj.getType();
@@ -379,11 +381,11 @@ public class SemanticVisitor implements ISemanticVisitor {
             return;
         }
         if (main.getRetType().getKind() != TypeKind.VOID) {
-            error(main.getLineNum(), "main 方法的返回类型必须是 void，实际声明为: "
+            error(main.getLineNum(), "main method return type must be void, but is declared as: "
                     + typeName(main.getRetType()));
         }
         if (main.getFormals() != null && !main.getFormals().isEmpty()) {
-            error(main.getLineNum(), "main 方法不能声明参数，必须是 void main()");
+            error(main.getLineNum(), "main method cannot declare parameters; it must be void main()");
         }
     }
 
@@ -405,7 +407,7 @@ public class SemanticVisitor implements ISemanticVisitor {
 
         if( obj.getId().equals("main")){
             if( obj.getRetType().getKind() != TypeKind.VOID)
-                error(obj.getLineNum(), "main 方法的返回类型必须是 void，实际声明为: " + typeName(obj.getRetType()));
+                error(obj.getLineNum(), "main method return type must be void, but is declared as: " + typeName(obj.getRetType()));
         }
         for( int i = 0; i < obj.getStms().size(); i++){
             Ast.Stmt.T stmt = obj.getStms().get(i);
@@ -414,7 +416,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         if( !obj.getId().equals("main")
                 && obj.getRetType().getKind() != TypeKind.VOID
                 && !statementsMustReturn(obj.getStms()) ){
-            error(obj.getLineNum(), "非 void 方法 '" + obj.getId() + "' 不是所有路径都有 return");
+            error(obj.getLineNum(), "non-void method '" + obj.getId() + "' does not return on all paths");
         }
     }
 
@@ -439,8 +441,8 @@ public class SemanticVisitor implements ISemanticVisitor {
         }else if(obj.getType() instanceof Ast.Type.Double){
             this.currType = new Ast.Type.Double();
         }else{
-            // 不支持的数字类型
-            error(obj.getLineNum(),"不支持的数字类型: " + typeName(obj.getType()));
+            // Unsupported numeric type
+            error(obj.getLineNum(), "unsupported numeric type: " + typeName(obj.getType()));
         }
     }
 
@@ -488,7 +490,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         int argCount = obj.getExprs() == null ? 0 : obj.getExprs().size();
         if (placeholders.size() != argCount) {
             error(obj.getLineNum(), String.format(
-                    "printf 参数个数不匹配：格式串需要 %d 个，实际 %d 个",
+                    "printf argument count mismatch: format string requires %d, but found %d",
                     placeholders.size(), argCount));
         }
         for (int i = 0; i < argCount; i++) {
@@ -550,11 +552,11 @@ public class SemanticVisitor implements ISemanticVisitor {
     @Override
     public void visit(Ast.Stmt.Return obj) {
         if( "main".equals(this.currMethodName) ){
-            error(obj.getLineNum(), "main 方法不允许 return 语句");
+            error(obj.getLineNum(), "main method does not allow return statements");
         }
         if( this.typeOfMethodDeclared != null
                 && this.typeOfMethodDeclared.getKind() == TypeKind.VOID ){
-            error(obj.getLineNum(), "void 方法不能返回值");
+            error(obj.getLineNum(), "void method cannot return a value");
         }
         this.visit(obj.getExpr());
         if (!isAssignable(typeOfMethodDeclared, this.currType, obj.getExpr())) {
@@ -604,13 +606,13 @@ public class SemanticVisitor implements ISemanticVisitor {
     @Override
     public void visit(Ast.Stmt.Break obj) {
         if (loopDepth <= 0)
-            error(obj.getLineNum(), "break语句必须包含在循环体中。");
+            error(obj.getLineNum(), "break statement must be inside a loop");
     }
 
     @Override
     public void visit(Ast.Stmt.Continue obj) {
         if (loopDepth <= 0)
-            error(obj.getLineNum(), "continue语句必须包含在循环体中。");
+            error(obj.getLineNum(), "continue statement must be inside a loop");
     }
 
     @Override
@@ -680,13 +682,13 @@ public class SemanticVisitor implements ISemanticVisitor {
                 continue;
             }
             if (i + 1 >= format.length()) {
-                error(lineNum, "printf 格式串中的 % 缺少占位符");
+                error(lineNum, "format string contains % without a placeholder");
             }
             char placeholder = format.charAt(++i);
             if (placeholder == 'd' || placeholder == 'f') {
                 placeholders.add(placeholder);
             } else {
-                error(lineNum, "printf 不支持占位符 %" + placeholder);
+                error(lineNum, "printf does not support placeholder %" + placeholder);
             }
         }
         return placeholders;
@@ -818,7 +820,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             return false;
         if(target.getKind() == curr.getKind())
             return true;
-        // 允许float隐式转换为double
+        // Allow float to implicitly widen to double
         if(target.getKind() == TypeKind.DOUBLE && curr.getKind() == TypeKind.FLOAT)
             return true;
         if(target.getKind() == TypeKind.FLOAT && curr.getKind() == TypeKind.INT)
@@ -932,14 +934,14 @@ public class SemanticVisitor implements ISemanticVisitor {
     }
 
     /**
-     * 校验比较运算符（== / !=）：只要左右类型匹配即可
+     * Validate equality operators (== / !=): types must match.
      */
     private void checkComparison(Ast.Expr.T left, Ast.Expr.T right, String op, int lineNum) {
         this.visit(left);
         Ast.Type.T leftType = this.currType;
         this.visit(right);
         if (isArrayType(leftType) || isArrayType(this.currType)) {
-            error(lineNum, String.format("比较运算符 '%s' 不支持数组操作数：左侧为 %s，右侧为 %s",
+            error(lineNum, String.format("comparison operator '%s' does not support array operands: left is %s, right is %s",
                     op, typeName(leftType), typeName(this.currType)));
         }
         if (promoteNumeric(leftType, this.currType) == null && !isMatch(leftType, this.currType)) {
@@ -950,7 +952,7 @@ public class SemanticVisitor implements ISemanticVisitor {
     }
 
     /**
-     * 校验序比较运算符（> / < / >= / <=）：除了类型匹配，还要求是数值类型
+     * Validate ordering comparison operators (> / < / >= / <=): requires matching numeric types.
      */
     private void checkOrderComparison(Ast.Expr.T left, Ast.Expr.T right, String op, int lineNum) {
         this.visit(left);
@@ -964,9 +966,9 @@ public class SemanticVisitor implements ISemanticVisitor {
     }
 
     /**
-     * 公共方法调用校验逻辑，被 Expr.Call 和 Stmt.Call 共用。
-     * 校验方法是否存在、参数个数是否匹配、参数类型是否匹配。
-     * @return 方法的返回类型
+     * Shared method call validation logic for Expr.Call and Stmt.Call.
+     * Validates whether method exists, argument count matches, and argument types match.
+     * @return Method return type
      */
     private Ast.Type.T validateMethodCall(String methodName, ArrayList<Ast.Expr.T> inputParams,
                                           int lineNum, site.ilemon.util.SourceSpan span) {
@@ -979,7 +981,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             return unknownType();
         }
         if (inputParams.size() != method.getFormals().size()) {
-            error(lineNum, String.format("方法 '%s' 的参数个数不正确：期望 %d 个，实际 %d 个",
+            error(lineNum, String.format("method '%s' has an incorrect argument count: expected %d, but found %d",
                     methodName, method.getFormals().size(), inputParams.size()));
         }
         for (int i = 0; i < inputParams.size(); i++) {
@@ -999,7 +1001,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         return this.methodNameRetTypeMap.get(methodName);
     }
 
-    // ========== 数组相关的 visit 方法 ==========
+    // ========== Array-related visit methods ==========
 
     @Override
     public void visit(Ast.Type.IntArray obj) {
@@ -1038,7 +1040,7 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Expr.ArrayAccess obj) {
-        // 检查数组是否已声明
+        // Check whether the array has been declared
         MethodVarTable mTable = this.methodVarTable.get(currMethodName);
         if (mTable == null) {
             internalError(obj.getLineNum(), "internal error: variable table for method '" + currMethodName + "' was not found");
@@ -1059,10 +1061,10 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         Ast.Type.T elementType = getElementType(arrayType);
         if (elementType == null) {
-            error(obj.getLineNum(), String.format("变量 '%s' 不是数组，实际类型为 %s",
+            error(obj.getLineNum(), String.format("variable '%s' is not an array; actual type is %s",
                     obj.getArrayName(), typeName(arrayType)));
         }
-        // 检查下标类型必须是int
+        // Index type must be int
         if (elementType == null) {
             this.currType = unknownType();
             return;
@@ -1072,7 +1074,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             typeError(DiagnosticCodes.TYPE_INDEX, "int", typeName(this.currType), expressionName(obj.getIndex()),
                     obj.getIndex().getLineNum(), obj.getIndex().getSpan(), "array index", null);
         }
-        // 设置元素类型
+        // Set element type
         obj.setElementType(elementType);
         this.currType = obj.getElementType();
     }
@@ -1096,7 +1098,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             return;
         }
         if (getElementType(arrayType) == null) {
-            error(obj.getLineNum(), String.format("变量 '%s' 不是数组，实际类型为 %s",
+            error(obj.getLineNum(), String.format("variable '%s' is not an array; actual type is %s",
                     obj.getArrayName(), typeName(arrayType)));
             this.currType = unknownType();
             return;
@@ -1106,7 +1108,7 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Stmt.ArrayAssign obj) {
-        // 检查数组是否已声明
+        // Check whether the array has been declared
         MethodVarTable mTable = this.methodVarTable.get(currMethodName);
         if (mTable == null) {
             internalError(obj.getLineNum(), "internal error: variable table for method '" + currMethodName + "' was not found");
@@ -1121,22 +1123,22 @@ public class SemanticVisitor implements ISemanticVisitor {
             this.currType = unknownType();
             return;
         }
-        // 设置元素类型
+        // Set element type
         Ast.Type.T elementType = getElementType(arrayType);
         if (elementType == null) {
-            error(obj.getLineNum(), String.format("变量 '%s' 不是数组，实际类型为 %s",
+            error(obj.getLineNum(), String.format("variable '%s' is not an array; actual type is %s",
                     obj.getArrayName(), typeName(arrayType)));
             this.currType = unknownType();
             return;
         }
         obj.setElementType(elementType);
-        // 检查下标类型
+        // Check index type
         this.visit(obj.getIndex());
         if (this.currType.getKind() != TypeKind.INT) {
             typeError(DiagnosticCodes.TYPE_INDEX, "int", typeName(this.currType), expressionName(obj.getIndex()),
                     obj.getIndex().getLineNum(), obj.getIndex().getSpan(), "array index", null);
         }
-        // 检查赋值类型
+        // Check assignment type
         this.visit(obj.getExpr());
         if (!isAssignable(elementType, this.currType, obj.getExpr())) {
             if (!byteRangeErrorIfNeeded(elementType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
@@ -1147,7 +1149,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
     }
 
-    // 获取数组元素类型
+    // Get array element type
     private Ast.Type.T getElementType(Ast.Type.T arrayType) {
         if (arrayType instanceof Ast.Type.IntArray) {
             return new Ast.Type.Int();

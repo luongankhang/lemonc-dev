@@ -120,7 +120,7 @@ public class Ast {
                 this.setLineNum(lineNum);
             }
 
-            // Constructor mới nhận SourceSpan
+            // Constructor with SourceSpan
             public Assign(Ast.Expr.Id id, Expr.T exp, site.ilemon.util.SourceSpan span) {
                 this.id = id;
                 this.expr = exp;
@@ -150,17 +150,17 @@ public class Ast {
         }
 
         public static class Call extends T {
-            /**方法返回类型**/
+            /** Method return type **/
             private Ast.Type.T returnType;
             public Ast.Type.T getReturnType() { return this.returnType; }
             public void setReturnType(Ast.Type.T returnType) { this.returnType = returnType; }
 
-            /**方法名称**/
+            /** Method name **/
             private String name;
             public String getName() { return this.name; }
             public void setName(String name) { this.name = name; }
 
-            /**方法参数**/
+            /** Method parameters **/
             private ArrayList<Expr.T> inputParams;
             public ArrayList<Expr.T> getInputParams() { return this.inputParams; }
             public void setInputParams(ArrayList<Expr.T> inputParams) { this.inputParams = inputParams; }
@@ -290,7 +290,7 @@ public class Ast {
             }
         }
 
-        // 数组赋值语句: arr[index] = expr;
+        // Array assignment statement: arr[index] = expr;
         public static class ArrayAssign extends T {
             private String arrayName;
             public String getArrayName() { return this.arrayName; }
@@ -363,7 +363,7 @@ public class Ast {
      */
     public static class Type{
         /**
-         * 类型枚举，用于类型安全的比较（替代 toString().equals() 方式）
+         * Type enum for type-safe comparisons (replacing toString().equals() checks).
          */
         public enum TypeKind {
             INT, FLOAT, DOUBLE, BOOL, BYTE, LONG, STRING, VOID,
@@ -476,7 +476,7 @@ public class Ast {
             public void accept(ISemanticVisitor v) { v.visit(this); }
         }
 
-        // 数组类型
+        // Array types
         public non-sealed static class IntArray extends T {
             private int size;
             public int getSize() { return this.size; }
@@ -585,7 +585,7 @@ public class Ast {
             private int lineNum;
             public int getLineNum() { return this.lineNum; }
             public void setLineNum(int lineNum) { this.lineNum = lineNum; }
-            // Thêm SourceSpan
+            // SourceSpan metadata
             private site.ilemon.util.SourceSpan span;
             public site.ilemon.util.SourceSpan getSpan() { return this.span; }
             public void setSpan(site.ilemon.util.SourceSpan span) { this.span = span; }
@@ -593,7 +593,7 @@ public class Ast {
             public abstract void accept(ISemanticVisitor v);
         }
 
-        /** 四则运算表达式 **/
+        /** Arithmetic expressions **/
         public static class Add extends T{
             private Ast.Expr.T left;
             private Ast.Expr.T right;
@@ -608,7 +608,7 @@ public class Ast {
                 this.setLineNum(lineNum);
             }
 
-            // Constructor mới nhận SourceSpan
+            // Constructor with SourceSpan
             public Add(Ast.Expr.T left, Ast.Expr.T right, site.ilemon.util.SourceSpan span) {
                 this.setLeft(left);
                 this.setRight(right);
@@ -701,7 +701,7 @@ public class Ast {
             }
         }
 
-        /** 逻辑运算表达式 **/
+        /** Logical expressions **/
         public static class And extends T{
             private Expr.T left;
             private Expr.T right;
@@ -757,17 +757,17 @@ public class Ast {
         }
 
         public static class Call extends T{
-            /**方法返回类型**/
+            /** Method return type **/
             private Ast.Type.T returnType;
             public Ast.Type.T getReturnType() { return this.returnType; }
             public void setReturnType(Ast.Type.T returnType) { this.returnType = returnType; }
 
-            /**方法名称**/
+            /** Method name **/
             private String name;
             public String getName() { return this.name; }
             public void setName(String name) { this.name = name; }
 
-            /**方法参数**/
+            /** Method parameters **/
             private ArrayList<Expr.T> inputParams;
             public ArrayList<Expr.T> getInputParams() { return this.inputParams; }
             public void setInputParams(ArrayList<Expr.T> inputParams) { this.inputParams = inputParams; }
@@ -791,7 +791,7 @@ public class Ast {
             }
         }
 
-        /** 比较运算表达式 **/
+        /** Comparison expressions **/
         // >
         public static class GT extends T{
             private Ast.Expr.T left;
@@ -995,7 +995,7 @@ public class Ast {
                 this.setLineNum(lineNum);
             }
 
-            // Constructor mới nhận SourceSpan
+            // Constructor with SourceSpan
             public Id(String id, site.ilemon.util.SourceSpan span)
             {
                 this.id = id;
@@ -1014,7 +1014,7 @@ public class Ast {
             }
         }
 
-        // 数组访问表达式: arr[index]
+        // Array access expression: arr[index]
         public static class ArrayAccess extends T {
             private String arrayName;
             public String getArrayName() { return this.arrayName; }
@@ -1038,7 +1038,7 @@ public class Ast {
             }
         }
 
-        // 数组长度表达式: arr.length
+        // Array length expression: arr.length
         public static class ArrayLength extends T {
             private String arrayName;
             public String getArrayName() { return this.arrayName; }

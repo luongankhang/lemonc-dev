@@ -405,17 +405,26 @@ public class AstOptimizer {
         if (left.getType().getKind() == TypeKind.FLOAT || right.getType().getKind() == TypeKind.FLOAT) {
             return new Ast.Type.Float();
         }
+        if (left.getType().getKind() == TypeKind.LONG || right.getType().getKind() == TypeKind.LONG) {
+            return new Ast.Type.Long();
+        }
         return new Ast.Type.Int();
     }
 
     private Ast.Expr.Number number(Ast.Type.T type, Object value, int lineNum) {
         if (type.getKind() == TypeKind.DOUBLE) {
-            return new Ast.Expr.Number(type, Double.valueOf(asDouble(value)), lineNum);
+            return new Ast.Expr.Number(type, value instanceof Number ? ((Number)value).doubleValue() : Double.valueOf(value.toString()), lineNum);
         }
         if (type.getKind() == TypeKind.FLOAT) {
-            return new Ast.Expr.Number(type, Float.valueOf((float) asDouble(value)), lineNum);
+            return new Ast.Expr.Number(type, value instanceof Number ? ((Number)value).floatValue() : Float.valueOf(value.toString()), lineNum);
         }
-        return new Ast.Expr.Number(type, Integer.valueOf((int) asDouble(value)), lineNum);
+        if (type.getKind() == TypeKind.LONG) {
+            return new Ast.Expr.Number(type, value instanceof Number ? ((Number)value).longValue() : Long.valueOf(value.toString()), lineNum);
+        }
+        if (type.getKind() == TypeKind.BYTE) {
+            return new Ast.Expr.Number(type, value instanceof Number ? ((Number)value).byteValue() : Byte.valueOf(value.toString()), lineNum);
+        }
+        return new Ast.Expr.Number(type, value instanceof Number ? ((Number)value).intValue() : Integer.valueOf(value.toString()), lineNum);
     }
 
     private Object calculate(String op, Ast.Expr.Number left, Ast.Expr.Number right) {
@@ -423,6 +432,15 @@ public class AstOptimizer {
         if (type.getKind() == TypeKind.INT) {
             int l = numericValue(left).intValue();
             int r = numericValue(right).intValue();
+            if ("+".equals(op)) return l + r;
+            if ("-".equals(op)) return l - r;
+            if ("*".equals(op)) return l * r;
+            if ("/".equals(op)) return l / r;
+            return l % r;
+        }
+        if (type.getKind() == TypeKind.LONG) {
+            long l = numericValue(left).longValue();
+            long r = numericValue(right).longValue();
             if ("+".equals(op)) return l + r;
             if ("-".equals(op)) return l - r;
             if ("*".equals(op)) return l * r;
@@ -439,6 +457,17 @@ public class AstOptimizer {
     }
 
     private boolean compare(String op, Ast.Expr.Number left, Ast.Expr.Number right) {
+        Ast.Type.T type = resultType(left, right);
+        if (type.getKind() == TypeKind.LONG) {
+            long l = numericValue(left).longValue();
+            long r = numericValue(right).longValue();
+            if (">".equals(op)) return l > r;
+            if ("<".equals(op)) return l < r;
+            if (">=".equals(op)) return l >= r;
+            if ("<=".equals(op)) return l <= r;
+            if ("==".equals(op)) return l == r;
+            return l != r;
+        }
         double l = numericValue(left).doubleValue();
         double r = numericValue(right).doubleValue();
         if (">".equals(op)) return l > r;
@@ -457,13 +486,12 @@ public class AstOptimizer {
         if (number.getType().getKind() == TypeKind.INT) {
             return Integer.valueOf(value.toString());
         }
+        if (number.getType().getKind() == TypeKind.LONG) {
+            return Long.valueOf(value.toString());
+        }
         if (number.getType().getKind() == TypeKind.FLOAT) {
             return Float.valueOf(value.toString());
         }
         return Double.valueOf(value.toString());
-    }
-
-    private double asDouble(Object value) {
-        return value instanceof Number ? ((Number) value).doubleValue() : Double.parseDouble(value.toString());
     }
 }

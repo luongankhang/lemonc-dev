@@ -2,9 +2,8 @@ package site.ilemon.list;
 
 /**
  * <p>DoublyLinkedList</p>  
- * <p>保存任何数据的双向链表 </p>  
+ * <p>Doubly linked list storing generic data.</p>  
  * @author yanan  
- * @date 2018年3月15日
  */
 public class DoublyLinkedList<T> {
     private DNode<T> head,tail;
@@ -26,8 +25,8 @@ public class DoublyLinkedList<T> {
 		return size==0?true:false;
 	}
 	/**
-	 * 将数据添加到链表头部
-	 * @param data 待添加的数据
+	 * Adds data to the head of the list.
+	 * @param data Data to add
 	 */
 	public void addToHead(T data){
 		if(isEmpty()){
@@ -42,8 +41,8 @@ public class DoublyLinkedList<T> {
 	}
 	
 	/**
-	 * 将数据添加到链表尾部
-	 * @param data 待添加的数据
+	 * Adds data to the tail of the list.
+	 * @param data Data to add
 	 */
 	public void addToTail(T data){
 		if(isEmpty()){
@@ -58,8 +57,8 @@ public class DoublyLinkedList<T> {
 	}
 	
 	/**
-	 * 将另一个链表的所有元素追加到本链表尾部
-	 * @param list 待追加的链表
+	 * Appends all elements from another list to the tail of this list.
+	 * @param list List to append
 	 */
 	public void addAll(DoublyLinkedList<T> list){
 		if (list == null || list.isEmpty()) return;
@@ -69,7 +68,7 @@ public class DoublyLinkedList<T> {
 	}
 
 	/**
-	 * 从链表头部删除数据并返回改数据，如果链表为空，则返回null。
+	 * Removes data from the head of the list and returns it. Returns null if empty.
 	 */
 	public T deleteFromHead(){
 		if(!isEmpty()){
@@ -87,8 +86,8 @@ public class DoublyLinkedList<T> {
 	}
 	
 	/**
-	 * 将数据添加到链表正中间(3.10习题第16题)
-	 * @param data 待添加的数据
+	 * Adds data to the middle of the list.
+	 * @param data Data to add
 	 */
 	public void addToMiddle(T data){
 		DNode<T> newNode = new DNode<T>(data, null, null);
@@ -110,7 +109,7 @@ public class DoublyLinkedList<T> {
 	}
 	
 	/**
-	 * 从链表尾部删除数据并返回改数据，如果链表为空，则返回null。
+	 * Removes data from the tail of the list and returns it. Returns null if empty.
 	 */
 	public T deleteFromTail(){
 		if(!isEmpty()){
@@ -128,8 +127,8 @@ public class DoublyLinkedList<T> {
 	}
 	
 	/**
-	 * 从指定位置删除链表中的数据
-	 * @param index 数据位于链表中的索引
+	 * Deletes data at the specified index in the list.
+	 * @param index Index of data in list
 	 */
 	public void deleteNode(int index){
 		rangeCheck(index);
@@ -153,9 +152,9 @@ public class DoublyLinkedList<T> {
 	
 	
 	/**
-	 * 获取链表指定位置的数据
-	 * @param i 索引
-	 * @return int 数据
+	 * Retrieves data at the specified index in the list.
+	 * @param i Index
+	 * @return Element data
 	 */
 	public T get(int i){
 		rangeCheck(i);

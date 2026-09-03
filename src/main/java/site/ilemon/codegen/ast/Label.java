@@ -10,8 +10,8 @@ public class Label {
     }
 
     /**
-     * 重置 label 计数器。
-     * 每次新的编译任务开始前必须调用，避免同一 JVM 进程内多次编译时 label 编号冲突。
+     * Resets the label counter.
+     * Must be called before starting each new compilation task to prevent label number conflicts within the same JVM process.
      */
     public static void resetCounter() {
         count = 0;

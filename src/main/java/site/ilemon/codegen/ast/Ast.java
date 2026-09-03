@@ -147,7 +147,7 @@ public String id;
             }
         }
 
-        // 数组类型
+        // Array types
         public static class IntArray extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 @Override
@@ -348,7 +348,7 @@ public Label l;
 
         /**
          * ifgt
-         *  当栈顶int型数值大于0时跳转
+         * Jump when top-of-stack int value is greater than 0.
          */
         public static class Ifgt extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
@@ -362,7 +362,7 @@ public Label l;
 
 
         /**
-         * 浮点数比较指令
+         * Floating-point comparison instructions.
          */
         public static class Fcmpl extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
@@ -592,9 +592,9 @@ public Type.T exprType;
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }
 
-        // ========== 数组相关指令 ==========
+        // ========== Array-related instructions ==========
 
-        // 创建数组: newarray int/float/double/boolean
+        // Create array: newarray int/float/double/boolean
         public static class Newarray extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 public Type.T elementType;
@@ -603,37 +603,37 @@ public Type.T elementType;
             }
         }
 
-        // int数组加载: iaload
+        // Load from int array: iaload
         public static class Iaload extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }
 
-        // int数组存储: iastore
+        // Store into int array: iastore
         public static class Iastore extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }
 
-        // float数组加载: faload
+        // Load from float array: faload
         public static class Faload extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }
 
-        // float数组存储: fastore
+        // Store into float array: fastore
         public static class Fastore extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }
 
-        // double数组加载: daload
+        // Load from double array: daload
         public static class Daload extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }
 
-        // double数组存储: dastore
+        // Store into double array: dastore
         public static class Dastore extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }
 
-        // boolean数组加载: baload
+        // Load from boolean array: baload
         public static class Baload extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }
@@ -642,7 +642,7 @@ public Type.T elementType;
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
         }
 
-        // boolean数组存储: bastore
+        // Store into boolean array: bastore
         public static class Bastore extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }
@@ -659,7 +659,7 @@ public Type.T elementType;
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
         }
 
-        // 数组长度: arraylength
+        // Array length: arraylength
         public static class Arraylength extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }

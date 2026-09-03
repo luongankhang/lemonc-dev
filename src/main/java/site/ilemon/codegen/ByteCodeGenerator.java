@@ -40,7 +40,8 @@ public class ByteCodeGenerator implements Visitor {
 
     private void writeln(String s)
     {
-        write(s + "\n");
+        write(s);
+        write("\n");
     }
 
     private void write(String s)
@@ -590,9 +591,9 @@ public class ByteCodeGenerator implements Visitor {
 
     @Override
     public void visit(Ast.Stmt.Ldc s) {
-        // double类型需要使用ldc2_w指令
+        // Double and long types require the ldc2_w instruction
         if (s.i instanceof java.lang.Double || s.i instanceof java.lang.Long) {
-            // 添加d后缀明确指定double类型
+            // Append 'd' suffix to explicitly specify double type
             this.iwriteln("ldc2_w " + s.i + (s.i instanceof java.lang.Double ? "d" : ""));
         } else {
             this.iwriteln("ldc " + s.i);
@@ -782,7 +783,7 @@ public class ByteCodeGenerator implements Visitor {
 
     }
 
-    // ========== 数组相关指令 ==========
+    // ========== Array-related instructions ==========
 
     public void visit(Ast.Stmt.Newarray s) {
         String type = switch (s.elementType) {
@@ -793,7 +794,7 @@ public class ByteCodeGenerator implements Visitor {
             case Ast.Type.Double d -> "double";
             case Ast.Type.Bool b -> "boolean";
             case Ast.Type.Str stringType -> "java/lang/String";
-            default -> "int"; // 默认
+            default -> "int"; // default
         };
         this.iwriteln(s.elementType instanceof Ast.Type.Str ? "anewarray " + type : "newarray " + type);
     }

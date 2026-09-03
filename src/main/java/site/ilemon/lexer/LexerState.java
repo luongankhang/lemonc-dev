@@ -1,23 +1,23 @@
 package site.ilemon.lexer;
 
 /**
- * 词法分析器状态枚举
- * 定义DFA的所有状态
+ * Lexer state enumeration.
+ * Defines all DFA states.
  */
 public enum LexerState {
-    START,          // 初始状态
-    IN_ID,          // 正在读取标识符
-    IN_NUM,         // 正在读取整数
-    IN_FLOAT,       // 正在读取浮点数（小数点后）
-    IN_STRING,      // 正在读取字符串
-    IN_COMMENT,     // 正在读取单行注释
-    IN_ASSIGN,      // 读到 =，可能是 = 或 ==
-    IN_LT,          // 读到 <，可能是 < 或 <=
-    IN_GT,          // 读到 >，可能是 > 或 >=
-    IN_NOT,         // 读到 !，可能是 ! 或 !=
-    IN_AND,         // 读到 &，期待 &&
-    IN_OR,          // 读到 |，期待 ||
-    IN_DIV,         // 读到 /，可能是 / 或 //
-    DONE,           // 完成一个token
-    ERROR           // 错误状态
+    START,          // Initial state
+    IN_ID,          // Reading an identifier
+    IN_NUM,         // Reading an integer
+    IN_FLOAT,       // Reading a floating-point number (fractional part)
+    IN_STRING,      // Reading a string literal
+    IN_COMMENT,     // Reading a single-line comment
+    IN_ASSIGN,      // Read '=', could be '=' or '=='
+    IN_LT,          // Read '<', could be '<' or '<='
+    IN_GT,          // Read '>', could be '>' or '>='
+    IN_NOT,         // Read '!', could be '!' or '!='
+    IN_AND,         // Read '&', expecting '&&'
+    IN_OR,          // Read '|', expecting '||'
+    IN_DIV,         // Read '/', could be '/' or '//'
+    DONE,           // Finished a token
+    ERROR           // Error state
 }

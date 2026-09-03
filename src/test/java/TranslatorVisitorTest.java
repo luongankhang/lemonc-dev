@@ -11,21 +11,21 @@ import java.io.IOException;
 import static org.junit.Assert.*;
 
 /**
- * TranslatorVisitor 测试用例
- * 测试双重分派（Double Dispatch）的 Visitor 模式实现
+ * TranslatorVisitor test cases.
+ * Tests Visitor pattern implementation with double dispatch.
  */
 public class TranslatorVisitorTest {
 
-    // ==================== 基础翻译测试 ====================
+    // ==================== Basic translation tests ====================
 
     @Test
     public void testTranslateBoolExpression() throws IOException {
         TranslatorVisitor visitor = translate("examples/BoolTest01.lemon");
         assertNotNull(visitor.prog);
-        assertTrue("应生成至少一个方法", visitor.prog.mainClass.methods.size() > 0);
+        assertTrue("should generate at least one method", visitor.prog.mainClass.methods.size() > 0);
     }
 
-    // ==================== 控制流翻译测试 ====================
+    // ==================== Control flow translation tests ====================
 
     @Test
     public void testTranslateIfStatement() throws IOException {
@@ -39,8 +39,8 @@ public class TranslatorVisitorTest {
             if (s instanceof site.ilemon.codegen.ast.Ast.Stmt.Goto) hasGoto = true;
             if (s instanceof site.ilemon.codegen.ast.Ast.Stmt.LabelJ) hasLabel = true;
         }
-        assertTrue("If语句应生成Goto指令", hasGoto);
-        assertTrue("If语句应生成Label", hasLabel);
+        assertTrue("if statement should generate Goto instruction", hasGoto);
+        assertTrue("if statement should generate Label", hasLabel);
     }
 
     @Test
@@ -61,7 +61,7 @@ public class TranslatorVisitorTest {
                 break;
             }
         }
-        assertTrue("比较运算应生成条件跳转指令", hasCompare);
+        assertTrue("comparison operations should generate conditional branch instruction", hasCompare);
     }
 
     @Test
@@ -70,27 +70,27 @@ public class TranslatorVisitorTest {
         assertNotNull(visitor.prog);
     }
 
-    // ==================== 双重分派验证测试 ====================
+    // ==================== Double dispatch validation tests ====================
 
     @Test
     public void testDoubleDispatchExprAcceptExists() {
-        // 验证表达式节点的 accept 方法存在
+        // Verify expression node accept method exists
         Ast.Expr.Number num = new Ast.Expr.Number(new Ast.Type.Int(), 42, 1);
         Ast.Expr.Add add = new Ast.Expr.Add(num, num, 1);
         Ast.Expr.Sub sub = new Ast.Expr.Sub(num, num, 1);
         Ast.Expr.Mul mul = new Ast.Expr.Mul(num, num, 1);
         Ast.Expr.Div div = new Ast.Expr.Div(num, num, 1);
         
-        assertNotNull("Number节点应存在", num);
-        assertNotNull("Add节点应存在", add);
-        assertNotNull("Sub节点应存在", sub);
-        assertNotNull("Mul节点应存在", mul);
-        assertNotNull("Div节点应存在", div);
+        assertNotNull("Number node should exist", num);
+        assertNotNull("Add node should exist", add);
+        assertNotNull("Sub node should exist", sub);
+        assertNotNull("Mul node should exist", mul);
+        assertNotNull("Div node should exist", div);
     }
 
     @Test
     public void testDoubleDispatchBoolExprAcceptExists() {
-        // 验证布尔表达式节点的 accept 方法存在
+        // Verify boolean expression node accept method exists
         Ast.Expr.True trueExpr = new Ast.Expr.True(1);
         Ast.Expr.False falseExpr = new Ast.Expr.False(1);
         Ast.Expr.Not notExpr = new Ast.Expr.Not(trueExpr);
@@ -106,7 +106,7 @@ public class TranslatorVisitorTest {
 
     @Test
     public void testDoubleDispatchCompareExprAcceptExists() {
-        // 验证比较表达式节点的 accept 方法存在
+        // Verify comparison expression node accept method exists
         Ast.Expr.Number num = new Ast.Expr.Number(new Ast.Type.Int(), 1, 1);
         Ast.Expr.GT gt = new Ast.Expr.GT(num, num, 1);
         Ast.Expr.LT lt = new Ast.Expr.LT(num, num, 1);
@@ -125,17 +125,17 @@ public class TranslatorVisitorTest {
 
     @Test
     public void testDoubleDispatchStmtAcceptExists() {
-        // 验证语句节点的 accept 方法存在
+        // Verify statement node accept method exists
         Ast.Expr.Id id = new Ast.Expr.Id("x", new Ast.Type.Int(), 1);
         Ast.Expr.Number num = new Ast.Expr.Number(new Ast.Type.Int(), 1, 1);
         Ast.Stmt.Assign assign = new Ast.Stmt.Assign(id, num, 1);
         
-        assertNotNull("Assign语句应存在", assign);
+        assertNotNull("Assign statement should exist", assign);
     }
 
     @Test
     public void testDoubleDispatchTypeAcceptExists() {
-        // 验证类型节点的 accept 方法存在
+        // Verify type node accept method exists
         Ast.Type.Int intType = new Ast.Type.Int();
         Ast.Type.Float floatType = new Ast.Type.Float();
         Ast.Type.Bool boolType = new Ast.Type.Bool();
@@ -161,7 +161,7 @@ public class TranslatorVisitorTest {
         assertNotNull(visitor.prog);
     }
 
-    // ==================== 辅助方法 ====================
+    // ==================== Helper methods ====================
 
     private TranslatorVisitor translate(String filename) throws IOException {
         Lexer lexer = new Lexer(new File(filename));

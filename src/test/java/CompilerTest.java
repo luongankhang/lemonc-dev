@@ -22,9 +22,9 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.*;
 
 /**
- * 编译器端到端集成测试。
- * 每个 .lemon 示例文件对应独立的 @Test 方法，
- * 验证完整编译管线：Lexer → Parser → SemanticVisitor → TranslatorVisitor → ByteCodeGenerator → Jasmin。
+ * End-to-end integration tests for the compiler.
+ * Each .lemon example file has an independent @Test method,
+ * verifying the complete compilation pipeline: Lexer -> Parser -> SemanticVisitor -> TranslatorVisitor -> ByteCodeGenerator -> Jasmin.
  */
 public class CompilerTest {
 
@@ -33,13 +33,13 @@ public class CompilerTest {
         Label.resetCounter();
     }
 
-    // ===== 基础计算 =====
+    // ===== Basic arithmetic =====
     @Test public void testCal() throws IOException { compileAndVerify("Cal", "10的阶乘是3628800"); }
     @Test public void testCal01() throws IOException { compileAndVerify("Cal01", "k2=19,n=3615\n"); }
-    // Example01/03/05 类名与文件名不匹配(TestMain/MulTable)，属于已知问题
+    // Example01/03/05 class name does not match file name (TestMain/MulTable), known issue
     @Test public void testExample02() throws IOException { compileAndVerify("Example02"); }
 
-    // ===== 整数运算 =====
+    // ===== Integer operations =====
     @Test public void testIntTest01() throws IOException {
         compileAndVerify("IntTest01",
                 "num1=20,num2=2,num1+num2+19=41,num1-num2=18,num1*num2=40,num1/num2=10");
@@ -49,7 +49,7 @@ public class CompilerTest {
         compileAndVerify("ModTest", "a=1,b=8,c=5\n");
     }
 
-    // ===== 浮点运算 =====
+    // ===== Floating point operations =====
     @Test public void testFloatTest01() throws IOException {
         compileAndVerify("FloatTest01",
                 "num1=19.0,num2=1.9,num1+num2+19.9=40.8,num1-num2=17.1,num1*num2=36.1,num1/num2=10.0");
@@ -58,7 +58,7 @@ public class CompilerTest {
         compileAndVerify("FloatTest02", "b=1.8\n");
     }
 
-    // ===== Double 运算 =====
+    // ===== Double operations =====
     @Test public void testDoubleTest01() throws IOException {
         compileAndVerify("DoubleTest01", "num1=19.0,num2=1.9\n");
     }
@@ -78,9 +78,9 @@ public class CompilerTest {
                         + "if=1\n");
     }
 
-    // ===== Bool 表达式 =====
+    // ===== Boolean expressions =====
     @Test public void testBoolTest01() throws IOException { compileAndVerify("BoolTest01"); }
-    // BoolTest02 类名写成 BoolTest01，属于已知文件名不匹配问题
+    // BoolTest02 class name written as BoolTest01, known file name mismatch issue
     @Test public void testBoolTest03() throws IOException { compileAndVerify("BoolTest03"); }
     @Test public void testBoolTest04() throws IOException {
         compileAndVerify("BoolTest04",
@@ -119,11 +119,11 @@ public class CompilerTest {
                         + "a=7\n");
     }
 
-    // ===== If 条件 =====
+    // ===== If conditions =====
     @Test public void testIf01() throws IOException { compileAndVerify("If01"); }
     @Test public void testIf02() throws IOException { compileAndVerify("If02"); }
     @Test public void testIf03() throws IOException { compileAndVerify("If03"); }
-    // If04 语法格式有问题（if body缺少左大括号），属于已知问题
+    // If04 syntax issue (missing left brace in if body), known issue
     @Test public void testIf05() throws IOException { compileAndVerify("If05"); }
     @Test public void testIf06() throws IOException { compileAndVerify("If06"); }
     @Test public void testIf07() throws IOException { compileAndVerify("If07"); }
@@ -146,7 +146,7 @@ public class CompilerTest {
                         + "a=36\n");
     }
 
-    // ===== 循环 =====
+    // ===== Loops =====
     @Test public void testIteration01() throws IOException { compileAndVerify("Iteration01"); }
     @Test public void testIteration02() throws IOException { compileAndVerify("Iteration02"); }
     @Test public void testIteration03() throws IOException { compileAndVerify("Iteration03"); }
@@ -161,7 +161,7 @@ public class CompilerTest {
     }
     @Test public void testMulTable() throws IOException { compileAndVerify("MulTable"); }
 
-    // ===== 方法调用 =====
+    // ===== Method calls =====
     @Test public void testMethodCallTest01() throws IOException { compileAndVerify("MethodCallTest01"); }
     @Test public void testMethodCallTest02() throws IOException { compileAndVerify("MethodCallTest02"); }
     @Test public void testMethodCallTest03() throws IOException { compileAndVerify("MethodCallTest03"); }
@@ -175,7 +175,7 @@ public class CompilerTest {
     }
     @Test public void testSimpleMethodCallFour() throws IOException { compileAndVerify("SimpleMethodCallFour"); }
 
-    // ===== 综合 =====
+    // ===== Comprehensive =====
     @Test public void testFib() throws IOException {
         compileAndVerify("Fib",
                 "递归计算斐波那契数列，一年后总共有144对兔子\n"
@@ -183,11 +183,11 @@ public class CompilerTest {
     }
     @Test public void testCalHeightOfChild() throws IOException { compileAndVerify("CalHeightOfChild"); }
     @Test public void testCompareTest() throws IOException { compileAndVerify("CompareTest"); }
-    // Return.lemon 类名是 TestMain 与文件名不匹配，属于已知问题
+    // Return.lemon class name is TestMain which does not match file name, known issue
     @Test public void testHelloWorld() throws IOException { compileAndVerify("Test"); }
     @Test public void testTestTwo() throws IOException { compileAndVerify("TestTwo"); }
 
-    // ===== 数组 =====
+    // ===== Arrays =====
     @Test public void testArrayTest01() throws IOException {
         compileAndVerify("ArrayTest01",
                 "arr[0] = 1\n"
@@ -252,7 +252,7 @@ public class CompilerTest {
                         + "  inner break on 2\n");
     }
 
-    // ===== 多次编译（验证 Label.resetCounter 是否生效） =====
+    // ===== Multiple compilations (verifying Label.resetCounter) =====
     @Test
     public void testVoidMethodOutput() throws IOException {
         compileAndVerify("VoidMethod", "before\nhello from void\nafter\n");
@@ -292,64 +292,64 @@ public class CompilerTest {
 
     @Test
     public void testMultipleCompilationsLabelReset() throws IOException {
-        // 连续编译两个不同文件，验证 label 不冲突
+        // Compile two different files sequentially to verify label counter does not collide
         compileAndVerify("Cal");
         Label.resetCounter();
         compileAndVerify("Fib");
     }
 
-    // ======================== 基础设施 ========================
+    // ======================== Infrastructure ========================
 
     /**
-     * 完整编译一个 .lemon 文件并验证每个阶段的输出。
+     * Compiles a .lemon file and verifies the output of each compilation phase.
      */
     private void compileAndVerify(String name) throws IOException {
         compileAndVerify(name, null);
     }
 
     /**
-     * 完整编译一个 .lemon 文件；提供期望输出时，还会运行生成的 JVM class 并校验 stdout。
+     * Compiles a .lemon file; when expectedOutput is provided, runs the generated JVM class and asserts stdout.
      */
     private void compileAndVerify(String name, String expectedOutput) throws IOException {
         File sourceFile = new File("examples/" + name + ".lemon");
-        assertTrue("源文件应存在: " + sourceFile.getPath(), sourceFile.exists());
+        assertTrue("source file should exist: " + sourceFile.getPath(), sourceFile.exists());
 
-        // 1. 词法分析
+        // 1. Lexical analysis
         Lexer lexer = new Lexer(sourceFile);
-        assertNotNull("Lexer 不应为 null", lexer);
+        assertNotNull("Lexer should not be null", lexer);
 
-        // 2. 语法分析
+        // 2. Syntax analysis
         Parser parser = new Parser(lexer);
         Ast.Program.T program = parser.parse();
-        assertNotNull("AST 不应为 null", program);
+        assertNotNull("AST should not be null", program);
 
-        // 3. 语义分析
+        // 3. Semantic analysis
         SemanticVisitor semantic = new SemanticVisitor();
         semantic.visit(program);
-        assertTrue("语义分析应通过: " + name, semantic.passOrNot());
+        assertTrue("semantic analysis should pass: " + name, semantic.passOrNot());
 
-        // 4. IR 翻译
+        // 4. IR translation
         program = new AstOptimizer().optimize(program);
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(program);
-        assertNotNull("IR 程序不应为 null", translator.prog);
-        assertNotNull("IR 主类不应为 null", translator.prog.mainClass);
+        assertNotNull("IR program should not be null", translator.prog);
+        assertNotNull("IR main class should not be null", translator.prog.mainClass);
 
-        // 5. 字节码生成
+        // 5. Bytecode generation
         ByteCodeGenerator generator = new ByteCodeGenerator();
         generator.visit(translator.prog);
 
-        // 6. 验证 .il 文件已生成
+        // 6. Verify .il file is generated
         File ilFile = generator.getOutputFile();
         String ilFileName = ilFile.getPath();
-        assertTrue(".il 文件应存在: " + ilFileName, ilFile.exists());
-        assertTrue(".il 文件不应为空: " + ilFileName, ilFile.length() > 0);
+        assertTrue(".il file should exist: " + ilFileName, ilFile.exists());
+        assertTrue(".il file should not be empty: " + ilFileName, ilFile.length() > 0);
 
-        // 7. Jasmin 汇编 → .class
+        // 7. Jasmin assembler -> .class
         assembleWithJasmin(generator.getOutputDir(), ilFileName);
         File classFile = generator.getClassFile(translator.prog.mainClass.id);
-        assertTrue(".class 文件应存在: " + name, classFile.exists());
-        assertTrue(".class 文件不应为空: " + name, classFile.length() > 0);
+        assertTrue(".class file should exist: " + name, classFile.exists());
+        assertTrue(".class file should not be empty: " + name, classFile.length() > 0);
 
         if (expectedOutput != null) {
             assertJvmOutput(translator.prog.mainClass.id, generator.getOutputDir(), expectedOutput);
@@ -367,16 +367,16 @@ public class CompilerTest {
         try {
             if (!process.waitFor(10, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
-                fail("JVM 执行超时: " + className);
+                fail("JVM execution timed out: " + className);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            fail("等待 JVM 执行被中断: " + className);
+            fail("Waiting for JVM execution was interrupted: " + className);
         }
 
         String output = normalizeNewlines(readAll(process.getInputStream()));
-        assertEquals("JVM 退出码应为 0，输出为:\n" + output, 0, process.exitValue());
-        assertEquals("JVM 输出不符合预期: " + className,
+        assertEquals("JVM exit code should be 0, output was:\n" + output, 0, process.exitValue());
+        assertEquals("JVM output did not match expected: " + className,
                 normalizeNewlines(expectedOutput), output);
     }
 

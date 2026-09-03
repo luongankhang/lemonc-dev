@@ -435,45 +435,45 @@ public class DiagnosticTest {
     private void compileAndRun(String source, String expectedOutput) throws Exception {
         File sourceFile = writeSource("Test", source);
         
-        // 1. 词法分析
+        // 1. Lexical analysis
         Lexer lexer = new Lexer(sourceFile);
         assertNotNull(lexer);
 
-        // 2. 语法分析
+        // 2. Syntax analysis
         Parser parser = new Parser(lexer);
         Ast.Program.T program = parser.parse();
         assertNotNull(program);
 
-        // 3. 语义分析
+        // 3. Semantic analysis
         SemanticVisitor semantic = new SemanticVisitor();
         semantic.visit(program);
         assertTrue(semantic.passOrNot());
 
-        // 4. IR 翻译
+        // 4. IR translation
         program = new AstOptimizer().optimize(program);
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(program);
         assertNotNull(translator.prog);
         assertNotNull(translator.prog.mainClass);
 
-        // 5. 字节码生成
+        // 5. Bytecode generation
         ByteCodeGenerator generator = new ByteCodeGenerator();
         generator.visit(translator.prog);
 
-        // 6. 验证 .il 文件已生成
+        // 6. Verify .il file is generated
         File ilFile = generator.getOutputFile();
         String ilFileName = ilFile.getPath();
         assertTrue(ilFile.exists());
         assertTrue(ilFile.length() > 0);
 
-        // 7. Jasmin 汇编 → .class
+        // 7. Jasmin assembler -> .class
         assembleWithJasmin(generator.getOutputDir(), ilFileName);
 
         File classFile = generator.getClassFile(translator.prog.mainClass.id);
         assertTrue(classFile.exists());
         assertTrue(classFile.length() > 0);
 
-        // 8. 运行并验证输出
+        // 8. Run and verify output
         Process process = new ProcessBuilder(javaExecutable(),
                 "-Dfile.encoding=UTF-8",
                 "-Dsun.stdout.encoding=UTF-8",
@@ -484,16 +484,16 @@ public class DiagnosticTest {
         try {
             if (!process.waitFor(10, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
-                fail("JVM 执行超时");
+                fail("JVM execution timed out");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            fail("等待 JVM 执行被中断");
+            fail("Waiting for JVM execution was interrupted");
         }
 
         String output = normalizeNewlines(readAll(process.getInputStream()));
-        assertEquals("JVM 退出码应为 0，输出为:\n" + output, 0, process.exitValue());
-        assertEquals("JVM 输出不符合预期",
+        assertEquals("JVM exit code should be 0, output was:\n" + output, 0, process.exitValue());
+        assertEquals("JVM output did not match expected",
                 normalizeNewlines(expectedOutput), output);
     }
     

@@ -15,8 +15,8 @@ import java.nio.file.Files;
 import static org.junit.Assert.*;
 
 /**
- * 负面测试 — 验证编译器在非法输入时能正确报错。
- * 每个测试验证一种特定的错误场景。
+ * Negative tests - verify that the compiler properly reports errors on invalid input.
+ * Each test verifies a specific error scenario.
  */
 public class ErrorTest {
 
@@ -25,47 +25,47 @@ public class ErrorTest {
         Label.resetCounter();
     }
 
-    // ===== 语义错误 =====
+    // ===== Semantic errors =====
 
     @Test(expected = SemanticException.class)
     public void testUndeclaredVariable() throws IOException {
-        // 使用未声明的变量应报语义错误
+        // Using an undeclared variable should report a semantic error
         compileSource("class Test { void main() { x = 1; } }");
     }
 
     @Test(expected = SemanticException.class)
     public void testDuplicateMethod() throws IOException {
-        // 重复定义方法应报语义错误
+        // Duplicate method definition should report a semantic error
         compileSource("class Test { void main() {} void main() {} }");
     }
 
     @Test(expected = SemanticException.class)
     public void testWrongArgCount() throws IOException {
-        // 方法参数个数不匹配应报语义错误
+        // Method argument count mismatch should report a semantic error
         compileSource("class Test { void main() { foo(1, 2); } int foo(int a) { return a; } }");
     }
 
     @Test(expected = SemanticException.class)
     public void testTypeMismatchInAssign() throws IOException {
-        // 将 bool 赋给 int 应报语义错误
+        // Assigning bool to int should report a semantic error
         compileSource("class Test { void main() { int x; x = true; } }");
     }
 
     @Test(expected = SemanticException.class)
     public void testNonBoolCondition() throws IOException {
-        // if 条件不是 bool 应报语义错误
+        // Non-bool if condition should report a semantic error
         compileSource("class Test { void main() { int x; x = 1; if(x) { } } }");
     }
 
     @Test(expected = SemanticException.class)
     public void testWhileNonBoolCondition() throws IOException {
-        // while 条件不是 bool 应报语义错误
+        // Non-bool while condition should report a semantic error
         compileSource("class Test { void main() { int x; x = 1; while(x) { x = 0; } } }");
     }
 
     @Test(expected = SemanticException.class)
     public void testMainReturnTypeNotVoid() throws IOException {
-        // main 方法返回类型非 void 应报语义错误
+        // Main method non-void return type should report a semantic error
         compileSource("class Test { int main() { return 0; } }");
     }
 
@@ -81,13 +81,13 @@ public class ErrorTest {
 
     @Test(expected = SemanticException.class)
     public void testReturnTypeMismatch() throws IOException {
-        // 返回值与声明类型不匹配应报语义错误
+        // Return value type mismatch should report a semantic error
         compileSource("class Test { void main() { int x; x = foo(); } int foo() { return true; } }");
     }
 
     @Test(expected = SemanticException.class)
     public void testUseBeforeAssign() throws IOException {
-        // 局部变量使用前未赋值应报语义错误
+        // Local variable used before assignment should report a semantic error
         compileSource("class Test { void main() { int x; int y; y = x; } }");
     }
 
@@ -108,19 +108,19 @@ public class ErrorTest {
 
     @Test(expected = SemanticException.class)
     public void testAndOperatorNonBool() throws IOException {
-        // && 运算符的操作数不是 bool 应报语义错误
+        // && operator operands must be bool
         compileSource("class Test { void main() { int x; int y; x = 1; y = 2; if(x && y) {} } }");
     }
 
     @Test(expected = SemanticException.class)
     public void testOrOperatorNonBool() throws IOException {
-        // || 运算符的操作数不是 bool 应报语义错误
+        // || operator operands must be bool
         compileSource("class Test { void main() { int x; int y; x = 1; y = 2; if(x || y) {} } }");
     }
 
     @Test(expected = SemanticException.class)
     public void testCompareTypeMismatch() throws IOException {
-        // 数值类型可提升；非数值类型参与序比较仍应报语义错误
+        // Numeric types can widen; non-numeric types in ordering comparisons should report semantic error
         compileSource("class Test { void main() { int x; bool y; x = 1; y = true; if(x > y) {} } }");
     }
 
@@ -169,7 +169,7 @@ public class ErrorTest {
         compileSource("class Test { void main() { int x; x = 1; x[0] = 2; } }");
     }
 
-    // ===== 语法错误 =====
+    // ===== Syntax errors =====
 
     @Test(expected = SemanticException.class)
     public void testArrayArgumentElementTypeMustMatch() throws IOException {
@@ -253,19 +253,19 @@ public class ErrorTest {
 
     @Test(expected = ParseException.class)
     public void testMissingSemicolon() throws IOException {
-        // 缺少分号应报语法错误
+        // Missing semicolon should report syntax error
         compileSource("class Test { void main() { int x } }");
     }
 
     @Test(expected = ParseException.class)
     public void testMissingClosingBrace() throws IOException {
-        // 缺少右大括号应报语法错误
+        // Missing closing brace should report syntax error
         compileSource("class Test { void main() { int x; ");
     }
 
     @Test(expected = ParseException.class)
     public void testMissingClosingParen() throws IOException {
-        // 缺少右括号应报语法错误
+        // Missing closing parenthesis should report syntax error
         compileSource("class Test { void main( { } }");
     }
 
@@ -284,13 +284,13 @@ public class ErrorTest {
         }
     }
 
-    // ===== 错误信息格式验证 =====
+    // ===== Error message format verification =====
 
     @Test
     public void testSemanticErrorMessageFormat() throws IOException {
         try {
             compileSource("class Test { void main() { x = 1; } }");
-            fail("应该抛出 SemanticException");
+            fail("Expected SemanticException to be thrown");
         } catch (SemanticException e) {
             String msg = e.getMessage();
             assertTrue("error message should be in English: " + msg, msg.contains("undefined variable"));
@@ -302,7 +302,7 @@ public class ErrorTest {
     public void testParseErrorMessageFormat() throws IOException {
         try {
             compileSource("class Test { void main() { int x } }");
-            fail("应该抛出 ParseException");
+            fail("Expected ParseException to be thrown");
         } catch (ParseException e) {
             String msg = e.getMessage();
             assertTrue("error message should be in English: " + msg, msg.contains("[parser]"));
@@ -310,14 +310,14 @@ public class ErrorTest {
         }
     }
 
-    // ======================== 基础设施 ========================
+    // ======================== Infrastructure ========================
 
     /**
-     * 将源码字符串写入临时文件并执行完整编译管线。
-     * 用于验证编译器在非法输入时能正确抛出异常。
+     * Writes source string to a temporary file and executes the full compilation pipeline.
+     * Used to verify that the compiler properly throws exceptions on invalid inputs.
      */
     private void compileSource(String source) throws IOException {
-        // 从源码中提取类名作为文件名
+        // Extract class name from source as file name
         String className = "Test";
         int classIdx = source.indexOf("class ");
         if (classIdx >= 0) {

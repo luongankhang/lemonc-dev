@@ -5,11 +5,8 @@ import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.diagnostic.DiagnosticEngine;
 import site.ilemon.util.SourceSpan;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,14 +53,7 @@ public class Lexer {
 
     public Lexer(File f) throws IOException {
         this.className = f.getName().substring(0, f.getName().lastIndexOf("."));
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
-            StringBuilder sb = new StringBuilder();
-            int c;
-            while ((c = reader.read()) != -1) {
-                sb.append((char) c);
-            }
-            this.source = sb.toString();
-        }
+        this.source = java.nio.file.Files.readString(f.toPath(), StandardCharsets.UTF_8);
     }
 
     public String getClassName() {
@@ -297,7 +287,6 @@ public class Lexer {
         }
 
         LexerState state = LexerState.START;
-        StringBuilder lexeme = new StringBuilder();
         int startLine = line;
         int startColumn = column;
 
@@ -307,7 +296,7 @@ public class Lexer {
 
             if (nextState == LexerState.DONE) {
                 if (shouldConsumeOnDone(state, c)) {
-                    lexeme.append(advance());
+                    advance();
                 }
                 if (state == LexerState.IN_COMMENT) {
                     return nextToken();
@@ -320,12 +309,13 @@ public class Lexer {
                 }
                 throw lexicalError(errorMessageForState(state), startLine, startColumn);
             } else {
-                lexeme.append(advance());
+                advance();
                 state = nextState;
             }
         }
 
         int endOffset = position;
+        String lexeme = source.substring(tokenStartOffset, endOffset);
         return makeToken(state, lexeme.toString(),
                 SourceSpan.of(className, tokenStartOffset, endOffset, startLine, startColumn, line, column));
     }

@@ -2,10 +2,10 @@ package site.ilemon.lexer;
 
 public enum TokenKind {
 
-		/***文件末尾标识符****/
+		/*** End of file token ****/
         EOF,
 
-		/***关键字****/
+		/*** Keywords ****/
 		Class,
 		Main,
 		Void,
@@ -27,14 +27,14 @@ public enum TokenKind {
 		Break,
 		Continue,
 
-		/***算术运算符****/
+		/*** Arithmetic operators ****/
 		Add,
 		Sub,
 		Mul,
 		Div,
 		Mod,
 
-		/***比较运算符****/
+		/*** Comparison operators ****/
 		LT,			// <
 		GT,			// >
 		LTE,		// <=
@@ -42,12 +42,12 @@ public enum TokenKind {
 		EQ,			// ==
 		NEQ,		// !=
 
-		/***关系运算符****/
+		/*** Logical operators ****/
 		And,		// &&
 		Or,			// ||
 		Not,		// !
 
-		/***界符****/
+		/*** Delimiters ****/
 		DoubleQuotation,	// "
 		Lbrace,				// {
 		Rbrace,				// }
