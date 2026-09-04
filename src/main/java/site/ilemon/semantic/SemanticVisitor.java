@@ -196,7 +196,7 @@ public class SemanticVisitor implements ISemanticVisitor {
                 return;
             }
             if (!isAssignable(targetType, exprType, obj.getExpr())) {
-                if (!byteRangeErrorIfNeeded(targetType, exprType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
+                if (!rangeErrorIfNeeded(targetType, exprType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                         "assignment to '" + obj.getId().getId() + "'")) {
                     if (!shortRangeErrorIfNeeded(targetType, exprType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                             "assignment to '" + obj.getId().getId() + "'")) {
@@ -575,7 +575,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         this.visit(obj.getExpr());
         if (!isAssignable(typeOfMethodDeclared, this.currType, obj.getExpr())) {
-            if (!byteRangeErrorIfNeeded(typeOfMethodDeclared, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
+            if (!rangeErrorIfNeeded(typeOfMethodDeclared, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                     "return statement")) {
                 typeError(DiagnosticCodes.TYPE_RETURN, typeName(typeOfMethodDeclared), typeName(this.currType),
                         expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(), "return statement", null);
@@ -846,10 +846,14 @@ public class SemanticVisitor implements ISemanticVisitor {
             return true;
         if(target.getKind() == TypeKind.FLOAT && (curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
             return true;
+        if(target.getKind() == TypeKind.FLOAT && curr.getKind() == TypeKind.CHAR)
+            return true;
         if(target.getKind() == TypeKind.DOUBLE && (curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
             return true;
+        if(target.getKind() == TypeKind.DOUBLE && curr.getKind() == TypeKind.CHAR)
+            return true;
         if(target.getKind() == TypeKind.LONG
-                && (curr.getKind() == TypeKind.INT || curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
+                && (curr.getKind() == TypeKind.INT || curr.getKind() == TypeKind.CHAR || curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
             return true;
         if(target.getKind() == TypeKind.FLOAT && curr.getKind() == TypeKind.LONG)
             return true;
@@ -872,19 +876,27 @@ public class SemanticVisitor implements ISemanticVisitor {
         return isMatch(target, actual);
     }
 
-    private boolean byteRangeErrorIfNeeded(Ast.Type.T target, Ast.Type.T actual, Ast.Expr.T expression,
+    private boolean rangeErrorIfNeeded(Ast.Type.T target, Ast.Type.T actual, Ast.Expr.T expression,
                                         int lineNum, site.ilemon.util.SourceSpan span, String context) {
-        if (target == null || target.getKind() != TypeKind.BYTE
-                || actual == null || actual.getKind() != TypeKind.INT) {
+        if (target == null || actual == null || actual.getKind() != TypeKind.INT) {
             return false;
         }
-        Long value = byteLiteralValue(expression);
-        if (value != null && (value < Byte.MIN_VALUE || value > Byte.MAX_VALUE)) {
+        Long value = integralLiteralValue(expression);
+        if (target.getKind() == TypeKind.BYTE && value != null && (value < Byte.MIN_VALUE || value > Byte.MAX_VALUE)) {
             site.ilemon.util.SourceSpan primarySpan = span != null ? span : expression.getSpan();
             semanticError(DiagnosticCodes.TYPE_BYTE_RANGE,
                     "byte literal is out of range: expected -128..127, but found " + value,
                     lineNum, primarySpan, context, "byte is a signed 8-bit type",
                     "use a value between -128 and 127");
+            return true;
+        }
+        if (target.getKind() == TypeKind.SHORT && value != null
+                && (value < java.lang.Short.MIN_VALUE || value > java.lang.Short.MAX_VALUE)) {
+            site.ilemon.util.SourceSpan primarySpan = span != null ? span : expression.getSpan();
+            semanticError(DiagnosticCodes.TYPE_SHORT_RANGE,
+                    "short literal is out of range: expected -32768..32767, but found " + value,
+                    lineNum, primarySpan, context, "short is a signed 16-bit type",
+                    "use a value between -32768 and 32767");
             return true;
         }
         return false;
@@ -1033,7 +1045,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             Ast.Type.T expectedType = this.currType;
             if (!isAssignable(expectedType, actualType, inputParams.get(i))) {
                 Ast.Expr.T argument = inputParams.get(i);
-                if (!byteRangeErrorIfNeeded(expectedType, actualType, argument, argument.getLineNum(), argument.getSpan(),
+                if (!rangeErrorIfNeeded(expectedType, actualType, argument, argument.getLineNum(), argument.getSpan(),
                         "argument " + (i + 1) + " of '" + methodName + "'")) {
                     typeError(DiagnosticCodes.TYPE_ARGUMENT, typeName(expectedType), typeName(actualType), expressionName(argument),
                             argument.getLineNum(), argument.getSpan(), "argument " + (i + 1) + " of '" + methodName + "'", null);
@@ -1193,7 +1205,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         // Check assignment type
         this.visit(obj.getExpr());
         if (!isAssignable(elementType, this.currType, obj.getExpr())) {
-            if (!byteRangeErrorIfNeeded(elementType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
+            if (!rangeErrorIfNeeded(elementType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                     "array element assignment")) {
                 if (!shortRangeErrorIfNeeded(elementType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                         "array element assignment")) {

@@ -60,6 +60,16 @@ public class ShortCompilerTest {
     }
 
     @Test
+    public void reportsShortRangeAcrossReturnArgumentAndArrayStore() throws Exception {
+        assertEquals("E3009", firstDiagnostic(analyze("ShortReturnRange",
+                "class ShortReturnRange { short value() { return 32768; } void main() {} }\n").semantic.getDiagnostics()).code());
+        assertEquals("E3009", firstDiagnostic(analyze("ShortArgumentRange",
+                "class ShortArgumentRange { void use(short value) {} void main() { use(32768); } }\n").semantic.getDiagnostics()).code());
+        assertEquals("E3009", firstDiagnostic(analyze("ShortElementRange",
+                "class ShortElementRange { void main() { short values[1]; values[0] = 32768; } }\n").semantic.getDiagnostics()).code());
+    }
+
+    @Test
     public void supportsShortArraysWithJvmShortArrayInstructions() throws Exception {
         Analysis analysis = analyze("ShortArray", "class ShortArray { void main() { short values[2]; values[0] = 12; printf(\"%d\", values[0]); } }\n");
         assertTrue(analysis.semantic.passOrNot());
