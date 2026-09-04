@@ -167,6 +167,11 @@ public class SemanticVisitor implements ISemanticVisitor {
     }
 
     @Override
+    public void visit(Ast.Type.Char obj) {
+        this.currType = obj;
+    }
+
+    @Override
     public void visit(Ast.Type.Long obj) {
         this.currType = obj;
     }
@@ -446,6 +451,8 @@ public class SemanticVisitor implements ISemanticVisitor {
             this.currType = new Ast.Type.Float();
         }else if(obj.getType() instanceof Ast.Type.Long){
             this.currType = new Ast.Type.Long();
+        }else if(obj.getType() instanceof Ast.Type.Char){
+            this.currType = new Ast.Type.Char();
         }else if(obj.getType() instanceof Ast.Type.Double){
             this.currType = new Ast.Type.Double();
         }else{
@@ -835,7 +842,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             return true;
         if(target.getKind() == TypeKind.DOUBLE && curr.getKind() == TypeKind.INT)
             return true;
-        if(target.getKind() == TypeKind.INT && (curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
+        if(target.getKind() == TypeKind.INT && (curr.getKind() == TypeKind.CHAR || curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
             return true;
         if(target.getKind() == TypeKind.FLOAT && (curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
             return true;
@@ -948,12 +955,12 @@ public class SemanticVisitor implements ISemanticVisitor {
             return false;
         }
         TypeKind kind = type.getKind();
-        return kind == TypeKind.INT || kind == TypeKind.BYTE || kind == TypeKind.SHORT || kind == TypeKind.LONG
+        return kind == TypeKind.INT || kind == TypeKind.CHAR || kind == TypeKind.BYTE || kind == TypeKind.SHORT || kind == TypeKind.LONG
                 || kind == TypeKind.FLOAT || kind == TypeKind.DOUBLE;
     }
 
     private boolean isIntegerLike(Ast.Type.T type) {
-        return type != null && (type.getKind() == TypeKind.INT || type.getKind() == TypeKind.BYTE || type.getKind() == TypeKind.SHORT
+        return type != null && (type.getKind() == TypeKind.INT || type.getKind() == TypeKind.CHAR || type.getKind() == TypeKind.BYTE || type.getKind() == TypeKind.SHORT
                 || type.getKind() == TypeKind.LONG);
     }
 

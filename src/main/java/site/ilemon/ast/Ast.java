@@ -366,7 +366,7 @@ public class Ast {
          * Type enum for type-safe comparisons (replacing toString().equals() checks).
          */
         public enum TypeKind {
-            INT, FLOAT, DOUBLE, BOOL, BYTE, SHORT, LONG, STRING, VOID,
+            INT, FLOAT, DOUBLE, BOOL, CHAR, BYTE, SHORT, LONG, STRING, VOID,
             INT_ARRAY, FLOAT_ARRAY, DOUBLE_ARRAY, BOOL_ARRAY, STRING_ARRAY, BYTE_ARRAY, SHORT_ARRAY, LONG_ARRAY
         }
 
@@ -456,6 +456,12 @@ public class Ast {
             public void accept(ISemanticVisitor v) {
                 v.visit(this);
             }
+        }
+
+        public non-sealed static class Char extends T {
+            @Override public TypeKind getKind() { return TypeKind.CHAR; }
+            @Override public String toString() { return "@char"; }
+            @Override public void accept(ISemanticVisitor v) { v.visit(this); }
         }
 
         public non-sealed static class Byte extends T {

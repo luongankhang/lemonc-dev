@@ -16,6 +16,7 @@ public enum TokenKind {
 		Bool,
 		Byte,
 		Short,
+		Char,
 		Long,
 		While,
 		For,
@@ -63,6 +64,7 @@ public enum TokenKind {
 		Id,
 		Num,
 		FloatLiteral,
+		CharLiteral,
 		Assign,
 		Unknown, PrintLine,
 

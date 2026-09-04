@@ -90,6 +90,12 @@ public String id;
             public String toString() { return "@short"; }
         }
 
+        public static class Char extends T {
+            public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
+            public TypeKind getKind() { return TypeKind.CHAR; }
+            public String toString() { return "@char"; }
+        }
+
         public static class Int extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 @Override

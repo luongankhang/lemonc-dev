@@ -105,6 +105,7 @@ public interface Visitor {
     void visit(Ast.Type.Bool obj);
     void visit(Ast.Type.Byte obj);
     void visit(Ast.Type.Short obj);
+    void visit(Ast.Type.Char obj);
     void visit(Ast.Type.ByteArray obj);
     void visit(Ast.Type.ShortArray obj);
     void visit(Ast.Type.LongArray obj);

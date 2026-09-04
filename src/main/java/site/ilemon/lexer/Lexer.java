@@ -38,6 +38,7 @@ public class Lexer {
         KEYWORDS.put("bool", TokenKind.Bool);
         KEYWORDS.put("byte", TokenKind.Byte);
         KEYWORDS.put("short", TokenKind.Short);
+        KEYWORDS.put("char", TokenKind.Char);
         KEYWORDS.put("long", TokenKind.Long);
         KEYWORDS.put("float", TokenKind.Float);
         KEYWORDS.put("double", TokenKind.Double);
@@ -287,6 +288,10 @@ public class Lexer {
                     SourceSpan.of(className, position, position, line, column, line, column));
         }
 
+        if (peek() == '\'') {
+            return lexCharLiteral(tokenStartOffset, line, column);
+        }
+
         LexerState state = LexerState.START;
         int startLine = line;
         int startColumn = column;
@@ -319,6 +324,41 @@ public class Lexer {
         String lexeme = source.substring(tokenStartOffset, endOffset);
         return makeToken(state, lexeme.toString(),
                 SourceSpan.of(className, tokenStartOffset, endOffset, startLine, startColumn, line, column));
+    }
+
+    private Token lexCharLiteral(int startOffset, int startLine, int startColumn) {
+        advance(); // opening quote
+        if (position >= source.length() || peek() == '\n' || peek() == '\0') {
+            throw lexicalError("unclosed character literal", startLine, startColumn);
+        }
+        char value;
+        if (peek() == '\\') {
+            advance();
+            if (position >= source.length()) {
+                throw lexicalError("unclosed character literal", startLine, startColumn);
+            }
+            char escape = peek();
+            advance();
+            value = switch (escape) {
+                case 'n' -> '\n';
+                case 'r' -> '\r';
+                case 't' -> '\t';
+                case '0' -> '\0';
+                case '\\' -> '\\';
+                case '\'' -> '\'';
+                case '"' -> '"';
+                default -> throw lexicalError("invalid character escape '" + escape + "'", startLine, startColumn);
+            };
+        } else {
+            value = peek();
+            advance();
+        }
+        if (position >= source.length() || peek() != '\'') {
+            throw lexicalError("character literal must contain exactly one character", startLine, startColumn);
+        }
+        advance();
+        return new Token(TokenKind.CharLiteral, Character.toString(value),
+                SourceSpan.of(className, startOffset, position, startLine, startColumn, line, column));
     }
     
     private TokenKind getTokenKindForState(LexerState state, String lexeme) {

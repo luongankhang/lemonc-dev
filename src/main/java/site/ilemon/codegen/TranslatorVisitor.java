@@ -295,7 +295,7 @@ public class TranslatorVisitor implements ISemanticVisitor {
     }
 
     private boolean isNumeric(Ast.Type.T type) {
-        return type instanceof Ast.Type.Int || type instanceof Ast.Type.Byte || type instanceof Ast.Type.Short || type instanceof Ast.Type.Long
+        return type instanceof Ast.Type.Int || type instanceof Ast.Type.Char || type instanceof Ast.Type.Byte || type instanceof Ast.Type.Short || type instanceof Ast.Type.Long
                 || type instanceof Ast.Type.Float || type instanceof Ast.Type.Double;
     }
 
@@ -310,13 +310,13 @@ public class TranslatorVisitor implements ISemanticVisitor {
     }
 
     private void emitConversion(Ast.Type.T from, Ast.Type.T to) {
-        if ((from instanceof Ast.Type.Int || from instanceof Ast.Type.Byte || from instanceof Ast.Type.Short) && to instanceof Ast.Type.Float) {
+        if ((from instanceof Ast.Type.Int || from instanceof Ast.Type.Char || from instanceof Ast.Type.Byte || from instanceof Ast.Type.Short) && to instanceof Ast.Type.Float) {
             emit(new Ast.Stmt.I2f());
             this.type = new Ast.Type.Float();
-        } else if ((from instanceof Ast.Type.Int || from instanceof Ast.Type.Byte || from instanceof Ast.Type.Short) && to instanceof Ast.Type.Double) {
+        } else if ((from instanceof Ast.Type.Int || from instanceof Ast.Type.Char || from instanceof Ast.Type.Byte || from instanceof Ast.Type.Short) && to instanceof Ast.Type.Double) {
             emit(new Ast.Stmt.I2d());
             this.type = new Ast.Type.Double();
-        } else if ((from instanceof Ast.Type.Int || from instanceof Ast.Type.Byte || from instanceof Ast.Type.Short) && to instanceof Ast.Type.Long) {
+        } else if ((from instanceof Ast.Type.Int || from instanceof Ast.Type.Char || from instanceof Ast.Type.Byte || from instanceof Ast.Type.Short) && to instanceof Ast.Type.Long) {
             emit(new Ast.Stmt.I2l());
             this.type = new Ast.Type.Long();
         } else if (from instanceof Ast.Type.Long && to instanceof Ast.Type.Float) {
@@ -388,6 +388,7 @@ public class TranslatorVisitor implements ISemanticVisitor {
         if (type instanceof Type.Int) return new Ast.Type.Int();
         if (type instanceof Type.Byte) return new Ast.Type.Byte();
         if (type instanceof Type.Short) return new Ast.Type.Short();
+        if (type instanceof Type.Char) return new Ast.Type.Char();
         if (type instanceof Type.Long) return new Ast.Type.Long();
         if (type instanceof Type.Float) return new Ast.Type.Float();
         if (type instanceof Type.Double) return new Ast.Type.Double();
@@ -689,7 +690,7 @@ public class TranslatorVisitor implements ISemanticVisitor {
         emitWideningConversion(toCodegenType(obj.getId().getType()));
 
         // Emit xstore index
-        if (obj.getId().getType() instanceof Type.Int || obj.getId().getType() instanceof Type.Byte || obj.getId().getType() instanceof Type.Short
+        if (obj.getId().getType() instanceof Type.Int || obj.getId().getType() instanceof Type.Char || obj.getId().getType() instanceof Type.Byte || obj.getId().getType() instanceof Type.Short
                 || obj.getId().getType() instanceof Type.Bool)
             emit(new Ast.Stmt.Istore(index));
         else if (obj.getId().getType() instanceof Type.Float)
@@ -705,7 +706,7 @@ public class TranslatorVisitor implements ISemanticVisitor {
     @Override
     public void visit(Expr.Id obj) {
         int index = lookupIndex(obj.getId());
-        if (obj.getType() instanceof Type.Int || obj.getType() instanceof Type.Byte || obj.getType() instanceof Type.Short) {
+        if (obj.getType() instanceof Type.Int || obj.getType() instanceof Type.Char || obj.getType() instanceof Type.Byte || obj.getType() instanceof Type.Short) {
             this.type = toCodegenType(obj.getType());
             emit(new Ast.Stmt.Iload(index));
         } else if (obj.getType() instanceof Type.Long) {
@@ -783,6 +784,9 @@ public class TranslatorVisitor implements ISemanticVisitor {
         } else if (obj.getType() instanceof Type.Short) {
             emit(new Ast.Stmt.Ldc(Integer.parseInt(obj.getValue().toString())));
             this.type = new Ast.Type.Short();
+        } else if (obj.getType() instanceof Type.Char) {
+            emit(new Ast.Stmt.Ldc(Integer.parseInt(obj.getValue().toString())));
+            this.type = new Ast.Type.Char();
         } else if (obj.getType() instanceof Type.Long) {
             emit(new Ast.Stmt.Ldc(java.lang.Long.parseLong(obj.getValue().toString())));
             this.type = new Ast.Type.Long();
@@ -844,6 +848,11 @@ public class TranslatorVisitor implements ISemanticVisitor {
     @Override
     public void visit(Type.Short obj) {
         this.type = new Ast.Type.Short();
+    }
+
+    @Override
+    public void visit(Type.Char obj) {
+        this.type = new Ast.Type.Char();
     }
 
     @Override
@@ -985,7 +994,7 @@ public class TranslatorVisitor implements ISemanticVisitor {
 
     private void emitPrintfValue(Expr.T expr) {
         this.visit(expr);
-        if (this.type instanceof Ast.Type.Int || this.type instanceof Ast.Type.Byte || this.type instanceof Ast.Type.Short) {
+        if (this.type instanceof Ast.Type.Int || this.type instanceof Ast.Type.Char || this.type instanceof Ast.Type.Byte || this.type instanceof Ast.Type.Short) {
             emit(new Ast.Stmt.Printf(new Ast.Type.Int(), null));
         } else if (this.type instanceof Ast.Type.Long) {
             emit(new Ast.Stmt.Printf(new Ast.Type.Long(), null));
@@ -1056,7 +1065,7 @@ public class TranslatorVisitor implements ISemanticVisitor {
             this.visit(obj.getExpr());
         }
         emitWideningConversion(this.currentMethodReturnType);
-        if (this.type.getKind() == TypeKind.INT || this.type.getKind() == TypeKind.BYTE || this.type.getKind() == TypeKind.SHORT
+        if (this.type.getKind() == TypeKind.INT || this.type.getKind() == TypeKind.CHAR || this.type.getKind() == TypeKind.BYTE || this.type.getKind() == TypeKind.SHORT
                 || this.type.getKind() == TypeKind.BOOL)
             emit(new Ast.Stmt.Ireturn());
         else if (this.type.getKind() == TypeKind.LONG)
