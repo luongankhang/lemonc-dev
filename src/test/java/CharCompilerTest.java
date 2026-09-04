@@ -72,7 +72,7 @@ public class CharCompilerTest {
         PrintStream quiet = new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8);
         try { System.setOut(quiet); System.setErr(quiet); jasmin.Main.main(new String[]{"-d", generator.getOutputDir().getPath(), generator.getOutputFile().getPath()}); }
         finally { System.setOut(oldOut); System.setErr(oldErr); quiet.close(); }
-        Process process = new ProcessBuilder(new File(new File(System.getProperty("java.home"), "bin"), "java.exe").getPath(), "-cp", generator.getOutputDir().getPath(), "CharRuntime").redirectErrorStream(true).start();
+        Process process = new ProcessBuilder(javaExecutable(), "-cp", generator.getOutputDir().getPath(), "CharRuntime").redirectErrorStream(true).start();
         assertTrue(process.waitFor(10, TimeUnit.SECONDS));
         assertEquals(0, process.exitValue());
         assertEquals("66", readAll(process.getInputStream()));
@@ -92,5 +92,9 @@ public class CharCompilerTest {
     private void delete(File file) throws Exception { Files.deleteIfExists(file.toPath()); Files.deleteIfExists(file.getParentFile().toPath()); }
     private Diagnostic first(List<Diagnostic> diagnostics) { assertFalse(diagnostics.isEmpty()); return diagnostics.get(0); }
     private String readAll(InputStream stream) throws Exception { ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] buffer = new byte[256]; int n; while ((n = stream.read(buffer)) != -1) out.write(buffer, 0, n); return out.toString(StandardCharsets.UTF_8); }
+    private String javaExecutable() {
+        String executable = System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java";
+        return new File(new File(System.getProperty("java.home"), "bin"), executable).getPath();
+    }
     private record Analysis(Ast.Program.T program, SemanticVisitor semantic) {}
 }

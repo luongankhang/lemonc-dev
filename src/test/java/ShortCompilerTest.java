@@ -103,7 +103,7 @@ public class ShortCompilerTest {
             System.setErr(originalErr);
             quiet.close();
         }
-        Process process = new ProcessBuilder(new File(new File(System.getProperty("java.home"), "bin"), "java.exe").getPath(),
+        Process process = new ProcessBuilder(javaExecutable(),
                 "-cp", generator.getOutputDir().getPath(), "ShortRuntime").redirectErrorStream(true).start();
         boolean completed = process.waitFor(10, TimeUnit.SECONDS);
         String output = readAll(process.getInputStream());
@@ -141,6 +141,11 @@ public class ShortCompilerTest {
             buffer.write(data, 0, read);
         }
         return buffer.toString(StandardCharsets.UTF_8);
+    }
+
+    private String javaExecutable() {
+        String executable = System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java";
+        return new File(new File(System.getProperty("java.home"), "bin"), executable).getPath();
     }
 
     private record Analysis(Ast.Program.T program, SemanticVisitor semantic) {}
