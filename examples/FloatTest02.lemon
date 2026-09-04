@@ -1,4 +1,3 @@
-class FloatTest02{
 	void main(){
         float b;
         b = getFloat1();
@@ -8,4 +7,3 @@ class FloatTest02{
 	float getFloat1(){
 	    return 0.9;
 	}
-}

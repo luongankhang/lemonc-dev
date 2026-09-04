@@ -1,4 +1,3 @@
-class ArrayParamTest {
     void setInt(int values[], int index, int value) {
         values[index] = value;
     }
@@ -55,4 +54,3 @@ class ArrayParamTest {
             printf("flag=%d\n", 0);
         }
     }
-}

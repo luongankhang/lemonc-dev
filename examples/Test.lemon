@@ -1,7 +1,6 @@
-class Test{
-	
+
 	void main(){
-		
+
 		// 圆周率
 		float pi;
 
@@ -15,4 +14,3 @@ class Test{
 		perimeter = pi*diameter;
 		printf("%f\n",perimeter);
 	}
-}

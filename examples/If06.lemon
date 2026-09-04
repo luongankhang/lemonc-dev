@@ -1,4 +1,3 @@
-class If06{
 	void main(){
         int a;
         if( !( 18 > 18 ) ){
@@ -50,4 +49,3 @@ class If06{
          }
          printf("a=%d\n",a); // 12
     }
-}

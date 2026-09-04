@@ -1,4 +1,3 @@
-class PrintfMixed {
     void main() {
         int i;
         float f;
@@ -8,4 +7,3 @@ class PrintfMixed {
         d = 2.25;
         printf("i=%d, f=%f, d=%f\n", i, f, d);
     }
-}

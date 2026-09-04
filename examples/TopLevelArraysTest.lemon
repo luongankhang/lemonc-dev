@@ -1,0 +1,6 @@
+void main() {
+    int values[2];
+    values[0] = 20;
+    values[1] = 22;
+    printf("array=%d,length=%d\n", values[0] + values[1], values.length);
+}

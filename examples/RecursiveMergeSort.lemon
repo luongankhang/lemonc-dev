@@ -1,4 +1,3 @@
-class RecursiveMergeSort {
     void merge(int arr[], int temp[], int left, int mid, int right) {
         int p1;
         int p2;
@@ -68,4 +67,3 @@ class RecursiveMergeSort {
         }
         printf("\n");
     }
-}

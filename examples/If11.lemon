@@ -1,4 +1,3 @@
-class If11{
 	void main(){
         int a;
         a = 19;
@@ -29,4 +28,3 @@ class If11{
     int getNum3(){
         return 10;
     }
-}

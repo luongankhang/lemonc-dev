@@ -1,4 +1,3 @@
-class CharTest {
     char identity(char value) {
         return value;
     }
@@ -10,4 +9,3 @@ class CharTest {
         promoted = letter + 1;
         printf("char=%d,escaped=%d,promoted=%d\n", letter, '\n', promoted);
     }
-}

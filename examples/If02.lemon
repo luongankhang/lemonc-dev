@@ -1,5 +1,4 @@
 // 测试：If条件表达式中数字，ID比较
-class If02{
 	void main(){
         int a;
         int b;
@@ -28,4 +27,3 @@ class If02{
 	int getInt(int b){
 	    return b;
 	}
-}

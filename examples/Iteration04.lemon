@@ -1,4 +1,3 @@
-class Iteration04{
 	void main(){
 		int start;
 		int sum;
@@ -14,4 +13,3 @@ class Iteration04{
 	int getNum(int i){
         return i;
 	}
-}

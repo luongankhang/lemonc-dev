@@ -1,4 +1,3 @@
-class BoolTest11{
 	void main(){
 	    bool a;
 	    int b;
@@ -16,4 +15,3 @@ class BoolTest11{
 	int rtNum(int i){
 	    return i;
 	}
-}

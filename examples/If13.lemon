@@ -1,5 +1,4 @@
 // 测试：if条件表达式bool方法调用
-class If13{
 	void main(){
         int a;
         bool b;
@@ -162,4 +161,3 @@ class If13{
             result = 0;
         return result;
     }
-}

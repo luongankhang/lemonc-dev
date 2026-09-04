@@ -1,8 +1,7 @@
-class Example05{
 	void main(){
 		int t;
 		t = showMulTable();
-	}	
+	}
 	// 打印九九乘法表
 	int showMulTable(){
 		int k;
@@ -13,4 +12,3 @@ class Example05{
 		}
 		return 0;
 	}
-}

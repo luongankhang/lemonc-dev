@@ -42,7 +42,19 @@ java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar examples/StringByteLo
 
 ## 2. Program Structure
 
-Every Lemon program consists of a single top-level `class` declaration whose name must match the source file name (without the `.lemon` extension). Execution begins at the static entrypoint method `void main()`.
+Every Lemon program may use the legacy single top-level `class` declaration, or declare functions directly at top level. In both forms execution begins at `void main()`; for class-free source the current JVM compatibility backend uses the source file name as its generated class identity.
+
+Class-free example: [examples/TopLevelFunctionsTest.lemon](../examples/TopLevelFunctionsTest.lemon)
+
+```c
+int add(int left, int right) {
+    return left + right;
+}
+
+void main() {
+    printf("top-level=%d\n", add(20, 22));
+}
+```
 
 Example: [examples/HelloWorld.lemon](../examples/HelloWorld.lemon)
 

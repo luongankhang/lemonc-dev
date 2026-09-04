@@ -1,5 +1,4 @@
 // 简单的方法调用
-class SimpleMethodCallTwo{
 	void main(){
 		int x;
 		int y;
@@ -12,4 +11,3 @@ class SimpleMethodCallTwo{
 	int call(int f,int m){
 		return (f+m)/2+7;
 	}
-}

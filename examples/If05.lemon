@@ -1,4 +1,3 @@
-class If05{
 	void main(){
 	   int a;
 	   if( 1+2 > 3){
@@ -14,4 +13,3 @@ class If05{
          a = 4;
        printf("a=%d",a);//3 error when write printf("a=%d",0);
 	}
-}

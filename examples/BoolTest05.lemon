@@ -1,5 +1,4 @@
 // 测试：bool 变量赋值（true,false,方法调用）
-class BoolTest05{
 	void main(){
 	    bool a;
 	    int b;
@@ -70,4 +69,3 @@ class BoolTest05{
     int getNum( int a){
         return a;
     }
-}

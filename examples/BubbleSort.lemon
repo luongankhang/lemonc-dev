@@ -1,12 +1,11 @@
 // 冒泡排序
-class BubbleSort {
     void main() {
         int arr[6];
         int i;
         int j;
         int temp;
         int n;
-        
+
         // 初始化数组
         arr[0] = 64;
         arr[1] = 34;
@@ -15,7 +14,7 @@ class BubbleSort {
         arr[4] = 22;
         arr[5] = 11;
         n = 6;
-        
+
         printf("排序前: %d\n", 0);
         i = 0;
         while (i < n) {
@@ -23,7 +22,7 @@ class BubbleSort {
             i = i + 1;
         }
         printLine();
-        
+
         // 冒泡排序
         i = 0;
         while (i < n - 1) {
@@ -38,7 +37,7 @@ class BubbleSort {
             }
             i = i + 1;
         }
-        
+
         printf("排序后: %d\n", 0);
         i = 0;
         while (i < n) {
@@ -47,4 +46,3 @@ class BubbleSort {
         }
         printLine();
     }
-}

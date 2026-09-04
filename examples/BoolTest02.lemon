@@ -1,4 +1,3 @@
-class BoolTest02{
     void main(){
         bool b1;
         bool b2;
@@ -46,4 +45,3 @@ class BoolTest02{
         }
         return rs;
     }
-}

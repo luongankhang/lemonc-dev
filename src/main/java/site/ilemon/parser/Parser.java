@@ -159,7 +159,7 @@ public class Parser {
 		Ast.MainClass.MainClassSingle mainClass;
 		ParseException firstFailure = null;
 		try {
-			mainClass = parseMainClass();
+			mainClass = look.kind == TokenKind.Class ? parseMainClass() : parseTopLevelProgram();
 		} catch (ParseException failure) {
 			firstFailure = failure;
 			synchronizeTo(TokenKind.EOF);
@@ -173,6 +173,15 @@ public class Parser {
 		}
 		Ast.Program.T programSingle = new Ast.Program.ProgramSingle(mainClass);
 		return programSingle;
+	}
+
+	// Top-level programs are represented internally by a synthetic container so
+	// existing semantic and backend phases remain source-compatible.
+	private Ast.MainClass.MainClassSingle parseTopLevelProgram() throws IOException {
+		ArrayList<Ast.Method.T> methods = parseMethodList();
+		if (methods.isEmpty()) error("program must declare at least one function");
+		if (look.kind != TokenKind.EOF) expected("EOF");
+		return new Ast.MainClass.MainClassSingle(lexer.getClassName(), null, methods);
 	}
 
 

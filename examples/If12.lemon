@@ -1,4 +1,3 @@
-class If12{
 	void main(){
         int a;
         if( 19 > 20 || 20 > 10 && 1 > 0 ){
@@ -9,4 +8,3 @@ class If12{
         }
         printf("a=%d",a);//100
     }
-}

@@ -1,4 +1,3 @@
-class BoolTest08{
 	void main(){
 	    int a;
         bool b1;
@@ -23,5 +22,4 @@ class BoolTest08{
 	}
 	bool testBoolCall2(){
         return false;
-    }
     }

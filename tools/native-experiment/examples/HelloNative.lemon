@@ -1,5 +1,4 @@
 // 简单的 Hello World 示例
-class HelloNative {
     void main() {
         int a;
         int b;
@@ -11,4 +10,3 @@ class HelloNative {
         printf("a = %d, b = %d\n", a, b);
         printf("a + b = %d\n", c);
     }
-}

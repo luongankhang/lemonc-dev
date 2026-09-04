@@ -1,4 +1,3 @@
-class ModTest {
     void main() {
         int a;
         int b;
@@ -8,4 +7,3 @@ class ModTest {
         c = 20 / 6 + 20 % 6;
         printf("a=%d,b=%d,c=%d\n", a, b, c);
     }
-}

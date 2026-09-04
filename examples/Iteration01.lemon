@@ -1,4 +1,3 @@
-class Iteration01{
 	void main(){
 		int start;
 		int sum;
@@ -27,4 +26,3 @@ class Iteration01{
 	bool checkCondition(int start,int end){
 	    return start < end;
 	}
-}

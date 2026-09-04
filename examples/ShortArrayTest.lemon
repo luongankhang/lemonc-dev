@@ -1,4 +1,3 @@
-class ShortArrayTest {
     short[] replace(short values[]) {
         values[1] = 32767;
         return values;
@@ -13,4 +12,3 @@ class ShortArrayTest {
         replace(values);
         printf("short-array=%d,%d,size=%d\n", values[0], values[1], size);
     }
-}

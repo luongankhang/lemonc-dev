@@ -1,5 +1,4 @@
 // 测试所有比较运算符: > < >= <= == !=
-class CompareTest{
     void main(){
         int a;
         int b;
@@ -83,4 +82,3 @@ class CompareTest{
         }
         printf("10 != 10 = %d\n", result); // 0
     }
-}

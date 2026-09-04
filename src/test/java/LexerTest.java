@@ -5,6 +5,8 @@ import site.ilemon.lexer.TokenKind;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 
 import static org.junit.Assert.*;
 
@@ -21,10 +23,10 @@ public class LexerTest {
         Lexer lexer = new Lexer(new File("examples/Cal.lemon"));
         lexer.lexicalAnalysis();
         
-        // Verify that the 'class' keyword is recognized
+        // Top-level examples begin with a function declaration.
         Token first = lexer.next();
-        assertEquals(TokenKind.Class, first.kind);
-        assertEquals("class", first.lexeme);
+        assertEquals(TokenKind.Void, first.kind);
+        assertEquals("void", first.lexeme);
     }
 
     @Test
@@ -33,17 +35,29 @@ public class LexerTest {
         lexer.lexicalAnalysis();
         
         // Check that tokens contain various keywords
-        boolean hasClass = false, hasVoid = false, hasFloat = false, hasReturn = false;
+        boolean hasVoid = false, hasFloat = false, hasReturn = false;
         for (Token t : lexer.tokens) {
-            if (t.kind == TokenKind.Class) hasClass = true;
             if (t.kind == TokenKind.Void) hasVoid = true;
             if (t.kind == TokenKind.Float) hasFloat = true;
             if (t.kind == TokenKind.Return) hasReturn = true;
         }
-        assertTrue("should recognize 'class' keyword", hasClass);
         assertTrue("should recognize 'void' keyword", hasVoid);
         assertTrue("should recognize 'float' keyword", hasFloat);
         assertTrue("should recognize 'return' keyword", hasReturn);
+    }
+
+    @Test
+    public void testClassKeywordRemainsAvailableForCompatibility() throws IOException {
+        java.nio.file.Path file = Files.createTempFile("lemonc-class-keyword", ".lemon");
+        Files.writeString(file, "class Legacy { void main() {} }\n", StandardCharsets.UTF_8);
+        try {
+            Lexer lexer = new Lexer(file.toFile());
+            lexer.lexicalAnalysis();
+            assertEquals(TokenKind.Class, lexer.tokens.get(0).kind);
+            assertEquals("class", lexer.tokens.get(0).lexeme);
+        } finally {
+            Files.deleteIfExists(file);
+        }
     }
 
     // ==================== Identifier Tests ====================
@@ -242,7 +256,7 @@ public class LexerTest {
         
         // Verify reasonable token count
         assertTrue("should produce multiple tokens", lexer.tokens.size() > 10);
-        assertEquals(TokenKind.Class, lexer.tokens.get(0).kind);
+        assertEquals(TokenKind.Void, lexer.tokens.get(0).kind);
         assertEquals(TokenKind.EOF, lexer.tokens.get(lexer.tokens.size() - 1).kind);
     }
 
@@ -296,7 +310,7 @@ public class LexerTest {
         Lexer lexer = new Lexer(new File("examples/FloatTest01.lemon"));
         lexer.lexicalAnalysis();
         assertTrue(lexer.tokens.size() > 10);
-        assertEquals(TokenKind.Class, lexer.tokens.get(0).kind);
+        assertEquals(TokenKind.Void, lexer.tokens.get(0).kind);
         assertEquals(TokenKind.EOF, lexer.tokens.get(lexer.tokens.size() - 1).kind);
     }
 }

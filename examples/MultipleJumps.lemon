@@ -1,11 +1,10 @@
-class MultipleJumps {
     void main() {
         int i;
         i = 0;
-        
+
         while (i < 10) {
             i = i + 1;
-            
+
             if (i == 1) {
                 continue; // skipped
             }
@@ -24,4 +23,3 @@ class MultipleJumps {
         }
         printf("End of multiple jumps. i=%d\n", i);
     }
-}

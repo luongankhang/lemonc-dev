@@ -91,6 +91,20 @@ The same example also demonstrates constant folding, algebraic simplification, b
 
 For the complete feature list with source code and real outputs, read [docs/LEMONC_FEATURES.md](docs/LEMONC_FEATURES.md).
 
+Programs may declare functions directly at top level; the legacy `class` wrapper remains supported:
+
+```c
+int add(int left, int right) {
+    return left + right;
+}
+
+void main() {
+    printf("%d\n", add(20, 22));
+}
+```
+
+See [examples/TopLevelFunctionsTest.lemon](examples/TopLevelFunctionsTest.lemon) and [examples/TopLevelArraysTest.lemon](examples/TopLevelArraysTest.lemon).
+
 ## Compiler Architecture
 
 ```mermaid
@@ -308,7 +322,8 @@ class Demo {
 ## Grammar Snapshot
 
 ```bnf
-<program>       ::= "class" <id> "{" <method>* "}"
+<program>       ::= <method>*
+                  | "class" <id> "{" <method>* "}"
 <method>        ::= <type> <id> "(" <params>? ")" "{" <varDecl>* <stmt>* "}"
                   | "void" "main" "(" ")" "{" <varDecl>* <stmt>* "}"
 <params>        ::= <type> <id> ("," <type> <id>)*

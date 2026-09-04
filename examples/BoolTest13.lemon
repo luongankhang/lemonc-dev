@@ -1,4 +1,3 @@
-class BoolTest13{
 	void main(){
         int a;
         bool b1;
@@ -20,4 +19,3 @@ class BoolTest13{
 	float getFloat1(){
 	    return 0.9;
 	}
-}

@@ -1,4 +1,3 @@
-class LanguageFeatureTest {
     float addOne(float x) {
         return x + 1;
     }
@@ -37,4 +36,3 @@ class LanguageFeatureTest {
         arr[2] = 3;
         printf("arr=%d\n", arr[1]);
     }
-}

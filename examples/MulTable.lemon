@@ -1,12 +1,11 @@
 // 打印九九乘法表
-class MulTable{
 	void main(){
 		int k;
 		k = showMulTable();
 		printLine();
 		showMulTable();
 	}
-	
+
 	int showMulTable(){
 		int k;
 		int t;
@@ -15,7 +14,7 @@ class MulTable{
 		//while(k < 10 ){
 		while(k < 2*5 ){
 			t = 1;
-			while(t < 10 ){				
+			while(t < 10 ){
 				printf("%d*%d=%d\t",k,t,k*t);
 				t = t + 1;
 			}
@@ -24,4 +23,3 @@ class MulTable{
 		}
 		return 0;
 	}
-}

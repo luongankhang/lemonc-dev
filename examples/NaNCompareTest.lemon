@@ -1,4 +1,3 @@
-class NaNCompareTest {
     void main() {
         float fzero;
         float fnan;
@@ -47,4 +46,3 @@ class NaNCompareTest {
         if (result) { out = 1; } else { out = 0; }
         printf("dbl_neq=%d\n", out);
     }
-}

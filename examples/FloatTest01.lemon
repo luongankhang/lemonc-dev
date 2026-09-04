@@ -1,7 +1,6 @@
 
 // 测试
 // 浮点型
-class FloatTest01{
 
     // main
 	void main(){
@@ -34,5 +33,3 @@ class FloatTest01{
     float div(float num1,float num2){
         return num1 / num2;
     }
-
-}

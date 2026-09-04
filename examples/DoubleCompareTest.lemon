@@ -1,4 +1,3 @@
-class DoubleCompareTest {
     void main() {
         double a;
         double b;
@@ -24,4 +23,3 @@ class DoubleCompareTest {
             printf("if=0\n");
         }
     }
-}

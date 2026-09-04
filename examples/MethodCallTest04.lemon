@@ -1,4 +1,3 @@
-class MethodCallTest04{
 	void main(){
         int a;
         bool c;
@@ -47,4 +46,3 @@ class MethodCallTest04{
         printf("进入getFloat方法，返回值=%f\n",a);
         return a;
 	}
-}

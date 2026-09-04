@@ -1,4 +1,3 @@
-class Gauss{
 	void main(){
 		int start;
 		int end;
@@ -8,9 +7,8 @@ class Gauss{
 		result = sum(start,end);//调用求和方法sum，计算1加到100的和
 		printf("%d加到%d的和是%d",start,end,result);
 	}
-	
+
 	int sum(int start,int end){
 		printf("起始数字是：%d,结束数字是：%d\n",start,end);
 		return (start + end ) * (end - start + 1) / 2;
 	}
-}

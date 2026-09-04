@@ -1,4 +1,3 @@
-class StringByteLongArrays {
     int lengths(string names[], byte bytes[], long values[]) {
         return names.length + bytes.length + values.length;
     }
@@ -25,4 +24,3 @@ class StringByteLongArrays {
         makeNames();
         printf("array-lengths=%d\n", total);
     }
-}

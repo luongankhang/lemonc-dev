@@ -1,0 +1,7 @@
+int add(int left, int right) {
+    return left + right;
+}
+
+void main() {
+    printf("top-level=%d\n", add(20, 22));
+}

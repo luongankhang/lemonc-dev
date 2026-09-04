@@ -1,8 +1,6 @@
-class Example01{
 	// 程序入口
 	void main(){
 		int number;
 		number = 19;
 		printf("number的值是%d\n",number);
 	}
-}

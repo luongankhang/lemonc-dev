@@ -1,4 +1,3 @@
-class Iteration02{
 	void main(){
 		int start;
 		int sum;
@@ -10,4 +9,3 @@ class Iteration02{
         }
         printf("1到100之和是：%d\n",sum);//0
 	}
-}

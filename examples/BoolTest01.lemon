@@ -1,5 +1,4 @@
 // 测试：if条件表达式中true,false
-class BoolTest01{
 	void main(){
         int a;
 		if( true ){
@@ -52,7 +51,3 @@ class BoolTest01{
          }
         printf("a=%d\n",a);// 12
 	}
-
-}
-
-

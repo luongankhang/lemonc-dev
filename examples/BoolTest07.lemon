@@ -1,4 +1,3 @@
-class BoolTest07{
 	void main(){
 	    int a;
         bool b1;
@@ -41,5 +40,3 @@ class BoolTest07{
     bool testBoolCall6(){
         return !(testBoolCall4() || testBoolCall() && testBoolCall2());// false
     }
-
-}

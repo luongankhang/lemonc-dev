@@ -1,4 +1,3 @@
-class MergeSortTest {
     int min(int a, int b) {
         int res;
         if (a < b) {
@@ -45,7 +44,7 @@ class MergeSortTest {
                 left = i;
                 mid = i + sz - 1;
                 right = min(i + sz * 2 - 1, n - 1);
-                
+
                 // Merge arr[left..mid] and arr[mid+1..right] into temp[left..right]
                 p1 = left;
                 p2 = mid + 1;
@@ -87,4 +86,3 @@ class MergeSortTest {
         }
         printf("\n");
     }
-}

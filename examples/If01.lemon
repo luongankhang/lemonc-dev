@@ -1,7 +1,6 @@
 
 
 // 测试：If条件表达式中数字比较
-class If01{
 	void main(){
 	    int a;
         if( 19 < 18 ) {
@@ -35,4 +34,3 @@ class If01{
 
         printf("a=%d\n",a); // 21
 	}
-}

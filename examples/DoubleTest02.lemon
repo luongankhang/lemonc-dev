@@ -1,5 +1,4 @@
 // 测试 double 类型运算
-class DoubleTest02 {
     void main() {
         double a;
         double b;
@@ -11,4 +10,3 @@ class DoubleTest02 {
         printf("b=%f\n", b);
         printf("c=%f\n", c);
     }
-}

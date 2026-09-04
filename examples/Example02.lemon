@@ -1,4 +1,3 @@
-class Example02{
 	// 程序入口:计算斐波那契数
 	void main(){
 		int month;
@@ -18,6 +17,5 @@ class Example02{
 			i = i + 1;
 		}
 		printf("哈哈,%d个月后有%d对兔子\n",month,count);
-		
+
 	}
-}

@@ -1,4 +1,3 @@
-class SemanticFail {
     void main() {
         int i;
         i = 1;
@@ -6,4 +5,3 @@ class SemanticFail {
             break;
         }
     }
-}

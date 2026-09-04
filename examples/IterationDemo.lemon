@@ -1,4 +1,3 @@
-class IterationDemo{
 	void main(){
 		int k;
 		k = iteration();
@@ -32,7 +31,7 @@ class IterationDemo{
     int getInt(int i){
         return i;
     }
-	
+
 	int iteration(){
 		int k;
 		k = 1;
@@ -42,4 +41,3 @@ class IterationDemo{
 		}
 		return 0;
 	}
-}

@@ -1,4 +1,3 @@
-class SimpleMethodCallThree{
 	void main(){
 		float x;
 		float y;
@@ -13,4 +12,3 @@ class SimpleMethodCallThree{
 		rs = (f+m+13.0)/2.0+7.5;
 		return rs;
 	}
-}

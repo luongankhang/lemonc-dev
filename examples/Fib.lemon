@@ -1,4 +1,3 @@
-class Fib{
 	void main(){
 		int k;
 		int n;
@@ -18,7 +17,7 @@ class Fib{
 		}
 		return rs;
 	}
-	
+
 	// 循环计算斐波那契数列
 	int fibByIterator(int month){
 		int fm;
@@ -37,4 +36,3 @@ class Fib{
 		}
 		return count;
 	}
-}

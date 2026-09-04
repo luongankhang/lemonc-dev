@@ -1,4 +1,3 @@
-class CharArrayTest {
     char[] replace(char values[]) {
         values[1] = '\n';
         return values;
@@ -13,4 +12,3 @@ class CharArrayTest {
         replace(values);
         printf("char-array=%d,%d,size=%d\n", values[0], values[1], size);
     }
-}

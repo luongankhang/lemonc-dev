@@ -42,6 +42,35 @@ public class LemonCCliTest {
     }
 
     @Test
+    public void testRunTopLevelMainWithoutClassWrapper() throws Exception {
+        Path sourceFile = temporaryFolder.getRoot().toPath().resolve("TopLevel.lemon");
+        Files.writeString(sourceFile, "void main() { int x; x = 123; printf(\"%d\", x); }", StandardCharsets.UTF_8);
+        ByteArrayOutputStream outContent = new ByteArrayOutputStream();
+        ByteArrayOutputStream errContent = new ByteArrayOutputStream();
+
+        int exitCode = LemonC.run(new String[]{sourceFile.toString()},
+                new PrintStream(outContent), new PrintStream(errContent));
+
+        assertEquals(0, exitCode);
+        assertTrue("top-level compilation failed: " + errContent, errContent.toString().isEmpty());
+    }
+
+    @Test
+    public void testRunTopLevelFunctionsAndArraySyntax() throws Exception {
+        Path sourceFile = temporaryFolder.getRoot().toPath().resolve("TopLevelFunctions.lemon");
+        Files.writeString(sourceFile,
+                "int add(int left, int right) { return left + right; }\n"
+                        + "void main() { int values[2]; values[0] = 20; values[1] = 22; printf(\"%d,%d\", add(values[0], values[1]), values.length); }\n",
+                StandardCharsets.UTF_8);
+        ByteArrayOutputStream errors = new ByteArrayOutputStream();
+
+        int exitCode = LemonC.run(new String[]{sourceFile.toString()},
+                new PrintStream(new ByteArrayOutputStream()), new PrintStream(errors));
+
+        assertEquals("top-level function compilation failed: " + errors, 0, exitCode);
+    }
+
+    @Test
     public void testRunWithVerboseOption() throws Exception {
         // Setup
         Path tempDir = temporaryFolder.getRoot().toPath();

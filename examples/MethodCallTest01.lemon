@@ -1,4 +1,3 @@
-class MethodCallTest01{
 	void main(){
         int sum;
         float num;
@@ -20,11 +19,3 @@ class MethodCallTest01{
 	float addFloat(float a,float b){
         return a + b;
     }
-}
-
-
-
-
-
-
-

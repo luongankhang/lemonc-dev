@@ -1,5 +1,4 @@
 // 测试Not
-class If07{
 	void main(){
         int a;
         if( !( 29 > 18 ) && !(5 > 1) ){
@@ -16,4 +15,3 @@ class If07{
         }
         printf("a=%d\n",a); //2
     }
-}

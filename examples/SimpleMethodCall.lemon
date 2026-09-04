@@ -1,5 +1,4 @@
 // 简单的方法调用
-class SimpleMethodCall{
 	void main(){
 		int x;
 		int y;
@@ -12,4 +11,3 @@ class SimpleMethodCall{
 	int call(int f,int m){
 		return f+m;
 	}
-}

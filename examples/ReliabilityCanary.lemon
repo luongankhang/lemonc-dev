@@ -1,4 +1,3 @@
-class ReliabilityCanary {
     void main() {
         int i;
         int sum;
@@ -100,4 +99,3 @@ class ReliabilityCanary {
     void mark() {
         printf("void-call\n");
     }
-}

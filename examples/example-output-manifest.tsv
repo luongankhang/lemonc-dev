@@ -90,3 +90,5 @@ CharArrayTest	Y2hhci1hcnJheT02NSwxMCxzaXplPTIK
 CharTest	Y2hhcj02NSxlc2NhcGVkPTEwLHByb21vdGVkPTY2Cg==
 ShortArrayTest	c2hvcnQtYXJyYXk9LTMyNzY4LDMyNzY3LHNpemU9Mgo=
 ShortTest	c2hvcnQ9LTMyNzY4LHByb21vdGVkPTAK
+TopLevelArraysTest	YXJyYXk9NDIsbGVuZ3RoPTIK
+TopLevelFunctionsTest	dG9wLWxldmVsPTQyCg==

@@ -1,4 +1,3 @@
-class HelloWorld {
     void main() {
         int a;
         int b;
@@ -10,4 +9,3 @@ class HelloWorld {
     int add(int x, int y) {
         return x + y;
     }
-}

@@ -1,5 +1,4 @@
 // 测试：If条件表达式中数字
-class BoolTest03{
 	void main(){
 	    int a;
         if( !( 1 < 0 ) && !( 10 > 9 )  ){
@@ -37,4 +36,3 @@ class BoolTest03{
         }
         printf("a=%d\n",a);// 16
 	}
-}
