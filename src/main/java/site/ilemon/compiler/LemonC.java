@@ -13,6 +13,7 @@ import site.ilemon.lexer.Token;
 import site.ilemon.optimizer.AstOptimizer;
 import site.ilemon.parser.Parser;
 import site.ilemon.semantic.SemanticVisitor;
+import site.ilemon.arc.OwnershipAnalyzer;
 
 import java.io.File;
 import java.io.IOException;
@@ -86,6 +87,13 @@ public class LemonC {
 
             Ast.Program.T optimizedProgram = new AstOptimizer().optimize(program);
 
+            if (options.dumpArc) {
+                out.println("== ARC ==");
+                for (var operation : new OwnershipAnalyzer().analyze(optimizedProgram).operations()) {
+                    out.println(operation);
+                }
+            }
+
             TranslatorVisitor translator = new TranslatorVisitor();
             translator.visit(optimizedProgram);
             if (options.dumpIr) {
@@ -148,7 +156,7 @@ public class LemonC {
     }
 
     private static void usage(PrintStream err) {
-        err.println("usage: java -jar LemonC.jar <source.lemon> [--dump-tokens] [--dump-ast] [--dump-ir] [--verbose]");
+        err.println("usage: java -jar LemonC.jar <source.lemon> [--dump-tokens] [--dump-ast] [--dump-ir] [--dump-arc] [--verbose]");
     }
 
     private static final class CompilerOptions {
@@ -156,6 +164,7 @@ public class LemonC {
         private boolean dumpTokens;
         private boolean dumpAst;
         private boolean dumpIr;
+        private boolean dumpArc;
         private boolean verbose;
 
         private CompilerOptions(String sourcePath) {
@@ -174,6 +183,8 @@ public class LemonC {
                     options.dumpAst = true;
                 } else if ("--dump-ir".equals(args[i])) {
                     options.dumpIr = true;
+                } else if ("--dump-arc".equals(args[i])) {
+                    options.dumpArc = true;
                 } else if ("--verbose".equals(args[i])) {
                     options.verbose = true;
                 } else {
