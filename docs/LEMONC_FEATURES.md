@@ -29,7 +29,7 @@ java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar examples/HelloWorld.l
 java HelloWorld
 ```
 
-Teaching and inspection flags:
+Inspection and debugging flags:
 
 ```bash
 java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar examples/StringByteLongArrays.lemon \
@@ -706,7 +706,7 @@ Current Test Baseline:
 
 ## 18. Current Language Boundaries
 
-The following limitations are deliberate architectural boundaries for LemonC as a teaching-oriented compiler:
+The following limitations are deliberate architectural boundaries for LemonC as a production-oriented compiler project:
 
 | Boundary | Description |
 |---|---|

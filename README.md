@@ -1,10 +1,10 @@
 # LemonC
 
-**LemonC is a teaching-oriented C-like compiler written in Java.**
+**LemonC is a production-focused C-like compiler written in Java.**
 
 It compiles Lemon source code to real JVM `.class` files through lexical analysis, recursive descent parsing, semantic analysis, AST optimization, backpatching-based control-flow translation, Jasmin assembly, and bytecode generation.
 
-LemonC 是一个面向编译原理教学与实践的小型 C-like 编译器。它不是只停留在 AST 或三地址码展示层，而是把 `.lemon` 源程序真正编译成 JVM 字节码，并用 JVM 执行结果做端到端回归验证。
+LemonC 是一个面向实际编译器工程实践的 C-like 编译器。它不仅能生成和检查中间表示，也能把 `.lemon` 源程序真正编译成 JVM 字节码，并用 JVM 运行结果做端到端回归验证。
 
 <p align="center">
   <img src="./docs/assets/lemonc-pipeline.png" alt="LemonC compiler pipeline" width="100%">
@@ -20,14 +20,14 @@ Java 21 | Maven | JVM bytecode | 257 tests passing | 92 examples | MIT License
 |---|---|
 | Complete compiler pipeline | Lexer, parser, semantic analyzer, optimizer, IR translator, bytecode generator |
 | Real JVM execution | Examples compile to `.class` and run on a standard JVM |
-| Classic compiler theory | Recursive descent parsing, Visitor-based semantic analysis, backpatching, stack-machine codegen |
-| Teaching-friendly visibility | CLI can dump tokens, AST, and JVM IR |
-| Regression confidence | 88 example programs are checked against real JVM stdout |
-| Small enough to read | A compact codebase for students who want to understand a whole compiler |
+| Compiler engineering fundamentals | Recursive descent parsing, Visitor-based semantic analysis, backpatching, stack-machine codegen |
+| Developer-friendly inspection | CLI can dump tokens, AST, and JVM IR |
+| Regression confidence | Example programs are checked against real JVM stdout |
+| Compact and maintainable | A focused codebase for understanding and extending a full compiler |
 
 ## At A Glance
 
-The whole project is intentionally small enough to read, but complete enough to demonstrate a real compiler pipeline from source code to JVM execution.
+The project is intentionally small enough to reason about, but complete enough to demonstrate a real compiler pipeline from source code to JVM execution in a maintainable form.
 
 ## 30-Second Demo
 
@@ -135,7 +135,7 @@ flowchart TB
 | `site.ilemon.optimizer` | `AstOptimizer` | Perform safe AST-level simplifications |
 | `site.ilemon.codegen` | `TranslatorVisitor`, `ByteCodeGenerator` | Translate AST to JVM IR and write Jasmin assembly |
 | `site.ilemon.codegen.ast` | `Ast`, `Label` | Define backend JVM instruction-level IR |
-| `site.ilemon.compiler` | `LemonC`, `AstPrinter`, `IrPrinter` | CLI entrypoint and teaching-friendly dumps |
+| `site.ilemon.compiler` | `LemonC`, `AstPrinter`, `IrPrinter` | CLI entrypoint and developer-facing diagnostics/dumps |
 
 ## Backpatching In Action
 
@@ -177,7 +177,7 @@ E1 && E2:
   E.falseList = merge(E1.falseList, E2.falseList)
 ```
 
-This makes the project useful for students studying syntax-directed translation and control-flow generation.
+This makes the project useful for compiler engineers studying syntax-directed translation and control-flow generation.
 
 ## JVM Output Is Tested, Not Assumed
 
@@ -388,18 +388,18 @@ LemonC intentionally keeps the language small:
 | Multi-line comments | Not part of the current language definition |
 | Block scope | Blocks do not introduce independent local scopes |
 | String variables | Strings are primarily `printf` literals |
-| Object model | Top-level function teaching language, not full Java |
+| Object model | Top-level function language focused on compiler/runtime correctness, not full Java |
 
 ## Roadmap
 
-The codebase now has enough substance for a serious teaching compiler. The next milestones are:
+The codebase now has enough substance for a serious production-oriented compiler project. The next milestones are:
 
 1. Keep GitHub Actions green and show a real CI badge.
 2. Publish `v0.2.0` release with a ready-to-run jar.
 3. Add an English tutorial: "Build a JVM compiler from scratch with LemonC".
 4. Add visual snapshots of token, AST, and IR dumps.
 5. Add CFG/data-flow optimization as the next advanced chapter.
-6. Add GitHub topics: `compiler`, `compiler-design`, `jvm`, `bytecode`, `parser`, `semantic-analysis`, `backpatching`, `teaching`.
+6. Add GitHub topics: `compiler`, `compiler-design`, `jvm`, `bytecode`, `parser`, `semantic-analysis`, `backpatching`, `language-runtime`.
 
 ## License
 

@@ -12,7 +12,8 @@ compile-time safety, ownership verification, and the foundation for native C low
 
 ## 1. Scope and Managed Values
 
-LemonC is currently a top-level function teaching language. It has no user-created
+LemonC is currently a top-level function language focused on compiler and runtime
+correctness in a compact production-oriented pipeline. It has no user-created
 class instances, structs, fields, pointers, references, or explicit `new` and
 `delete` expressions. The minimum useful ARC scope is therefore:
 
@@ -37,7 +38,7 @@ language design, not an implicit extension of this pass.
 ## 2. Ownership Model
 
 The initial model uses **copy-on-assign with retain-on-store**. This is simpler
-than move semantics, matches ordinary teaching-language assignment, and makes
+than move semantics, matches ordinary managed-language assignment semantics, and makes
 the ownership invariant local and inspectable.
 
 ### Strong references
@@ -113,7 +114,7 @@ reference category and reject unsupported strong cycles in semantic analysis.
 This is preferable to silently leaking or pretending ARC is a tracing GC.
 
 Reference counting adds retain/release overhead. That cost is accepted for the
-educational and correctness goals of the first implementation. Later passes
+correctness and maintainability goals of the first implementation. Later passes
 may remove redundant operations when proven safe.
 
 ## 5. Compiler Representation
