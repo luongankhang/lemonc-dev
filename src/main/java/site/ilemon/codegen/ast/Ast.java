@@ -84,6 +84,12 @@ public String id;
             public String toString() { return "@byte"; }
         }
 
+        public static class Short extends T {
+            public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
+            public TypeKind getKind() { return TypeKind.SHORT; }
+            public String toString() { return "@short"; }
+        }
+
         public static class Int extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 @Override
@@ -162,6 +168,12 @@ public String id;
             public TypeKind getKind() { return TypeKind.BYTE_ARRAY; }
             @Override
             public String toString() { return "@byte[]"; }
+        }
+
+        public static class ShortArray extends T {
+            public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
+            public TypeKind getKind() { return TypeKind.SHORT_ARRAY; }
+            public String toString() { return "@short[]"; }
         }
 
         public static class LongArray extends T {
@@ -642,12 +654,20 @@ public Type.T elementType;
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
         }
 
+        public static class Saload extends T {
+            public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
+        }
+
         // Store into boolean array: bastore
         public static class Bastore extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
 }
 
         public static class Lastore extends T {
+            public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
+        }
+
+        public static class Sastore extends T {
             public void accept(site.ilemon.codegen.Visitor v) { v.visit(this); }
         }
 

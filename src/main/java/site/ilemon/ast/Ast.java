@@ -366,8 +366,8 @@ public class Ast {
          * Type enum for type-safe comparisons (replacing toString().equals() checks).
          */
         public enum TypeKind {
-            INT, FLOAT, DOUBLE, BOOL, BYTE, LONG, STRING, VOID,
-            INT_ARRAY, FLOAT_ARRAY, DOUBLE_ARRAY, BOOL_ARRAY, STRING_ARRAY, BYTE_ARRAY, LONG_ARRAY
+            INT, FLOAT, DOUBLE, BOOL, BYTE, SHORT, LONG, STRING, VOID,
+            INT_ARRAY, FLOAT_ARRAY, DOUBLE_ARRAY, BOOL_ARRAY, STRING_ARRAY, BYTE_ARRAY, SHORT_ARRAY, LONG_ARRAY
         }
 
         public sealed abstract static class T{
@@ -467,6 +467,15 @@ public class Ast {
             public void accept(ISemanticVisitor v) { v.visit(this); }
         }
 
+        public non-sealed static class Short extends T {
+            @Override
+            public TypeKind getKind() { return TypeKind.SHORT; }
+            @Override
+            public String toString() { return "@short"; }
+            @Override
+            public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
         public non-sealed static class Long extends T {
             @Override
             public TypeKind getKind() { return TypeKind.LONG; }
@@ -501,6 +510,20 @@ public class Ast {
             public TypeKind getKind() { return TypeKind.BYTE_ARRAY; }
             @Override
             public String toString() { return "@byte[]"; }
+            @Override
+            public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        public non-sealed static class ShortArray extends T {
+            private int size;
+            public int getSize() { return this.size; }
+            public void setSize(int size) { this.size = size; }
+            public ShortArray() { this.size = -1; }
+            public ShortArray(int size) { this.size = size; }
+            @Override
+            public TypeKind getKind() { return TypeKind.SHORT_ARRAY; }
+            @Override
+            public String toString() { return "@short[]"; }
             @Override
             public void accept(ISemanticVisitor v) { v.visit(this); }
         }

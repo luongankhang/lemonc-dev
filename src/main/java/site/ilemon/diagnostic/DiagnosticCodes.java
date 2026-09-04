@@ -26,6 +26,7 @@ public final class DiagnosticCodes {
     public static final String TYPE_FORMAT = "E3006";
     public static final String TYPE_INDEX = "E3007";
     public static final String TYPE_BYTE_RANGE = "E3008";
+    public static final String TYPE_SHORT_RANGE = "E3009";
 
     public static final String MODULE_NOT_FOUND = "E4001";
     public static final String GENERIC_ERROR = "E5001";

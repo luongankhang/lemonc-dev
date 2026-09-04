@@ -489,6 +489,9 @@ public class AstOptimizer {
         if (number.getType().getKind() == TypeKind.LONG) {
             return Long.valueOf(value.toString());
         }
+        if (number.getType().getKind() == TypeKind.SHORT) {
+            return Integer.valueOf(value.toString());
+        }
         if (number.getType().getKind() == TypeKind.FLOAT) {
             return Float.valueOf(value.toString());
         }

@@ -38,6 +38,7 @@ public interface ISemanticVisitor {
 	void visit(Ast.Type.T obj);
 	void visit(Ast.Type.Bool obj);
 	void visit(Ast.Type.Byte obj);
+	void visit(Ast.Type.Short obj);
 	void visit(Ast.Type.Long obj);
 	void visit(Ast.Type.Float obj);
 	void visit(Ast.Type.Double obj);
@@ -47,6 +48,7 @@ public interface ISemanticVisitor {
 	void visit(Ast.Type.Int obj);
 	void visit(Ast.Type.IntArray obj);
 	void visit(Ast.Type.ByteArray obj);
+	void visit(Ast.Type.ShortArray obj);
 	void visit(Ast.Type.LongArray obj);
 	void visit(Ast.Type.FloatArray obj);
 	void visit(Ast.Type.DoubleArray obj);

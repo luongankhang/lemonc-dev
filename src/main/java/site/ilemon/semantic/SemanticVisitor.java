@@ -162,6 +162,11 @@ public class SemanticVisitor implements ISemanticVisitor {
     }
 
     @Override
+    public void visit(Ast.Type.Short obj) {
+        this.currType = obj;
+    }
+
+    @Override
     public void visit(Ast.Type.Long obj) {
         this.currType = obj;
     }
@@ -188,9 +193,12 @@ public class SemanticVisitor implements ISemanticVisitor {
             if (!isAssignable(targetType, exprType, obj.getExpr())) {
                 if (!byteRangeErrorIfNeeded(targetType, exprType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                         "assignment to '" + obj.getId().getId() + "'")) {
-                    typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(targetType), typeName(exprType),
-                            expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(),
-                            "assignment to '" + obj.getId().getId() + "'", null);
+                    if (!shortRangeErrorIfNeeded(targetType, exprType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
+                            "assignment to '" + obj.getId().getId() + "'")) {
+                        typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(targetType), typeName(exprType),
+                                expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(),
+                                "assignment to '" + obj.getId().getId() + "'", null);
+                    }
                 }
             }
         }
@@ -827,14 +835,14 @@ public class SemanticVisitor implements ISemanticVisitor {
             return true;
         if(target.getKind() == TypeKind.DOUBLE && curr.getKind() == TypeKind.INT)
             return true;
-        if(target.getKind() == TypeKind.INT && curr.getKind() == TypeKind.BYTE)
+        if(target.getKind() == TypeKind.INT && (curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
             return true;
-        if(target.getKind() == TypeKind.FLOAT && curr.getKind() == TypeKind.BYTE)
+        if(target.getKind() == TypeKind.FLOAT && (curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
             return true;
-        if(target.getKind() == TypeKind.DOUBLE && curr.getKind() == TypeKind.BYTE)
+        if(target.getKind() == TypeKind.DOUBLE && (curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
             return true;
         if(target.getKind() == TypeKind.LONG
-                && (curr.getKind() == TypeKind.INT || curr.getKind() == TypeKind.BYTE))
+                && (curr.getKind() == TypeKind.INT || curr.getKind() == TypeKind.BYTE || curr.getKind() == TypeKind.SHORT))
             return true;
         if(target.getKind() == TypeKind.FLOAT && curr.getKind() == TypeKind.LONG)
             return true;
@@ -848,6 +856,11 @@ public class SemanticVisitor implements ISemanticVisitor {
                 && actual != null && actual.getKind() == TypeKind.INT) {
             Long value = byteLiteralValue(expression);
             return value != null && value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE;
+        }
+        if (target != null && target.getKind() == TypeKind.SHORT
+                && actual != null && actual.getKind() == TypeKind.INT) {
+            Long value = integralLiteralValue(expression);
+            return value != null && value >= java.lang.Short.MIN_VALUE && value <= java.lang.Short.MAX_VALUE;
         }
         return isMatch(target, actual);
     }
@@ -871,6 +884,28 @@ public class SemanticVisitor implements ISemanticVisitor {
     }
 
     private Long byteLiteralValue(Ast.Expr.T expression) {
+        return integralLiteralValue(expression);
+    }
+
+    private boolean shortRangeErrorIfNeeded(Ast.Type.T target, Ast.Type.T actual, Ast.Expr.T expression,
+                                            int lineNum, site.ilemon.util.SourceSpan span, String context) {
+        if (target == null || target.getKind() != TypeKind.SHORT
+                || actual == null || actual.getKind() != TypeKind.INT) {
+            return false;
+        }
+        Long value = integralLiteralValue(expression);
+        if (value != null && (value < java.lang.Short.MIN_VALUE || value > java.lang.Short.MAX_VALUE)) {
+            site.ilemon.util.SourceSpan primarySpan = span != null ? span : expression.getSpan();
+            semanticError(DiagnosticCodes.TYPE_SHORT_RANGE,
+                    "short literal is out of range: expected -32768..32767, but found " + value,
+                    lineNum, primarySpan, context, "short is a signed 16-bit type",
+                    "use a value between -32768 and 32767");
+            return true;
+        }
+        return false;
+    }
+
+    private Long integralLiteralValue(Ast.Expr.T expression) {
         if (expression instanceof Ast.Expr.Number number
                 && number.getType().getKind() == TypeKind.INT) {
             try {
@@ -913,12 +948,12 @@ public class SemanticVisitor implements ISemanticVisitor {
             return false;
         }
         TypeKind kind = type.getKind();
-        return kind == TypeKind.INT || kind == TypeKind.BYTE || kind == TypeKind.LONG
+        return kind == TypeKind.INT || kind == TypeKind.BYTE || kind == TypeKind.SHORT || kind == TypeKind.LONG
                 || kind == TypeKind.FLOAT || kind == TypeKind.DOUBLE;
     }
 
     private boolean isIntegerLike(Ast.Type.T type) {
-        return type != null && (type.getKind() == TypeKind.INT || type.getKind() == TypeKind.BYTE
+        return type != null && (type.getKind() == TypeKind.INT || type.getKind() == TypeKind.BYTE || type.getKind() == TypeKind.SHORT
                 || type.getKind() == TypeKind.LONG);
     }
 
@@ -930,7 +965,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         return kind == TypeKind.INT_ARRAY || kind == TypeKind.FLOAT_ARRAY
                 || kind == TypeKind.DOUBLE_ARRAY || kind == TypeKind.BOOL_ARRAY
                 || kind == TypeKind.STRING_ARRAY || kind == TypeKind.BYTE_ARRAY
-                || kind == TypeKind.LONG_ARRAY;
+                || kind == TypeKind.SHORT_ARRAY || kind == TypeKind.LONG_ARRAY;
     }
 
     /**
@@ -1010,6 +1045,11 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Type.ByteArray obj) {
+        this.currType = obj;
+    }
+
+    @Override
+    public void visit(Ast.Type.ShortArray obj) {
         this.currType = obj;
     }
 
@@ -1143,8 +1183,11 @@ public class SemanticVisitor implements ISemanticVisitor {
         if (!isAssignable(elementType, this.currType, obj.getExpr())) {
             if (!byteRangeErrorIfNeeded(elementType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                     "array element assignment")) {
-                typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(elementType), typeName(this.currType),
-                        expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(), "array element assignment", null);
+                if (!shortRangeErrorIfNeeded(elementType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
+                        "array element assignment")) {
+                    typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(elementType), typeName(this.currType),
+                            expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(), "array element assignment", null);
+                }
             }
         }
     }
@@ -1155,6 +1198,8 @@ public class SemanticVisitor implements ISemanticVisitor {
             return new Ast.Type.Int();
         } else if (arrayType instanceof Ast.Type.ByteArray) {
             return new Ast.Type.Byte();
+        } else if (arrayType instanceof Ast.Type.ShortArray) {
+            return new Ast.Type.Short();
         } else if (arrayType instanceof Ast.Type.LongArray) {
             return new Ast.Type.Long();
         } else if (arrayType instanceof Ast.Type.FloatArray) {

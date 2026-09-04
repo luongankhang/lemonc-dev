@@ -289,11 +289,11 @@ public class ByteCodeGenerator implements Visitor {
 
         if (stmt instanceof Ast.Stmt.Newarray) return deltas(-1, 1);
         if (stmt instanceof Ast.Stmt.Iaload || stmt instanceof Ast.Stmt.Faload
-                || stmt instanceof Ast.Stmt.Baload || stmt instanceof Ast.Stmt.Aaload) return deltas(-2, 1);
+                || stmt instanceof Ast.Stmt.Baload || stmt instanceof Ast.Stmt.Saload || stmt instanceof Ast.Stmt.Aaload) return deltas(-2, 1);
         if (stmt instanceof Ast.Stmt.Laload) return deltas(-2, 2);
         if (stmt instanceof Ast.Stmt.Daload) return deltas(-2, 2);
         if (stmt instanceof Ast.Stmt.Iastore || stmt instanceof Ast.Stmt.Fastore
-                || stmt instanceof Ast.Stmt.Bastore || stmt instanceof Ast.Stmt.Aastore) return deltas(-3);
+                || stmt instanceof Ast.Stmt.Bastore || stmt instanceof Ast.Stmt.Sastore || stmt instanceof Ast.Stmt.Aastore) return deltas(-3);
         if (stmt instanceof Ast.Stmt.Lastore) return deltas(-4);
         if (stmt instanceof Ast.Stmt.Dastore) return deltas(-4);
         if (stmt instanceof Ast.Stmt.Arraylength) return deltas(-1, 1);
@@ -369,6 +369,7 @@ public class ByteCodeGenerator implements Visitor {
         return switch (type.getKind()) {
             case INT, BOOL -> "I";
             case BYTE -> "B";
+            case SHORT -> "S";
             case LONG -> "J";
             case FLOAT -> "F";
             case DOUBLE -> "D";
@@ -376,6 +377,7 @@ public class ByteCodeGenerator implements Visitor {
             case STRING -> "Ljava/lang/String;";
             case INT_ARRAY -> "[I";
             case BYTE_ARRAY -> "[B";
+            case SHORT_ARRAY -> "[S";
             case LONG_ARRAY -> "[J";
             case FLOAT_ARRAY -> "[F";
             case DOUBLE_ARRAY -> "[D";
@@ -602,7 +604,7 @@ public class ByteCodeGenerator implements Visitor {
 
     @Override
     public void visit(Ast.Stmt.Printf obj) {
-        if( obj.exprType.getKind() == TypeKind.INT || obj.exprType.getKind() == TypeKind.BYTE){
+        if( obj.exprType.getKind() == TypeKind.INT || obj.exprType.getKind() == TypeKind.BYTE || obj.exprType.getKind() == TypeKind.SHORT){
             this.iwriteln("getstatic java/lang/System/out Ljava/io/PrintStream;");
             this.iwriteln("swap");
             this.iwriteln("invokevirtual java/io/PrintStream/print(I)V");
@@ -745,6 +747,11 @@ public class ByteCodeGenerator implements Visitor {
     }
 
     @Override
+    public void visit(Ast.Type.Short obj) {
+        this.write("S");
+    }
+
+    @Override
     public void visit(Ast.Type.Long obj) {
         this.write("J");
     }
@@ -774,6 +781,11 @@ public class ByteCodeGenerator implements Visitor {
     }
 
     @Override
+    public void visit(Ast.Type.ShortArray obj) {
+
+    }
+
+    @Override
     public void visit(Ast.Type.LongArray obj) {
 
     }
@@ -789,6 +801,7 @@ public class ByteCodeGenerator implements Visitor {
         String type = switch (s.elementType) {
             case Ast.Type.Int i -> "int";
             case Ast.Type.Byte b -> "byte";
+            case Ast.Type.Short shortType -> "short";
             case Ast.Type.Long l -> "long";
             case Ast.Type.Float f -> "float";
             case Ast.Type.Double d -> "double";
@@ -827,12 +840,22 @@ public class ByteCodeGenerator implements Visitor {
         this.iwriteln("baload");
     }
 
+    @Override
+    public void visit(Ast.Stmt.Saload s) {
+        this.iwriteln("saload");
+    }
+
     public void visit(Ast.Stmt.Laload s) {
         this.iwriteln("laload");
     }
 
     public void visit(Ast.Stmt.Bastore s) {
         this.iwriteln("bastore");
+    }
+
+    @Override
+    public void visit(Ast.Stmt.Sastore s) {
+        this.iwriteln("sastore");
     }
 
     public void visit(Ast.Stmt.Lastore s) {
