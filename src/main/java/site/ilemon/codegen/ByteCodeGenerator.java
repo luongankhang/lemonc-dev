@@ -289,11 +289,11 @@ public class ByteCodeGenerator implements Visitor {
 
         if (stmt instanceof Ast.Stmt.Newarray) return deltas(-1, 1);
         if (stmt instanceof Ast.Stmt.Iaload || stmt instanceof Ast.Stmt.Faload
-                || stmt instanceof Ast.Stmt.Baload || stmt instanceof Ast.Stmt.Saload || stmt instanceof Ast.Stmt.Aaload) return deltas(-2, 1);
+                || stmt instanceof Ast.Stmt.Baload || stmt instanceof Ast.Stmt.Saload || stmt instanceof Ast.Stmt.Caload || stmt instanceof Ast.Stmt.Aaload) return deltas(-2, 1);
         if (stmt instanceof Ast.Stmt.Laload) return deltas(-2, 2);
         if (stmt instanceof Ast.Stmt.Daload) return deltas(-2, 2);
         if (stmt instanceof Ast.Stmt.Iastore || stmt instanceof Ast.Stmt.Fastore
-                || stmt instanceof Ast.Stmt.Bastore || stmt instanceof Ast.Stmt.Sastore || stmt instanceof Ast.Stmt.Aastore) return deltas(-3);
+                || stmt instanceof Ast.Stmt.Bastore || stmt instanceof Ast.Stmt.Sastore || stmt instanceof Ast.Stmt.Castore || stmt instanceof Ast.Stmt.Aastore) return deltas(-3);
         if (stmt instanceof Ast.Stmt.Lastore) return deltas(-4);
         if (stmt instanceof Ast.Stmt.Dastore) return deltas(-4);
         if (stmt instanceof Ast.Stmt.Arraylength) return deltas(-1, 1);
@@ -379,6 +379,7 @@ public class ByteCodeGenerator implements Visitor {
             case INT_ARRAY -> "[I";
             case BYTE_ARRAY -> "[B";
             case SHORT_ARRAY -> "[S";
+            case CHAR_ARRAY -> "[C";
             case LONG_ARRAY -> "[J";
             case FLOAT_ARRAY -> "[F";
             case DOUBLE_ARRAY -> "[D";
@@ -792,6 +793,11 @@ public class ByteCodeGenerator implements Visitor {
     }
 
     @Override
+    public void visit(Ast.Type.CharArray obj) {
+
+    }
+
+    @Override
     public void visit(Ast.Type.LongArray obj) {
 
     }
@@ -808,6 +814,7 @@ public class ByteCodeGenerator implements Visitor {
             case Ast.Type.Int i -> "int";
             case Ast.Type.Byte b -> "byte";
             case Ast.Type.Short shortType -> "short";
+            case Ast.Type.Char c -> "char";
             case Ast.Type.Long l -> "long";
             case Ast.Type.Float f -> "float";
             case Ast.Type.Double d -> "double";
@@ -851,6 +858,11 @@ public class ByteCodeGenerator implements Visitor {
         this.iwriteln("saload");
     }
 
+    @Override
+    public void visit(Ast.Stmt.Caload s) {
+        this.iwriteln("caload");
+    }
+
     public void visit(Ast.Stmt.Laload s) {
         this.iwriteln("laload");
     }
@@ -862,6 +874,11 @@ public class ByteCodeGenerator implements Visitor {
     @Override
     public void visit(Ast.Stmt.Sastore s) {
         this.iwriteln("sastore");
+    }
+
+    @Override
+    public void visit(Ast.Stmt.Castore s) {
+        this.iwriteln("castore");
     }
 
     public void visit(Ast.Stmt.Lastore s) {

@@ -343,6 +343,8 @@ public class Parser {
 			return new Ast.Type.ByteArray(size);
 		} else if (baseType instanceof Ast.Type.Short) {
 			return new Ast.Type.ShortArray(size);
+		} else if (baseType instanceof Ast.Type.Char) {
+			return new Ast.Type.CharArray(size);
 		} else if (baseType instanceof Ast.Type.Long) {
 			return new Ast.Type.LongArray(size);
 		} else if (baseType instanceof Ast.Type.Float) {
