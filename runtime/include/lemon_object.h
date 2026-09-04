@@ -23,8 +23,8 @@ struct lemon_object {
 };
 
 void lemon_object_init(lemon_object *object, const lemon_type_info *type);
-void lemon_retain(lemon_object *object);
-void lemon_release(lemon_object *object);
+void lemon_retain(void *object);
+void lemon_release(void *object);
 size_t lemon_retain_count(const lemon_object *object);
 void lemon_destroy(lemon_object *object);
 

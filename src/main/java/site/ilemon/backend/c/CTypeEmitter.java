@@ -17,10 +17,17 @@ public final class CTypeEmitter {
             case DOUBLE -> "double";
             case VOID -> "void";
             case STRING -> "const char*";
-            case ARRAY -> emit(type.elementType()) + "*";
+            case ARRAY -> "lemon_array*";
             case POINTER -> emit(type.elementType()) + "*";
             case REFERENCE -> emit(type.elementType()) + "*";
             case STRUCT, ENUM -> "lemon_opaque_t";
         };
+    }
+
+    public String emitElement(IrType type) {
+        if (type == null || type.elementType() == null) {
+            return "void";
+        }
+        return emit(type.elementType());
     }
 }

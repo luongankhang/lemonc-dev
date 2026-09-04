@@ -1,4 +1,4 @@
-#include "include/lemon_runtime.h"
+#include "lemon_runtime.h"
 #include "src/memory.c"
 #include "src/error.c"
 #include "src/object.c"

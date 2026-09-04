@@ -19,6 +19,9 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -129,6 +132,66 @@ public class LemonC {
                 }
             }
 
+            if ("c".equalsIgnoreCase(options.target) || options.emitC) {
+                site.ilemon.ir.AstToIrLowerer lowerer = new site.ilemon.ir.AstToIrLowerer();
+                site.ilemon.ir.IrModule irModule = lowerer.lower(optimizedProgram);
+                site.ilemon.backend.c.CBackend cBackend = new site.ilemon.backend.c.CBackend();
+                String cSource = cBackend.generate(irModule);
+
+                Path cPath = null;
+                if (options.emitC) {
+                    if (options.outputPath != null && options.outputPath.endsWith(".c")) {
+                        cPath = Path.of(options.outputPath);
+                    } else {
+                        cPath = Path.of(options.sourcePath.replaceAll("\\.lemon$", ".c"));
+                    }
+                    if (cPath.toAbsolutePath().getParent() != null) {
+                        Files.createDirectories(cPath.toAbsolutePath().getParent());
+                    }
+                    Files.writeString(cPath, cSource, StandardCharsets.UTF_8);
+                    if (options.verbose) {
+                        out.println("Wrote C source to: " + cPath);
+                    }
+                }
+
+                if ("c".equalsIgnoreCase(options.target)) {
+                    if (cPath == null) {
+                        cPath = Path.of(options.sourcePath.replaceAll("\\.lemon$", ".c"));
+                        if (cPath.toAbsolutePath().getParent() != null) {
+                            Files.createDirectories(cPath.toAbsolutePath().getParent());
+                        }
+                        Files.writeString(cPath, cSource, StandardCharsets.UTF_8);
+                    }
+                    Path exePath;
+                    if (options.outputPath != null && !options.outputPath.endsWith(".c")) {
+                        exePath = Path.of(options.outputPath);
+                    } else {
+                        String base = options.sourcePath.replaceAll("\\.lemon$", "");
+                        exePath = Path.of(base);
+                    }
+
+                    site.ilemon.backend.c.NativeToolchain toolchain = site.ilemon.backend.c.NativeToolchain.discover();
+                    Path runtimeSource = Path.of("runtime", "lemon_runtime.c");
+                    if (!Files.exists(runtimeSource)) {
+                        runtimeSource = Path.of(System.getProperty("user.dir"), "runtime", "lemon_runtime.c");
+                    }
+                    try {
+                        Path compiledExe = toolchain.compile(cPath, runtimeSource, exePath);
+                        if (options.verbose) {
+                            out.println("Native compilation succeeded: " + compiledExe);
+                        }
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        err.println("compile failed: native build interrupted");
+                        return 1;
+                    }
+                    return 0;
+                }
+                if (options.emitC && !"jvm".equalsIgnoreCase(options.target)) {
+                    return 0;
+                }
+            }
+
             TranslatorVisitor translator = new TranslatorVisitor();
             translator.visit(optimizedProgram);
             if (options.dumpIr) {
@@ -191,7 +254,7 @@ public class LemonC {
     }
 
     private static void usage(PrintStream err) {
-        err.println("usage: java -jar LemonC.jar <source.lemon> [--dump-tokens] [--dump-ast] [--dump-ir] [--dump-arc] [--arc] [--arc-verify] [--arc-analysis] [--arc-debug] [--verbose]");
+        err.println("usage: java -jar LemonC.jar <source.lemon> [--target <jvm|c>] [--emit-c] [-o <output>] [--dump-tokens] [--dump-ast] [--dump-ir] [--dump-arc] [--arc] [--arc-verify] [--arc-analysis] [--arc-debug] [--verbose]");
     }
 
     private static final class CompilerOptions {
@@ -205,6 +268,9 @@ public class LemonC {
         private boolean arcAnalysis;
         private boolean arcDebug;
         private boolean verbose;
+        private String target = "jvm";
+        private boolean emitC;
+        private String outputPath;
 
         private CompilerOptions(String sourcePath) {
             this.sourcePath = sourcePath;
@@ -235,6 +301,25 @@ public class LemonC {
                     options.arcDebug = true;
                 } else if ("--verbose".equals(args[i])) {
                     options.verbose = true;
+                } else if ("--target".equals(args[i])) {
+                    if (i + 1 >= args.length) {
+                        err.println("error: --target requires an argument (jvm or c)");
+                        return null;
+                    }
+                    String t = args[++i];
+                    if (!"jvm".equalsIgnoreCase(t) && !"c".equalsIgnoreCase(t)) {
+                        err.println("error: unknown target - " + t + " (supported: jvm, c)");
+                        return null;
+                    }
+                    options.target = t.toLowerCase();
+                } else if ("--emit-c".equals(args[i])) {
+                    options.emitC = true;
+                } else if ("-o".equals(args[i]) || "--output".equals(args[i])) {
+                    if (i + 1 >= args.length) {
+                        err.println("error: " + args[i] + " requires an argument");
+                        return null;
+                    }
+                    options.outputPath = args[++i];
                 } else {
                     err.println("error: unknown option - " + args[i]);
                     return null;
