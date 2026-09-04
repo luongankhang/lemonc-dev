@@ -72,13 +72,15 @@ a=15,b=27,add=42
 
 ## 3. Type System
 
-LemonC features a static, strongly typed type system supporting 8 primitive/scalar types and 7 one-dimensional array types:
+LemonC features a static, strongly typed type system supporting 10 primitive/scalar types and 9 one-dimensional array types:
 
 ### 3.1. Primitive Types
 
 | Type | Keyword | Size / JVM Representation | JVM Descriptor | Description & Operations |
 |---|---|---|---|---|
 | `byte` | `byte` | 8-bit signed integer (`-128` to `127`) | `B` | Stored in 32-bit JVM operand stack slots; enforces static range validation on integer literals; promotes to `int`. |
+| `short` | `short` | 16-bit signed integer (`-32768` to `32767`) | `S` | Stored as a JVM integer category-1 value; enforces static range validation on literals; promotes to `int`. |
+| `char` | `char` | 16-bit unsigned character code unit (`0` to `65535`) | `C` | Character literals and escapes are stored as JVM integer category-1 values; promotes to `int`. |
 | `int` | `int` | 32-bit signed two's complement integer | `I` | Standard integer arithmetic (`+`, `-`, `*`, `/`, `%`, unary `-`), comparisons, bitwise checks. |
 | `long` | `long` | 64-bit signed two's complement integer | `J` | 64-bit arithmetic (`ladd`, `lsub`, `lmul`, `ldiv`, `lrem`, `lneg`), comparisons (`lcmp`), occupies 2 local variable slots. |
 | `float` | `float` | 32-bit IEEE 754 single-precision float | `F` | Floating-point arithmetic, floating comparisons (`fcmpl`/`fcmpg`) with IEEE 754 NaN handling. |
@@ -107,6 +109,11 @@ LemonC features a static, strongly typed type system supporting 8 primitive/scal
 - **Slot Allocation**: Requires 2 local variable slots in method frames (`.limit locals`) and 2 operand stack words.
 - **Methods & I/O**: Functions can accept and return `long`. Printed via `printf("%d", val)`.
 
+#### `short` and `char`
+- `short` accepts decimal literals in `[-32768, 32767]`; out-of-range literals produce `E3009 (TYPE_SHORT_RANGE)`.
+- `char` uses single-quoted C-like literals, including `\n`, `\r`, `\t`, `\0`, `\\`, `\'`, and `\"`, with code-unit range `0..65535`.
+- Both types are distinct in the type checker and promote to `int` in numeric expressions; they are printed with `%d`.
+
 #### `string` / `String`
 - Both `string` and `String` keywords are accepted interchangeably.
 - Represents string constants such as `"Hello World\n"`.
@@ -124,6 +131,8 @@ LemonC supports 1-dimensional, statically sized arrays for all major types.
 |---|---|---|---|---|---|
 | `int[]` | `int` | `int arr[size];` | `[I` | `newarray int` | `iaload` / `iastore` |
 | `byte[]` | `byte` | `byte arr[size];` | `[B` | `newarray byte` | `baload` / `bastore` |
+| `short[]` | `short` | `short arr[size];` | `[S` | `newarray short` | `saload` / `sastore` |
+| `char[]` | `char` | `char arr[size];` | `[C` | `newarray char` | `caload` / `castore` |
 | `long[]` | `long` | `long arr[size];` | `[J` | `newarray long` | `laload` / `lastore` |
 | `float[]` | `float` | `float arr[size];` | `[F` | `newarray float` | `faload` / `fastore` |
 | `double[]` | `double` | `double arr[size];` | `[D` | `newarray double` | `daload` / `dastore` |
@@ -137,6 +146,8 @@ LemonC supports 1-dimensional, statically sized arrays for all major types.
    ```c
    int numbers[10];
    byte rawData[16];
+   short measurements[4];
+   char letters[3];
    long timestamps[4];
    float coords[3];
    double matrix[8];
@@ -159,6 +170,9 @@ LemonC supports 1-dimensional, statically sized arrays for all major types.
    numbers[0] = 42;
    rawData[0] = -128;
    rawData[1] = 127;
+   measurements[0] = -32768;
+   letters[0] = 'A';
+   letters[1] = '\n';
    timestamps[0] = 9223372036854775807;
    flags[0] = true;
    names[0] = "Alice";
@@ -242,7 +256,7 @@ void main() {
 LemonC supports safe, automatic numeric widening conversions following standard computer arithmetic rules:
 
 ```text
-byte  ──►  int  ──►  long  ──►  float  ──►  double
+byte / short / char  ──►  int  ──►  long  ──►  float  ──►  double
 ```
 
 ### Conversion Matrix
@@ -250,6 +264,7 @@ byte  ──►  int  ──►  long  ──►  float  ──►  double
 | Source Type | Promotes To | JVM Instruction Emitted |
 |---|---|---|
 | `byte` | `int` | Implicit (shared operand representation) |
+| `short` / `char` | `int` | Implicit (shared operand representation) |
 | `byte` / `int` | `long` | `i2l` |
 | `byte` / `int` | `float` | `i2f` |
 | `byte` / `int` | `double` | `i2d` |
@@ -481,7 +496,7 @@ class MethodDemo {
 LemonC provides built-in I/O methods:
 
 ### Format Specifiers in `printf`
-- `%d`: Prints integer values (`int`, `byte`, `long`) or boolean values (`1`/`0`).
+- `%d`: Prints integer values (`byte`, `short`, `char`, `int`, `long`) or boolean values (`1`/`0`).
 - `%f`: Prints floating-point values (`float`, `double`).
 - `\n`: Newline character.
 - `\t`: Tab character.
@@ -684,8 +699,8 @@ mvn test
 ```
 
 Current Test Baseline:
-- **241 Automated Tests Passing** (0 failures, 0 errors).
-- **88 Root Example Programs** compiled to `.class` files, executed on a real JVM, and verified byte-for-byte against `examples/example-output-manifest.tsv`.
+- **257 Automated Tests Passing** (0 failures, 0 errors).
+- **92 Root Example Programs** compiled to `.class` files, executed on a real JVM, and verified byte-for-byte against `examples/example-output-manifest.tsv`.
 
 ---
 

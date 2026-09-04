@@ -1,0 +1,16 @@
+class CharArrayTest {
+    char[] replace(char values[]) {
+        values[1] = '\n';
+        return values;
+    }
+
+    void main() {
+        char values[2];
+        int size;
+        values[0] = 'A';
+        values[1] = '\t';
+        size = values.length;
+        replace(values);
+        printf("char-array=%d,%d,size=%d\n", values[0], values[1], size);
+    }
+}

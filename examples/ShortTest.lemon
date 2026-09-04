@@ -1,0 +1,13 @@
+class ShortTest {
+    short identity(short value) {
+        return value;
+    }
+
+    void main() {
+        short value;
+        int promoted;
+        value = -32768;
+        promoted = identity(value) + 32768;
+        printf("short=%d,promoted=%d\n", value, promoted);
+    }
+}

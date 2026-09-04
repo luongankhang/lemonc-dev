@@ -11,7 +11,7 @@ LemonC 是一个面向编译原理教学与实践的小型 C-like 编译器。�
 </p>
 
 ```text
-Java 21 | Maven | JVM bytecode | 241 tests passing | 88 examples | MIT License
+Java 21 | Maven | JVM bytecode | 257 tests passing | 92 examples | MIT License
 ```
 
 ## Why LemonC
@@ -77,15 +77,15 @@ The same example also demonstrates constant folding, algebraic simplification, b
 
 | Category | Features |
 |---|---|
-| Types | `byte`, `int`, `long`, `float`, `double`, `bool`, `string`, `void` |
-| Arrays | `int[]`, `byte[]`, `long[]`, `float[]`, `double[]`, `bool[]`, `string[]`, indexed access, indexed assignment, `.length` |
+| Types | `byte`, `short`, `char`, `int`, `long`, `float`, `double`, `bool`, `string`, `void` |
+| Arrays | `int[]`, `byte[]`, `short[]`, `char[]`, `long[]`, `float[]`, `double[]`, `bool[]`, `string[]`, indexed access, indexed assignment, `.length` |
 | Arithmetic | `+`, `-`, `*`, `/`, `%`, unary `-` |
-| Numeric widening | `byte -> int -> long -> float -> double` |
+| Numeric widening | `byte/short/char -> int -> long -> float -> double` |
 | Comparison | `>`, `<`, `>=`, `<=`, `==`, `!=` |
 | Boolean logic | `true`, `false`, `!`, `&&`, `||`, short-circuit control flow |
 | Control flow | `if/else`, `while`, `for`, `break`, `continue`, nested loops |
 | Methods | parameters, return values, `void` methods, recursive calls, expression calls |
-| Output | `printf`, `printLine`, `%d`, `%f`, `\n`, `\t` |
+| Output | `printf`, `printLine`, `%d` (including `byte`, `short`, `char`, `int`, `long`), `%f`, `\n`, `\t` |
 | Optimization | constant folding, boolean folding, algebraic simplification, constant branch simplification |
 | Diagnostics | parse and semantic exceptions with source line context |
 
@@ -314,7 +314,7 @@ class Demo {
 <params>        ::= <type> <id> ("," <type> <id>)*
 <varDecl>       ::= <type> <id> ";"
                   | <type> <id> "[" <integer> "]" ";"
-<type>          ::= "int" | "float" | "double" | "bool" | "void"
+<type>          ::= "byte" | "short" | "char" | "int" | "long" | "float" | "double" | "bool" | "string" | "void"
 <stmt>          ::= <id> "=" <expr> ";"
                   | <id> "[" <expr> "]" "=" <expr> ";"
                   | <id> "(" <args>? ")" ";"

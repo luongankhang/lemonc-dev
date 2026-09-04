@@ -1,0 +1,13 @@
+class CharTest {
+    char identity(char value) {
+        return value;
+    }
+
+    void main() {
+        char letter;
+        int promoted;
+        letter = identity('A');
+        promoted = letter + 1;
+        printf("char=%d,escaped=%d,promoted=%d\n", letter, '\n', promoted);
+    }
+}
