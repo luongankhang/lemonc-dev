@@ -4,7 +4,7 @@ import java.util.Objects;
 
 /** Backend-independent type model for LemonIR. */
 public record IrType(Kind kind, IrType elementType, int addressSpace) {
-    public enum Kind { BOOL, CHAR, BYTE, SHORT, INT, LONG, FLOAT, DOUBLE, ARRAY, STRUCT, ENUM, POINTER, REFERENCE, VOID }
+    public enum Kind { BOOL, CHAR, BYTE, SHORT, INT, LONG, FLOAT, DOUBLE, STRING, ARRAY, STRUCT, ENUM, POINTER, REFERENCE, VOID }
     public IrType {
         Objects.requireNonNull(kind, "kind");
         if (kind == Kind.ARRAY && elementType == null) throw new IllegalArgumentException("array element type is required");
