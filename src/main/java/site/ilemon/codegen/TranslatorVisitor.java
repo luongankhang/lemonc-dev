@@ -300,9 +300,7 @@ public class TranslatorVisitor implements ISemanticVisitor {
     }
 
     private Ast.Type.T promotedNumericType(Ast.Type.T left, Ast.Type.T right) {
-        if (!isNumeric(left) || !isNumeric(right)) {
-            return left;
-        }
+        if (!isNumeric(left) || !isNumeric(right)) return null;
         if (left instanceof Ast.Type.Double || right instanceof Ast.Type.Double) return new Ast.Type.Double();
         if (left instanceof Ast.Type.Float || right instanceof Ast.Type.Float) return new Ast.Type.Float();
         if (left instanceof Ast.Type.Long || right instanceof Ast.Type.Long) return new Ast.Type.Long();

@@ -63,6 +63,7 @@ public class ByteCodeGenerator implements Visitor {
 
     @Override
     public void visit(Ast.Program.ProgramSingle program) {
+        IrVerifier.verify(program);
         this.visit(program.mainClass);
     }
 

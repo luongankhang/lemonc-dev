@@ -7,6 +7,7 @@ import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.diagnostic.DiagnosticCodes;
 import site.ilemon.diagnostic.DiagnosticEngine;
 import site.ilemon.visitor.ISemanticVisitor;
+import site.ilemon.type.TypeRules;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -947,33 +948,15 @@ public class SemanticVisitor implements ISemanticVisitor {
     }
 
     private Ast.Type.T promoteNumeric(Ast.Type.T left, Ast.Type.T right) {
-        if (!isNumberType(left) || !isNumberType(right)) {
-            return null;
-        }
-        if (left.getKind() == TypeKind.DOUBLE || right.getKind() == TypeKind.DOUBLE) {
-            return new Ast.Type.Double();
-        }
-        if (left.getKind() == TypeKind.FLOAT || right.getKind() == TypeKind.FLOAT) {
-            return new Ast.Type.Float();
-        }
-        if (left.getKind() == TypeKind.LONG || right.getKind() == TypeKind.LONG) {
-            return new Ast.Type.Long();
-        }
-        return new Ast.Type.Int();
+        return TypeRules.promotedNumericType(left, right);
     }
 
     private boolean isNumberType(Ast.Type.T type) {
-        if (type == null) {
-            return false;
-        }
-        TypeKind kind = type.getKind();
-        return kind == TypeKind.INT || kind == TypeKind.CHAR || kind == TypeKind.BYTE || kind == TypeKind.SHORT || kind == TypeKind.LONG
-                || kind == TypeKind.FLOAT || kind == TypeKind.DOUBLE;
+        return TypeRules.isNumeric(type);
     }
 
     private boolean isIntegerLike(Ast.Type.T type) {
-        return type != null && (type.getKind() == TypeKind.INT || type.getKind() == TypeKind.CHAR || type.getKind() == TypeKind.BYTE || type.getKind() == TypeKind.SHORT
-                || type.getKind() == TypeKind.LONG);
+        return TypeRules.isIntegerLike(type);
     }
 
     private boolean isArrayType(Ast.Type.T type) {
