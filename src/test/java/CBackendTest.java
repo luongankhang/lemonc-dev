@@ -2,6 +2,8 @@ import org.junit.Test;
 import site.ilemon.backend.c.CBackend;
 import site.ilemon.ir.*;
 import java.util.List;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import static org.junit.Assert.assertTrue;
 
 public class CBackendTest {
@@ -17,5 +19,18 @@ public class CBackendTest {
         assertTrue(c.contains("int32_t main()"));
         assertTrue(c.contains("answer = value + 1;"));
         assertTrue(c.contains("return answer;"));
+        assertTrue(c.contains("#include \"lemon_runtime.h\""));
+    }
+
+    @Test
+    public void keepsNativeRuntimeAsSeparateSourceArtifacts() {
+        assertTrue(Files.isRegularFile(Path.of("runtime", "lemon_runtime.h")));
+        assertTrue(Files.isRegularFile(Path.of("runtime", "lemon_runtime.c")));
+    }
+
+    @Test
+    public void supportsGxxAsACCompilerCandidate() {
+        // g++ is accepted by the toolchain abstraction; compile() still passes -x c.
+        assertTrue(new site.ilemon.backend.c.NativeToolchain("g++").compiler().equals("g++"));
     }
 }
