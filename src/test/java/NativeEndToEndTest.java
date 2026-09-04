@@ -218,6 +218,25 @@ public class NativeEndToEndTest {
     }
 
     @Test
+    public void testNativeRuntimeDetectsSizeOverflow() throws Exception {
+        Path tempDir = temporaryFolder.getRoot().toPath();
+        Path runtimeRoot = Path.of("runtime").toAbsolutePath();
+        Path sourceFile = tempDir.resolve("OverflowCheck.c");
+        Files.writeString(sourceFile, "#include \"lemon_runtime.h\"\n\nint main(void) {\n    lemon_array *a = lemon_array_new((size_t)-1, sizeof(int32_t), NULL);\n    (void)a;\n    return 0;\n}\n", StandardCharsets.UTF_8);
+
+        Path exePath = tempDir.resolve("OverflowCheck");
+        site.ilemon.backend.c.NativeToolchain toolchain = site.ilemon.backend.c.NativeToolchain.discover();
+        toolchain.compile(sourceFile, runtimeRoot.resolve("lemon_runtime.c"), exePath);
+
+        Process process = new ProcessBuilder(exePath.toAbsolutePath().toString()).redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exitCode = process.waitFor();
+
+        assertTrue("Expected overflow panic but got: " + output, exitCode != 0);
+        assertTrue("Expected size overflow diagnostic but got: " + output, output.contains("size overflow"));
+    }
+
+    @Test
     public void testNativeFibonacciExample() throws Exception {
         String code = Files.readString(Path.of("examples", "Fib.lemon"), StandardCharsets.UTF_8);
         String output = compileAndRunNative(code, "FibNative");
