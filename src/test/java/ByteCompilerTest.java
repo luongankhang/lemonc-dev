@@ -19,17 +19,16 @@ import static org.junit.Assert.assertTrue;
 public class ByteCompilerTest {
     @Test
     public void supportsByteVariablesParametersReturnsPromotionAndJvmCodegen() throws Exception {
-        Analysis analysis = analyze("ByteValid", "class ByteValid {\n"
-                + "    byte identity(byte value) { return value; }\n"
-                + "    void main() {\n"
-                + "        byte value;\n"
-                + "        int widened;\n"
-                + "        value = 127;\n"
-                + "        widened = value + 1;\n"
-                + "        value = identity(value);\n"
-                + "        if (value < 127) { widened = value; }\n"
-                + "        printf(\"%d\", value);\n"
-                + "    }\n"
+        Analysis analysis = analyze("ByteValid",
+                "byte identity(byte value) { return value; }\n"
+                + "void main() {\n"
+                + "    byte value;\n"
+                + "    int widened;\n"
+                + "    value = 127;\n"
+                + "    widened = value + 1;\n"
+                + "    value = identity(value);\n"
+                + "    if (value < 127) { widened = value; }\n"
+                + "    printf(\"%d\", value);\n"
                 + "}\n");
 
         assertTrue("byte program should be valid: " + analysis.semantic.getDiagnostics(),
@@ -49,7 +48,7 @@ public class ByteCompilerTest {
 
     @Test
     public void reportsByteLiteralOutsideSignedEightBitRange() throws Exception {
-        Analysis analysis = analyze("ByteRange", "class ByteRange { void main() { byte value; value = 128; } }\n");
+        Analysis analysis = analyze("ByteRange", "void main() { byte value; value = 128; }\n");
         Diagnostic diagnostic = firstDiagnostic(analysis.semantic.getDiagnostics());
         assertEquals("E3008", diagnostic.code());
         assertTrue(diagnostic.message().contains("expected -128..127"));
@@ -60,19 +59,19 @@ public class ByteCompilerTest {
 
     @Test
     public void reportsByteTypeMismatchesWithExpectedAndActualTypes() throws Exception {
-        Analysis assignment = analyze("ByteAssignment", "class ByteAssignment { void main() { byte value; value = 1.5; } }\n");
+        Analysis assignment = analyze("ByteAssignment", "void main() { byte value; value = 1.5; }\n");
         Diagnostic assignmentDiagnostic = firstDiagnostic(assignment.semantic.getDiagnostics());
         assertEquals("E3001", assignmentDiagnostic.code());
         assertTrue(assignmentDiagnostic.message().contains("expected byte"));
         assertTrue(assignmentDiagnostic.message().contains("found float"));
 
-        Analysis argument = analyze("ByteArgument", "class ByteArgument { void use(byte value) {} void main() { use(1.5); } }\n");
+        Analysis argument = analyze("ByteArgument", "void use(byte value) {} void main() { use(1.5); }\n");
         Diagnostic argumentDiagnostic = firstDiagnostic(argument.semantic.getDiagnostics());
         assertEquals("E3003", argumentDiagnostic.code());
         assertTrue(argumentDiagnostic.message().contains("expected byte"));
         assertTrue(argumentDiagnostic.message().contains("found float"));
 
-        Analysis result = analyze("ByteReturn", "class ByteReturn { byte get() { return 1.5; } void main() {} }\n");
+        Analysis result = analyze("ByteReturn", "byte get() { return 1.5; } void main() {}\n");
         Diagnostic returnDiagnostic = firstDiagnostic(result.semantic.getDiagnostics());
         assertEquals("E3002", returnDiagnostic.code());
         assertTrue(returnDiagnostic.message().contains("expected byte"));

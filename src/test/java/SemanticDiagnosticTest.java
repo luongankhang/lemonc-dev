@@ -17,7 +17,7 @@ public class SemanticDiagnosticTest {
     @Test
     public void reportsUnknownVariableAndFunctionWithPreciseSpans() throws Exception {
         SemanticVisitor semantic = analyze("Names",
-                "class Names { void main() { int y; x = 1; y = missing(); } }\n", true);
+                "void main() { int y; x = 1; y = missing(); }\n", true);
 
         List<Diagnostic> diagnostics = semantic.getDiagnostics();
         assertEquals(2, diagnostics.size());
@@ -32,7 +32,7 @@ public class SemanticDiagnosticTest {
 
     @Test
     public void reportsDuplicateDeclarationAtSecondIdentifier() throws Exception {
-        SemanticVisitor semantic = analyze("Duplicate", "class Duplicate { void main() { int x; int x; } }\n", false);
+        SemanticVisitor semantic = analyze("Duplicate", "void main() { int x; int x; }\n", false);
 
         Diagnostic diagnostic = semantic.getDiagnostics().get(0);
         assertEquals("E2003", diagnostic.code());
@@ -43,7 +43,7 @@ public class SemanticDiagnosticTest {
     @Test
     public void reportsVoidFunctionUsedAsValue() throws Exception {
         SemanticVisitor semantic = analyze("InvalidUse",
-                "class InvalidUse { void foo() {} void main() { int x; x = foo(); } }\n", false);
+                "void foo() {} void main() { int x; x = foo(); }\n", false);
 
         Diagnostic diagnostic = semantic.getDiagnostics().get(0);
         assertEquals("E2004", diagnostic.code());

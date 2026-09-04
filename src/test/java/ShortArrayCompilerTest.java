@@ -21,9 +21,9 @@ import static org.junit.Assert.*;
 public class ShortArrayCompilerTest {
     @Test
     public void supportsShortArrayDeclarationAccessStoreLengthParameterAndReturn() throws Exception {
-        Analysis analysis = analyze("ShortArrays", "class ShortArrays {\n"
-                + "    short[] identity(short values[]) { values[0] = 32767; return values; }\n"
-                + "    void main() { short data[2]; int size; data[0] = -32768; data[1] = 32767; size = data.length; identity(data); printf(\"%d\", data[0]); }\n}\n");
+        Analysis analysis = analyze("ShortArrays", ""
+                + "short[] identity(short values[]) { values[0] = 32767; return values; }\n"
+                + "void main() { short data[2]; int size; data[0] = -32768; data[1] = 32767; size = data.length; identity(data); printf(\"%d\", data[0]); }\n");
         assertTrue(analysis.semantic.passOrNot());
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(analysis.program);
@@ -39,13 +39,13 @@ public class ShortArrayCompilerTest {
 
     @Test
     public void rejectsDifferentArrayTypesAndInvalidShortElements() throws Exception {
-        Analysis argument = analyze("ShortArrayArgument", "class ShortArrayArgument { void use(short values[]) {} void main() { int values[2]; use(values); } }\n");
+        Analysis argument = analyze("ShortArrayArgument", "void use(short values[]) {} void main() { int values[2]; use(values); }\n");
         Diagnostic argumentDiagnostic = first(argument.semantic.getDiagnostics());
         assertEquals("E3003", argumentDiagnostic.code());
         assertTrue(argumentDiagnostic.message().contains("expected short[]"));
         assertTrue(argumentDiagnostic.message().contains("found int[]"));
 
-        Analysis range = analyze("ShortArrayRange", "class ShortArrayRange { void main() { short values[1]; values[0] = 32768; } }\n");
+        Analysis range = analyze("ShortArrayRange", "void main() { short values[1]; values[0] = 32768; }\n");
         Diagnostic rangeDiagnostic = first(range.semantic.getDiagnostics());
         assertEquals("E3009", rangeDiagnostic.code());
         assertTrue(rangeDiagnostic.message().contains("expected -32768..32767"));
@@ -53,7 +53,7 @@ public class ShortArrayCompilerTest {
 
     @Test
     public void executesShortArrayOnJvm() throws Exception {
-        Analysis analysis = analyze("ShortArrayRuntime", "class ShortArrayRuntime { void main() { short values[1]; values[0] = 42; printf(\"%d\", values[0]); } }\n");
+        Analysis analysis = analyze("ShortArrayRuntime", "void main() { short values[1]; values[0] = 42; printf(\"%d\", values[0]); }\n");
         assertTrue(analysis.semantic.passOrNot());
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(analysis.program);

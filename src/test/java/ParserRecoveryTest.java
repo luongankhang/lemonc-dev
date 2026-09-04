@@ -18,7 +18,7 @@ public class ParserRecoveryTest {
         File directory = Files.createTempDirectory("lemonc-recovery").toFile();
         File source = new File(directory, "Recovery.lemon");
         Files.writeString(source.toPath(),
-                "class Recovery { void main() { x = ; y = ; } }\n",
+                "void main() { x = ; y = ; }\n",
                 StandardCharsets.UTF_8);
         try {
             Parser parser = new Parser(new Lexer(source));
@@ -44,7 +44,7 @@ public class ParserRecoveryTest {
     public void suggestsMissingSemicolonWithoutAcceptingInvalidSyntax() throws Exception {
         File directory = Files.createTempDirectory("lemonc-missing-token").toFile();
         File source = new File(directory, "Missing.lemon");
-        Files.writeString(source.toPath(), "class Missing { void main() { int x } }\n", StandardCharsets.UTF_8);
+        Files.writeString(source.toPath(), "void main() { int x } \n", StandardCharsets.UTF_8);
         try {
             Parser parser = new Parser(new Lexer(source));
             try {

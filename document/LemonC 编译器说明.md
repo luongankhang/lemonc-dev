@@ -50,18 +50,16 @@ printf("a=%d\n",a);// 13
 ```
 while的代码示例如下所示，while不支持break。
 ```
-class Iteration02{
-	void main(){
-		int start;
-		int sum;
-        start = 1;
-        sum = 0;
-        while(start < 101){
-            sum = sum + start;
-            start = start + 1;
-        }
-        printf("1到100之和是：%d\n",sum);
-	}
+void main(){
+	int start;
+	int sum;
+    start = 1;
+    sum = 0;
+    while(start < 101){
+        sum = sum + start;
+        start = start + 1;
+    }
+    printf("1到100之和是：%d\n",sum);
 }
 ```
 其中bool 表达式支持and，or，not（即&&,||,!），逻辑运算符的优先级请参考1.1运算符。

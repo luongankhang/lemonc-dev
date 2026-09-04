@@ -30,23 +30,18 @@ public class DiagnosticTest {
 
     @Test
     public void lexerRecordsTokenColumns() throws Exception {
-        File file = writeSource("Test", "class Test {\n    void main() {}\n}\n");
+        File file = writeSource("Test", "void main() {}\n");
         Lexer lexer = new Lexer(file);
         lexer.lexicalAnalysis();
 
-        Token classToken = lexer.tokens.get(0);
-        assertEquals(TokenKind.Class, classToken.kind);
-        assertEquals(1, classToken.lineNumber);
-        assertEquals(1, classToken.columnNumber);
-
         Token voidToken = findToken(lexer.tokens, TokenKind.Void);
-        assertEquals(2, voidToken.lineNumber);
-        assertEquals(5, voidToken.columnNumber);
+        assertEquals(1, voidToken.lineNumber);
+        assertEquals(1, voidToken.columnNumber);
     }
 
     @Test
     public void parserErrorIncludesColumnAndSourcePointer() throws Exception {
-        File file = writeSource("Test", "class Test {\n    void main() { int x }\n}\n");
+        File file = writeSource("Test", "void main() { int x }\n");
         try {
             new Parser(new Lexer(file)).parse();
             fail("Expected ParseException");
@@ -60,12 +55,10 @@ public class DiagnosticTest {
     @Test
     public void semanticCollectingModeReportsMultipleErrors() throws Exception {
         File file = writeSource("Test",
-                "class Test {\n" +
-                "    void main() {\n" +
-                "        int x;\n" +
-                "        y = 1;\n" +
-                "        x = true;\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    int x;\n" +
+                "    y = 1;\n" +
+                "    x = true;\n" +
                 "}\n");
         Parser parser = new Parser(new Lexer(file));
         Ast.Program.T program = parser.parse();
@@ -83,12 +76,10 @@ public class DiagnosticTest {
     @Test
     public void cliReportsMultipleSemanticErrors() throws Exception {
         File file = writeSource("CliDiagnostics",
-                "class CliDiagnostics {\n" +
-                "    void main() {\n" +
-                "        int x;\n" +
-                "        y = 1;\n" +
-                "        x = true;\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    int x;\n" +
+                "    y = 1;\n" +
+                "    x = true;\n" +
                 "}\n");
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
@@ -102,17 +93,14 @@ public class DiagnosticTest {
         assertTrue(errorOutput, errorOutput.contains("compile failed"));
         assertTrue(errorOutput, errorOutput.contains("y"));
         assertTrue(errorOutput, errorOutput.contains("bool"));
-        assertTrue(errorOutput, errorOutput.contains("        y = 1;"));
-        assertTrue(errorOutput, errorOutput.contains("        x = true;"));
+        assertTrue(errorOutput, errorOutput.contains("    y = 1;"));
+        assertTrue(errorOutput, errorOutput.contains("    x = true;"));
         assertTrue(errorOutput, errorOutput.contains("^"));
     }
 
     @Test
     public void cliCollectingModeReportsMissingMainWithoutNpe() throws Exception {
-        File file = writeSource("NoMain",
-                "class NoMain {\n" +
-                "    int f() { return 1; }\n" +
-                "}\n");
+        File file = writeSource("NoMain", "int f() { return 1; }\n");
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
 
@@ -130,11 +118,9 @@ public class DiagnosticTest {
     @Test
     public void cliCollectingModeReportsUndefinedMethodWithoutNpe() throws Exception {
         File file = writeSource("UndefinedMethod",
-                "class UndefinedMethod {\n" +
-                "    void main() {\n" +
-                "        int x;\n" +
-                "        x = missing();\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    int x;\n" +
+                "    x = missing();\n" +
                 "}\n");
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
@@ -152,11 +138,9 @@ public class DiagnosticTest {
     @Test
     public void cliCollectingModeReportsUndefinedArrayWithoutNpe() throws Exception {
         File file = writeSource("UndefinedArray",
-                "class UndefinedArray {\n" +
-                "    void main() {\n" +
-                "        int x;\n" +
-                "        x = values.length;\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    int x;\n" +
+                "    x = values.length;\n" +
                 "}\n");
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
@@ -174,11 +158,9 @@ public class DiagnosticTest {
     @Test
     public void lexerReportsIllegalCharacterWithSourcePointer() throws Exception {
         File file = writeSource("Test",
-                "class Test {\n" +
-                "    void main() {\n" +
-                "        int x;\n" +
-                "        x = 1 @ 2;\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    int x;\n" +
+                "    x = 1 @ 2;\n" +
                 "}\n");
         try {
             new Lexer(file).lexicalAnalysis();
@@ -195,10 +177,8 @@ public class DiagnosticTest {
     @Test
     public void lexerReportsUnclosedString() throws Exception {
         File file = writeSource("Test",
-                "class Test {\n" +
-                "    void main() {\n" +
-                "        printf(\"hello);\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    printf(\"hello);\n" +
                 "}\n");
         try {
             new Lexer(file).lexicalAnalysis();
@@ -214,21 +194,19 @@ public class DiagnosticTest {
     @Test
     public void lexerReportsSingleAmpersandAndPipe() throws Exception {
         assertLexErrorContains(
-                "class Test { void main() { bool a; bool b; a = true; b = false; if (a & b) {} } }",
+                "void main() { bool a; bool b; a = true; b = false; if (a & b) {} }",
                 "did you mean '&&'");
         assertLexErrorContains(
-                "class Test { void main() { bool a; bool b; a = true; b = false; if (a | b) {} } }",
+                "void main() { bool a; bool b; a = true; b = false; if (a | b) {} }",
                 "did you mean '||'");
     }
 
     @Test
     public void cliReportsLexicalErrors() throws Exception {
         File file = writeSource("CliLexDiagnostics",
-                "class CliLexDiagnostics {\n" +
-                "    void main() {\n" +
-                "        int x;\n" +
-                "        x = 1 @ 2;\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    int x;\n" +
+                "    x = 1 @ 2;\n" +
                 "}\n");
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
@@ -247,12 +225,10 @@ public class DiagnosticTest {
     @Test
     public void lexerSupportsUnderscoreIdentifiers() throws Exception {
         File file = writeSource("Test",
-                "class Test {\n" +
-                "    void main() {\n" +
-                "        int sum_count;\n" +
-                "        sum_count = 3;\n" +
-                "        printf(\"x=%d\\n\", sum_count);\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    int sum_count;\n" +
+                "    sum_count = 3;\n" +
+                "    printf(\"x=%d\\n\", sum_count);\n" +
                 "}\n");
         Lexer lexer = new Lexer(file);
         lexer.lexicalAnalysis();
@@ -270,12 +246,10 @@ public class DiagnosticTest {
     @Test
     public void cliCompilesUnderscoreIdentifiers() throws Exception {
         File file = writeSource("Under_score",
-                "class Under_score {\n" +
-                "    void main() {\n" +
-                "        int sum_count;\n" +
-                "        sum_count = 3;\n" +
-                "        printf(\"x=%d\\n\", sum_count);\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    int sum_count;\n" +
+                "    sum_count = 3;\n" +
+                "    printf(\"x=%d\\n\", sum_count);\n" +
                 "}\n");
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
@@ -290,10 +264,8 @@ public class DiagnosticTest {
     @Test
     public void cliSuccessfulCompileIsQuietByDefault() throws Exception {
         File file = writeSource("QuietCli",
-                "class QuietCli {\n" +
-                "    void main() {\n" +
-                "        printf(\"ok\\n\");\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    printf(\"ok\\n\");\n" +
                 "}\n");
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
@@ -310,10 +282,8 @@ public class DiagnosticTest {
     @Test
     public void cliVerboseShowsGenerationOutput() throws Exception {
         File file = writeSource("VerboseCli",
-                "class VerboseCli {\n" +
-                "    void main() {\n" +
-                "        printf(\"ok\\n\");\n" +
-                "    }\n" +
+                "void main() {\n" +
+                "    printf(\"ok\\n\");\n" +
                 "}\n");
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
@@ -330,33 +300,27 @@ public class DiagnosticTest {
 
     @Test
     public void testArray() throws Exception {
-        String source = "class Test {\n" +
-                "  void main() {\n" +
-                "    int arr[5];\n" +
-                "    arr[0] = 1;\n" +
-                "    printf(\"arr[0]=%d\\n\", arr[0]);\n" +
-                "  }\n" +
-                "}\n" +
-                "";
+        String source = "void main() {\n" +
+                "  int arr[5];\n" +
+                "  arr[0] = 1;\n" +
+                "  printf(\"arr[0]=%d\\n\", arr[0]);\n" +
+                "}\n";
 
         compileAndRun(source, "arr[0]=1\n");
     }
 
     @Test
     public void testNestedArray() throws Exception {
-        String source = "class Test {\n" +
-                "  void main() {\n" +
-                "    int arr1[2];\n" +
-                "    int arr2[2];\n" +
-                "    arr1[0] = 1;\n" +
-                "    arr1[1] = 2;\n" +
-                "    arr2[0] = 3;\n" +
-                "    arr2[1] = 4;\n" +
-                "    printf(\"arr1[0]=%d\\n\", arr1[0]);\n" +
-                "    printf(\"arr2[1]=%d\\n\", arr2[1]);\n" +
-                "  }\n" +
-                "}\n" +
-                "";
+        String source = "void main() {\n" +
+                "  int arr1[2];\n" +
+                "  int arr2[2];\n" +
+                "  arr1[0] = 1;\n" +
+                "  arr1[1] = 2;\n" +
+                "  arr2[0] = 3;\n" +
+                "  arr2[1] = 4;\n" +
+                "  printf(\"arr1[0]=%d\\n\", arr1[0]);\n" +
+                "  printf(\"arr2[1]=%d\\n\", arr2[1]);\n" +
+                "  }\n";
 
         compileAndRun(source, "arr1[0]=1\narr2[1]=4\n");
     }
@@ -364,26 +328,22 @@ public class DiagnosticTest {
     @Test
     public void lexerSkipsMultilineCommentsAndKeepsLineNumbers() throws Exception {
         File file = writeSource("Test",
-                "class Test {\n" +
-                "    /* comment line 1\n" +
-                "       comment line 2 */\n" +
-                "    void main() {}\n" +
-                "}\n");
+                "/* comment line 1\n" +
+                "   comment line 2 */\n" +
+                "void main() {}\n");
         Lexer lexer = new Lexer(file);
         lexer.lexicalAnalysis();
 
         Token voidToken = findToken(lexer.tokens, TokenKind.Void);
-        assertEquals(4, voidToken.lineNumber);
-        assertEquals(5, voidToken.columnNumber);
+        assertEquals(3, voidToken.lineNumber);
+        assertEquals(1, voidToken.columnNumber);
     }
 
     @Test
     public void lexerReportsUnclosedMultilineComment() throws Exception {
         File file = writeSource("Test",
-                "class Test {\n" +
-                "    /* comment starts\n" +
-                "    void main() {}\n" +
-                "}\n");
+                "/* comment starts\n" +
+                "void main() {}\n");
         try {
             new Lexer(file).lexicalAnalysis();
             fail("Expected LexException");

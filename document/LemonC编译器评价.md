@@ -28,16 +28,14 @@ LemonC 是一个用 Java 实现的教学型编译器，将自定义的 Lemon 语
 ### 2.3 示例程序
 ```c
 // 冒泡排序
-class BubbleSort {
-    void main() {
-        int arr[6];
-        arr[0] = 64; arr[1] = 34; arr[2] = 25;
-        // ... 排序逻辑
-        if (arr[j] > arr[j + 1]) {
-            temp = arr[j];
-            arr[j] = arr[j + 1];
-            arr[j + 1] = temp;
-        }
+void main() {
+    int arr[6];
+    arr[0] = 64; arr[1] = 34; arr[2] = 25;
+    // ... 排序逻辑
+    if (arr[j] > arr[j + 1]) {
+        temp = arr[j];
+        arr[j] = arr[j + 1];
+        arr[j + 1] = temp;
     }
 }
 ```

@@ -1,13 +1,11 @@
 // ARC example demonstrating managed reference assignment, retain-on-store and release-old.
-class ArcAssignment {
-    void main() {
-        int a[2];
-        int b[2];
-        a[0] = 42;
-        b[0] = 99;
+void main() {
+    int a[2];
+    int b[2];
+    a[0] = 42;
+    b[0] = 99;
 
-        // b = a transfers reference: retains a, releases previous b, stores a into b
-        b = a;
-        printf("b[0]=%d, a[0]=%d\n", b[0], a[0]);
-    }
+    // b = a transfers reference: retains a, releases previous b, stores a into b
+    b = a;
+    printf("b[0]=%d, a[0]=%d\n", b[0], a[0]);
 }

@@ -1,24 +1,22 @@
 // ARC example demonstrating early return with clean local scope release on all paths.
-class ArcEarlyReturn {
-    int checkFirst(int limit) {
-        int items[2];
-        items[0] = limit;
-        items[1] = limit * 2;
+int checkFirst(int limit) {
+    int items[2];
+    items[0] = limit;
+    items[1] = limit * 2;
 
-        if (limit > 5) {
-            // Early return: items is released before function returns
-            return items[0];
-        }
-
-        // Normal exit: items is released here
-        return items[1];
+    if (limit > 5) {
+        // Early return: items is released before function returns
+        return items[0];
     }
 
-    void main() {
-        int r1;
-        int r2;
-        r1 = checkFirst(10);
-        r2 = checkFirst(3);
-        printf("results: %d, %d\n", r1, r2);
-    }
+    // Normal exit: items is released here
+    return items[1];
+}
+
+void main() {
+    int r1;
+    int r2;
+    r1 = checkFirst(10);
+    r2 = checkFirst(3);
+    printf("results: %d, %d\n", r1, r2);
 }

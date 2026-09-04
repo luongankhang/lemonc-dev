@@ -34,22 +34,20 @@ The whole project is intentionally small enough to read, but complete enough to 
 Source: [examples/OptimizationTest.lemon](examples/OptimizationTest.lemon)
 
 ```c
-class OptimizationTest {
-    void main() {
-        int a;
-        int b;
-        bool c;
-        a = (2 + 3) * 4;
-        b = (a * 1) + 0;
-        c = (1 < 2) && true;
-        if (c) {
-            printf("a=%d,b=%d\n", a, b);
-        } else {
-            printf("bad\n");
-        }
-        while (false) {
-            printf("dead\n");
-        }
+void main() {
+    int a;
+    int b;
+    bool c;
+    a = (2 + 3) * 4;
+    b = (a * 1) + 0;
+    c = (1 < 2) && true;
+    if (c) {
+        printf("a=%d,b=%d\n", a, b);
+    } else {
+        printf("bad\n");
+    }
+    while (false) {
+        printf("dead\n");
     }
 }
 ```
@@ -288,33 +286,31 @@ java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar \
 ## Lemon Language In One Page
 
 ```c
-class Demo {
-    int fib(int n) {
-        int result;
-        if (n < 3) {
-            result = 1;
-        } else {
-            result = fib(n - 1) + fib(n - 2);
-        }
-        return result;
+int fib(int n) {
+    int result;
+    if (n < 3) {
+        result = 1;
+    } else {
+        result = fib(n - 1) + fib(n - 2);
+    }
+    return result;
+}
+
+void main() {
+    int i;
+    int sum;
+    int arr[3];
+    sum = 0;
+
+    for (i = 0; i < 3; i = i + 1) {
+        arr[i] = i + 1;
+        sum = sum + arr[i];
     }
 
-    void main() {
-        int i;
-        int sum;
-        int arr[3];
-        sum = 0;
-
-        for (i = 0; i < 3; i = i + 1) {
-            arr[i] = i + 1;
-            sum = sum + arr[i];
-        }
-
-        if (sum == 6 && fib(6) == 8) {
-            printf("ok=%d\n", sum);
-        } else {
-            printf("bad\n");
-        }
+    if (sum == 6 && fib(6) == 8) {
+        printf("ok=%d\n", sum);
+    } else {
+        printf("bad\n");
     }
 }
 ```
@@ -392,7 +388,7 @@ LemonC intentionally keeps the language small:
 | Multi-line comments | Not part of the current language definition |
 | Block scope | Blocks do not introduce independent local scopes |
 | String variables | Strings are primarily `printf` literals |
-| Object model | Single-class teaching language, not full Java |
+| Object model | Top-level function teaching language, not full Java |
 
 ## Roadmap
 

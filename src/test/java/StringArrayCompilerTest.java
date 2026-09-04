@@ -19,24 +19,23 @@ import static org.junit.Assert.assertTrue;
 public class StringArrayCompilerTest {
     @Test
     public void supportsStringArrayDeclarationsParametersReturnsAndIndexing() throws Exception {
-        String source = "class StringArrays {\n"
-                + "    string[] getNames() {\n"
-                + "        string values[2];\n"
-                + "        values[0] = \"Alice\";\n"
-                + "        values[1] = \"Bob\";\n"
-                + "        return values;\n"
-                + "    }\n"
-                + "    void useNames(string names[]) {\n"
-                + "        string first[1];\n"
-                + "        first[0] = names[0];\n"
-                + "    }\n"
-                + "    void main() {\n"
-                + "        string names[2];\n"
-                + "        names[0] = \"Alice\";\n"
-                + "        names[1] = \"Bob\";\n"
-                + "        useNames(names);\n"
-                + "        getNames();\n"
-                + "    }\n"
+        String source = ""
+                + "string[] getNames() {\n"
+                + "    string values[2];\n"
+                + "    values[0] = \"Alice\";\n"
+                + "    values[1] = \"Bob\";\n"
+                + "    return values;\n"
+                + "}\n"
+                + "void useNames(string names[]) {\n"
+                + "    string first[1];\n"
+                + "    first[0] = names[0];\n"
+                + "}\n"
+                + "void main() {\n"
+                + "    string names[2];\n"
+                + "    names[0] = \"Alice\";\n"
+                + "    names[1] = \"Bob\";\n"
+                + "    useNames(names);\n"
+                + "    getNames();\n"
                 + "}\n";
 
         Analysis analysis = analyze("StringArrays", source);
@@ -59,7 +58,7 @@ public class StringArrayCompilerTest {
     @Test
     public void supportsStringArrayLengthAndLegacyStringSpelling() throws Exception {
         Analysis analysis = analyze("StringArrayLength",
-                "class StringArrayLength { void main() { String names[2]; int size; size = names.length; } }\n");
+                "void main() { String names[2]; int size; size = names.length; }\n");
         assertTrue("String spelling should remain supported", analysis.semantic.passOrNot());
 
         TranslatorVisitor translator = new TranslatorVisitor();
@@ -74,7 +73,7 @@ public class StringArrayCompilerTest {
     @Test
     public void reportsStringArrayAssignmentMismatch() throws Exception {
         Analysis analysis = analyze("StringArrayAssignment",
-                "class StringArrayAssignment { void main() { string names[2]; names = \"hello\"; } }\n");
+                "void main() { string names[2]; names = \"hello\"; }\n");
         Diagnostic diagnostic = firstDiagnostic(analysis.semantic.getDiagnostics());
         assertEquals("E3001", diagnostic.code());
         assertTrue(diagnostic.message().contains("expected string[]"));
@@ -85,7 +84,7 @@ public class StringArrayCompilerTest {
     @Test
     public void reportsWrongStringArrayElementAndArrayArgumentTypes() throws Exception {
         Analysis element = analyze("StringArrayElement",
-                "class StringArrayElement { void main() { string names[2]; names[0] = 1; } }\n");
+                "void main() { string names[2]; names[0] = 1; }\n");
         Diagnostic elementDiagnostic = firstDiagnostic(element.semantic.getDiagnostics());
         assertEquals("E3001", elementDiagnostic.code());
         assertTrue(elementDiagnostic.message().contains("expected string"));
@@ -94,7 +93,7 @@ public class StringArrayCompilerTest {
         assertTrue(elementDiagnostic.primarySpan().startColumn() > 0);
 
         Analysis argument = analyze("StringArrayArgument",
-                "class StringArrayArgument { void use(string names[]) {} void main() { int values[2]; use(values); } }\n");
+                "void use(string names[]) {} void main() { int values[2]; use(values); }\n");
         Diagnostic argumentDiagnostic = firstDiagnostic(argument.semantic.getDiagnostics());
         assertEquals("E3003", argumentDiagnostic.code());
         assertTrue(argumentDiagnostic.message().contains("expected string[]"));
@@ -104,7 +103,7 @@ public class StringArrayCompilerTest {
     @Test
     public void reportsWrongStringArrayReturnType() throws Exception {
         Analysis analysis = analyze("StringArrayReturn",
-                "class StringArrayReturn { string[] get() { return \"hello\"; } void main() { get(); } }\n");
+                "string[] get() { return \"hello\"; } void main() { get(); }\n");
         Diagnostic diagnostic = firstDiagnostic(analysis.semantic.getDiagnostics());
         assertEquals("E3002", diagnostic.code());
         assertTrue(diagnostic.message().contains("expected string[]"));

@@ -24,7 +24,7 @@ public class LemonCCliTest {
         Path tempDir = temporaryFolder.getRoot().toPath();
         Path sourceFile = tempDir.resolve("Test.lemon");
         // Using syntax similar to existing examples
-        Files.write(sourceFile, "class Test { void main() { int x; x = 123; printf(\"%d\", x); } }".getBytes(StandardCharsets.UTF_8));
+        Files.write(sourceFile, "void main() { int x; x = 123; printf(\"%d\", x); }".getBytes(StandardCharsets.UTF_8));
 
         ByteArrayOutputStream outContent = new ByteArrayOutputStream();
         ByteArrayOutputStream errContent = new ByteArrayOutputStream();
@@ -75,7 +75,7 @@ public class LemonCCliTest {
         // Setup
         Path tempDir = temporaryFolder.getRoot().toPath();
         Path sourceFile = tempDir.resolve("Test.lemon");
-        Files.write(sourceFile, "class Test { void main() { int x; x = 123; printf(\"%d\", x); } }".getBytes(StandardCharsets.UTF_8));
+        Files.write(sourceFile, "void main() { int x; x = 123; printf(\"%d\", x); }".getBytes(StandardCharsets.UTF_8));
 
         ByteArrayOutputStream outContent = new ByteArrayOutputStream();
         ByteArrayOutputStream errContent = new ByteArrayOutputStream();
@@ -96,7 +96,7 @@ public class LemonCCliTest {
         // Setup
         Path tempDir = temporaryFolder.getRoot().toPath();
         Path sourceFile = tempDir.resolve("Test.lemon");
-        Files.write(sourceFile, "class Test { void main() { int x; x = 123; printf(\"%d\", x); } }".getBytes(StandardCharsets.UTF_8));
+        Files.write(sourceFile, "void main() { int x; x = 123; printf(\"%d\", x); }".getBytes(StandardCharsets.UTF_8));
 
         ByteArrayOutputStream outContent = new ByteArrayOutputStream();
         ByteArrayOutputStream errContent = new ByteArrayOutputStream();
@@ -159,7 +159,7 @@ public class LemonCCliTest {
         // Setup
         Path tempDir = temporaryFolder.getRoot().toPath();
         Path sourceFile = tempDir.resolve("Test.lemon");
-        Files.write(sourceFile, "class Test { void main() { int x; x = 123; printf(\"%d\", x); } }".getBytes(StandardCharsets.UTF_8));
+        Files.write(sourceFile, "void main() { int x; x = 123; printf(\"%d\", x); }".getBytes(StandardCharsets.UTF_8));
 
         ByteArrayOutputStream outContent = new ByteArrayOutputStream();
         ByteArrayOutputStream errContent = new ByteArrayOutputStream();

@@ -33,7 +33,7 @@ public class ArcControlFlowTest {
 
     @Test
     public void testBasicAllocationAndScopeRelease() throws Exception {
-        String code = "class Demo { void main() { int arr[3]; arr[0] = 1; printf(\"%d\", arr[0]); } }";
+        String code = "void main() { int arr[3]; arr[0] = 1; printf(\"%d\", arr[0]); }";
         OwnershipIr ir = analyzeSource(code);
 
         assertTrue(ir.operations().stream().anyMatch(op -> op.kind() == MemoryOp.Kind.ALLOC));
@@ -48,17 +48,15 @@ public class ArcControlFlowTest {
 
     @Test
     public void testIfElseBranchBalancing() throws Exception {
-        String code = "class Demo {\n" +
-                "    void main() {\n" +
-                "        bool cond;\n" +
-                "        int left[2];\n" +
-                "        int right[2];\n" +
-                "        cond = true;\n" +
-                "        if (cond) {\n" +
-                "            left[0] = 10;\n" +
-                "        } else {\n" +
-                "            right[0] = 20;\n" +
-                "        }\n" +
+        String code = "void main() {\n" +
+                "    bool cond;\n" +
+                "    int left[2];\n" +
+                "    int right[2];\n" +
+                "    cond = true;\n" +
+                "    if (cond) {\n" +
+                "        left[0] = 10;\n" +
+                "    } else {\n" +
+                "        right[0] = 20;\n" +
                 "    }\n" +
                 "}";
         OwnershipIr ir = analyzeSource(code);
@@ -77,15 +75,13 @@ public class ArcControlFlowTest {
 
     @Test
     public void testWhileLoopOwnershipAndBackEdge() throws Exception {
-        String code = "class Demo {\n" +
-                "    void main() {\n" +
-                "        int i;\n" +
-                "        int arr[5];\n" +
-                "        i = 0;\n" +
-                "        while (i < 5) {\n" +
-                "            arr[i] = i;\n" +
-                "            i = i + 1;\n" +
-                "        }\n" +
+        String code = "void main() {\n" +
+                "    int i;\n" +
+                "    int arr[5];\n" +
+                "    i = 0;\n" +
+                "    while (i < 5) {\n" +
+                "        arr[i] = i;\n" +
+                "        i = i + 1;\n" +
                 "    }\n" +
                 "}";
         OwnershipIr ir = analyzeSource(code);
@@ -102,19 +98,17 @@ public class ArcControlFlowTest {
 
     @Test
     public void testForLoopWithBreakAndContinue() throws Exception {
-        String code = "class Demo {\n" +
-                "    void main() {\n" +
-                "        int i;\n" +
-                "        int arr[4];\n" +
-                "        for (i = 0; i < 4; i = i + 1) {\n" +
-                "            if (i == 1) {\n" +
-                "                continue;\n" +
-                "            }\n" +
-                "            if (i == 3) {\n" +
-                "                break;\n" +
-                "            }\n" +
-                "            arr[i] = i * 2;\n" +
+        String code = "void main() {\n" +
+                "    int i;\n" +
+                "    int arr[4];\n" +
+                "    for (i = 0; i < 4; i = i + 1) {\n" +
+                "        if (i == 1) {\n" +
+                "            continue;\n" +
                 "        }\n" +
+                "        if (i == 3) {\n" +
+                "            break;\n" +
+                "        }\n" +
+                "        arr[i] = i * 2;\n" +
                 "    }\n" +
                 "}";
         OwnershipIr ir = analyzeSource(code);
@@ -131,19 +125,17 @@ public class ArcControlFlowTest {
 
     @Test
     public void testEarlyReturnReleasesLocalsOnAllPaths() throws Exception {
-        String code = "class Demo {\n" +
-                "    int test(int val) {\n" +
-                "        int items[2];\n" +
-                "        items[0] = val;\n" +
-                "        if (val > 10) {\n" +
-                "            return items[0];\n" +
-                "        }\n" +
-                "        return items[0] + 1;\n" +
+        String code = "int test(int val) {\n" +
+                "    int items[2];\n" +
+                "    items[0] = val;\n" +
+                "    if (val > 10) {\n" +
+                "        return items[0];\n" +
                 "    }\n" +
-                "    void main() {\n" +
-                "        int r;\n" +
-                "        r = test(5);\n" +
-                "    }\n" +
+                "    return items[0] + 1;\n" +
+                "}\n" +
+                "void main() {\n" +
+                "    int r;\n" +
+                "    r = test(5);\n" +
                 "}";
         OwnershipIr ir = analyzeSource(code);
 
@@ -162,14 +154,12 @@ public class ArcControlFlowTest {
 
     @Test
     public void testAssignmentRetainOnStoreAndReleaseOld() throws Exception {
-        String code = "class Demo {\n" +
-                "    void main() {\n" +
-                "        int a[2];\n" +
-                "        int b[2];\n" +
-                "        a[0] = 1;\n" +
-                "        b[0] = 2;\n" +
-                "        b = a;\n" +
-                "    }\n" +
+        String code = "void main() {\n" +
+                "    int a[2];\n" +
+                "    int b[2];\n" +
+                "    a[0] = 1;\n" +
+                "    b[0] = 2;\n" +
+                "    b = a;\n" +
                 "}";
         OwnershipIr ir = analyzeSource(code);
 

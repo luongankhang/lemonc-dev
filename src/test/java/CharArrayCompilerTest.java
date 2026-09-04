@@ -21,9 +21,9 @@ import static org.junit.Assert.*;
 public class CharArrayCompilerTest {
     @Test
     public void supportsCharArrayDeclarationAccessStoreLengthParameterAndReturn() throws Exception {
-        Analysis analysis = analyze("CharArrays", "class CharArrays {\n"
-                + "    char[] identity(char values[]) { values[0] = '\\n'; return values; }\n"
-                + "    void main() { char data[2]; int size; data[0] = 'A'; data[1] = '\\t'; size = data.length; identity(data); printf(\"%d\", data[0]); }\n}\n");
+        Analysis analysis = analyze("CharArrays",
+                "char[] identity(char values[]) { values[0] = '\\n'; return values; }\n"
+                + "void main() { char data[2]; int size; data[0] = 'A'; data[1] = '\\t'; size = data.length; identity(data); printf(\"%d\", data[0]); }\n");
         assertTrue(analysis.semantic.passOrNot());
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(analysis.program);
@@ -39,13 +39,13 @@ public class CharArrayCompilerTest {
 
     @Test
     public void rejectsDifferentArrayTypesAndInvalidCharElements() throws Exception {
-        Analysis argument = analyze("CharArrayArgument", "class CharArrayArgument { void use(char values[]) {} void main() { short values[2]; use(values); } }\n");
+        Analysis argument = analyze("CharArrayArgument", "void use(char values[]) {} void main() { short values[2]; use(values); }\n");
         Diagnostic argumentDiagnostic = first(argument.semantic.getDiagnostics());
         assertEquals("E3003", argumentDiagnostic.code());
         assertTrue(argumentDiagnostic.message().contains("expected char[]"));
         assertTrue(argumentDiagnostic.message().contains("found short[]"));
 
-        Analysis element = analyze("CharArrayElement", "class CharArrayElement { void main() { char values[1]; values[0] = 65; } }\n");
+        Analysis element = analyze("CharArrayElement", "void main() { char values[1]; values[0] = 65; }\n");
         Diagnostic elementDiagnostic = first(element.semantic.getDiagnostics());
         assertEquals("E3001", elementDiagnostic.code());
         assertTrue(elementDiagnostic.message().contains("expected char"));
@@ -53,7 +53,7 @@ public class CharArrayCompilerTest {
 
     @Test
     public void executesCharArrayOnJvm() throws Exception {
-        Analysis analysis = analyze("CharArrayRuntime", "class CharArrayRuntime { void main() { char values[1]; values[0] = 'A'; printf(\"%d\", values[0]); } }\n");
+        Analysis analysis = analyze("CharArrayRuntime", "void main() { char values[1]; values[0] = 'A'; printf(\"%d\", values[0]); }\n");
         assertTrue(analysis.semantic.passOrNot());
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(analysis.program);

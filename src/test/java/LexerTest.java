@@ -49,7 +49,7 @@ public class LexerTest {
     @Test
     public void testClassKeywordRemainsAvailableForCompatibility() throws IOException {
         java.nio.file.Path file = Files.createTempFile("lemonc-class-keyword", ".lemon");
-        Files.writeString(file, "class Legacy { void main() {} }\n", StandardCharsets.UTF_8);
+        Files.writeString(file, "class Legacy { int field; }\n", StandardCharsets.UTF_8);
         try {
             Lexer lexer = new Lexer(file.toFile());
             lexer.lexicalAnalysis();

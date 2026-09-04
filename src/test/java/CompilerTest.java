@@ -36,7 +36,7 @@ public class CompilerTest {
     // ===== Basic arithmetic =====
     @Test public void testCal() throws IOException { compileAndVerify("Cal", "10的阶乘是3628800"); }
     @Test public void testCal01() throws IOException { compileAndVerify("Cal01", "k2=19,n=3615\n"); }
-    // Example01/03/05 class name does not match file name (TestMain/MulTable), known issue
+    // Example01/03/05 (formerly class name mismatch issue)
     @Test public void testExample02() throws IOException { compileAndVerify("Example02"); }
 
     // ===== Integer operations =====
@@ -80,7 +80,7 @@ public class CompilerTest {
 
     // ===== Boolean expressions =====
     @Test public void testBoolTest01() throws IOException { compileAndVerify("BoolTest01"); }
-    // BoolTest02 class name written as BoolTest01, known file name mismatch issue
+    // BoolTest02 (formerly class name mismatch issue)
     @Test public void testBoolTest03() throws IOException { compileAndVerify("BoolTest03"); }
     @Test public void testBoolTest04() throws IOException {
         compileAndVerify("BoolTest04",
@@ -183,7 +183,7 @@ public class CompilerTest {
     }
     @Test public void testCalHeightOfChild() throws IOException { compileAndVerify("CalHeightOfChild"); }
     @Test public void testCompareTest() throws IOException { compileAndVerify("CompareTest"); }
-    // Return.lemon class name is TestMain which does not match file name, known issue
+    // Return.lemon (formerly class name mismatch issue)
     @Test public void testHelloWorld() throws IOException { compileAndVerify("Test"); }
     @Test public void testTestTwo() throws IOException { compileAndVerify("TestTwo"); }
 

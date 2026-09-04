@@ -19,20 +19,19 @@ import static org.junit.Assert.assertTrue;
 public class ByteArrayCompilerTest {
     @Test
     public void supportsByteArrayDeclarationAccessStoreLengthParameterAndReturn() throws Exception {
-        Analysis analysis = analyze("ByteArrays", "class ByteArrays {\n"
-                + "    byte[] identity(byte values[]) {\n"
-                + "        values[0] = 127;\n"
-                + "        return values;\n"
-                + "    }\n"
-                + "    void main() {\n"
-                + "        byte data[2];\n"
-                + "        int size;\n"
-                + "        data[0] = -128;\n"
-                + "        data[1] = 127;\n"
-                + "        size = data.length;\n"
-                + "        identity(data);\n"
-                + "        printf(\"%d\", data[0]);\n"
-                + "    }\n"
+        Analysis analysis = analyze("ByteArrays",
+                "byte[] identity(byte values[]) {\n"
+                + "    values[0] = 127;\n"
+                + "    return values;\n"
+                + "}\n"
+                + "void main() {\n"
+                + "    byte data[2];\n"
+                + "    int size;\n"
+                + "    data[0] = -128;\n"
+                + "    data[1] = 127;\n"
+                + "    size = data.length;\n"
+                + "    identity(data);\n"
+                + "    printf(\"%d\", data[0]);\n"
                 + "}\n");
         assertTrue("byte[] program should be valid: " + analysis.semantic.getDiagnostics(),
                 analysis.semantic.passOrNot());
@@ -53,21 +52,21 @@ public class ByteArrayCompilerTest {
     @Test
     public void rejectsNonByteArrayArgumentsAndReturns() throws Exception {
         Analysis argument = analyze("ByteArrayArgument",
-                "class ByteArrayArgument { void use(byte values[]) {} void main() { int values[2]; use(values); } }\n");
+                "void use(byte values[]) {} void main() { int values[2]; use(values); }\n");
         Diagnostic argumentDiagnostic = firstDiagnostic(argument.semantic.getDiagnostics());
         assertEquals("E3003", argumentDiagnostic.code());
         assertTrue(argumentDiagnostic.message().contains("expected byte[]"));
         assertTrue(argumentDiagnostic.message().contains("found int[]"));
 
         Analysis stringArgument = analyze("ByteStringArrayArgument",
-                "class ByteStringArrayArgument { void use(byte values[]) {} void main() { string values[2]; use(values); } }\n");
+                "void use(byte values[]) {} void main() { string values[2]; use(values); }\n");
         Diagnostic stringArgumentDiagnostic = firstDiagnostic(stringArgument.semantic.getDiagnostics());
         assertEquals("E3003", stringArgumentDiagnostic.code());
         assertTrue(stringArgumentDiagnostic.message().contains("expected byte[]"));
         assertTrue(stringArgumentDiagnostic.message().contains("found string[]"));
 
         Analysis returnValue = analyze("ByteArrayReturn",
-                "class ByteArrayReturn { byte[] get() { return 1; } void main() { get(); } }\n");
+                "byte[] get() { return 1; } void main() { get(); }\n");
         Diagnostic returnDiagnostic = firstDiagnostic(returnValue.semantic.getDiagnostics());
         assertEquals("E3002", returnDiagnostic.code());
         assertTrue(returnDiagnostic.message().contains("expected byte[]"));
@@ -77,7 +76,7 @@ public class ByteArrayCompilerTest {
     @Test
     public void rejectsInvalidByteArrayElementValues() throws Exception {
         Analysis analysis = analyze("ByteArrayElementRange",
-                "class ByteArrayElementRange { void main() { byte values[1]; values[0] = 128; } }\n");
+                "void main() { byte values[1]; values[0] = 128; }\n");
         Diagnostic diagnostic = firstDiagnostic(analysis.semantic.getDiagnostics());
         assertEquals("E3008", diagnostic.code());
         assertTrue(diagnostic.message().contains("expected -128..127"));
@@ -85,7 +84,7 @@ public class ByteArrayCompilerTest {
         assertTrue(diagnostic.primarySpan().startColumn() > 0);
 
         Analysis stringElement = analyze("ByteArrayStringElement",
-                "class ByteArrayStringElement { void main() { byte values[1]; values[0] = \"x\"; } }\n");
+                "void main() { byte values[1]; values[0] = \"x\"; }\n");
         Diagnostic stringElementDiagnostic = firstDiagnostic(stringElement.semantic.getDiagnostics());
         assertEquals("E3001", stringElementDiagnostic.code());
         assertTrue(stringElementDiagnostic.message().contains("expected byte"));

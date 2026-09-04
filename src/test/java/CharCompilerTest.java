@@ -22,7 +22,7 @@ import static org.junit.Assert.*;
 public class CharCompilerTest {
     @Test
     public void lexesCharacterLiteralsAndEscapes() throws Exception {
-        File file = source("CharLex", "class CharLex { void main() { char a; char b; a = 'A'; b = '\\n'; } }\n");
+        File file = source("CharLex", "void main() { char a; char b; a = 'A'; b = '\\n'; }\n");
         try {
             Lexer lexer = new Lexer(file);
             lexer.lexicalAnalysis();
@@ -35,7 +35,7 @@ public class CharCompilerTest {
 
     @Test
     public void supportsCharDeclarationFunctionsComparisonAndPromotion() throws Exception {
-        Analysis analysis = analyze("CharValid", "class CharValid { char identity(char value) { return value; } void main() { char value; int code; value = 'A'; value = identity(value); code = value + 1; if (value == 'A') { code = value; } printf(\"%d\", code); } }\n");
+        Analysis analysis = analyze("CharValid", "char identity(char value) { return value; } void main() { char value; int code; value = 'A'; value = identity(value); code = value + 1; if (value == 'A') { code = value; } printf(\"%d\", code); }\n");
         assertTrue("char program should be valid: " + analysis.semantic.getDiagnostics(), analysis.semantic.passOrNot());
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(analysis.program);
@@ -49,12 +49,12 @@ public class CharCompilerTest {
 
     @Test
     public void rejectsInvalidCharAssignmentsAndMalformedLiterals() throws Exception {
-        Analysis mismatch = analyze("CharMismatch", "class CharMismatch { void main() { char value; value = 1; } }\n");
+        Analysis mismatch = analyze("CharMismatch", "void main() { char value; value = 1; }\n");
         Diagnostic diagnostic = first(mismatch.semantic.getDiagnostics());
         assertEquals("E3001", diagnostic.code());
         assertTrue(diagnostic.message().contains("expected char"));
 
-        File file = source("CharBad", "class CharBad { void main() { char value; value = 'ab'; } }\n");
+        File file = source("CharBad", "void main() { char value; value = 'ab'; }\n");
         try {
             assertThrows(RuntimeException.class, () -> new Parser(new Lexer(file)).parse());
         } finally { delete(file); }
@@ -62,7 +62,7 @@ public class CharCompilerTest {
 
     @Test
     public void executesCharProgramOnJvm() throws Exception {
-        Analysis analysis = analyze("CharRuntime", "class CharRuntime { void main() { char value; int result; value = 'A'; result = value + 1; printf(\"%d\", result); } }\n");
+        Analysis analysis = analyze("CharRuntime", "void main() { char value; int result; value = 'A'; result = value + 1; printf(\"%d\", result); }\n");
         assertTrue(analysis.semantic.passOrNot());
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(analysis.program);

@@ -19,17 +19,16 @@ import static org.junit.Assert.assertTrue;
 public class LongCompilerTest {
     @Test
     public void supportsLongLiteralArithmeticComparisonAndJvmCodegen() throws Exception {
-        Analysis analysis = analyze("LongValid", "class LongValid {\n"
-                + "    long identity(long value) { return value; }\n"
-                + "    void main() {\n"
-                + "        long value;\n"
-                + "        long result;\n"
-                + "        value = 9223372036854775807;\n"
-                + "        result = value - 1;\n"
-                + "        result = result + 2;\n"
-                + "        result = identity(result);\n"
-                + "        if (result > 0) { printf(\"%d\", result); }\n"
-                + "    }\n"
+        Analysis analysis = analyze("LongValid", ""
+                + "long identity(long value) { return value; }\n"
+                + "void main() {\n"
+                + "    long value;\n"
+                + "    long result;\n"
+                + "    value = 9223372036854775807;\n"
+                + "    result = value - 1;\n"
+                + "    result = result + 2;\n"
+                + "    result = identity(result);\n"
+                + "    if (result > 0) { printf(\"%d\", result); }\n"
                 + "}\n");
         assertTrue("long program should be valid: " + analysis.semantic.getDiagnostics(),
                 analysis.semantic.passOrNot());
@@ -51,15 +50,14 @@ public class LongCompilerTest {
 
     @Test
     public void allowsByteAndIntWideningToLong() throws Exception {
-        Analysis analysis = analyze("LongWidening", "class LongWidening {\n"
-                + "    void main() {\n"
-                + "        byte small;\n"
-                + "        int number;\n"
-                + "        long value;\n"
-                + "        small = 1;\n"
-                + "        number = 2;\n"
-                + "        value = small + number;\n"
-                + "    }\n"
+        Analysis analysis = analyze("LongWidening", ""
+                + "void main() {\n"
+                + "    byte small;\n"
+                + "    int number;\n"
+                + "    long value;\n"
+                + "    small = 1;\n"
+                + "    number = 2;\n"
+                + "    value = small + number;\n"
                 + "}\n");
         assertTrue(analysis.semantic.passOrNot());
         assertTrue(analysis.semantic.getDiagnostics().isEmpty());
@@ -67,25 +65,25 @@ public class LongCompilerTest {
 
     @Test
     public void reportsLongTypeMismatchesAndOutOfRangeLiteral() throws Exception {
-        Analysis assignment = analyze("LongAssignment", "class LongAssignment { void main() { long value; value = \"x\"; } }\n");
+        Analysis assignment = analyze("LongAssignment", "void main() { long value; value = \"x\"; }\n");
         Diagnostic assignmentDiagnostic = firstDiagnostic(assignment.semantic.getDiagnostics());
         assertEquals("E3001", assignmentDiagnostic.code());
         assertTrue(assignmentDiagnostic.message().contains("expected long"));
         assertTrue(assignmentDiagnostic.message().contains("found string"));
 
-        Analysis argument = analyze("LongArgument", "class LongArgument { void use(long value) {} void main() { use(1.5); } }\n");
+        Analysis argument = analyze("LongArgument", "void use(long value) {} void main() { use(1.5); }\n");
         Diagnostic argumentDiagnostic = firstDiagnostic(argument.semantic.getDiagnostics());
         assertEquals("E3003", argumentDiagnostic.code());
         assertTrue(argumentDiagnostic.message().contains("expected long"));
         assertTrue(argumentDiagnostic.message().contains("found float"));
 
-        Analysis returnValue = analyze("LongReturn", "class LongReturn { long get() { return \"x\"; } void main() {} }\n");
+        Analysis returnValue = analyze("LongReturn", "long get() { return \"x\"; } void main() {}\n");
         Diagnostic returnDiagnostic = firstDiagnostic(returnValue.semantic.getDiagnostics());
         assertEquals("E3002", returnDiagnostic.code());
         assertTrue(returnDiagnostic.message().contains("expected long"));
         assertTrue(returnDiagnostic.message().contains("found string"));
 
-        Analysis tooLarge = analyze("LongTooLarge", "class LongTooLarge { void main() { long value; value = 9223372036854775808; } }\n");
+        Analysis tooLarge = analyze("LongTooLarge", "void main() { long value; value = 9223372036854775808; }\n");
         assertFalse("an out-of-range long literal should not produce a valid AST", tooLarge.parsed);
     }
 

@@ -26,7 +26,7 @@ public class DiagnosticRendererTest {
 
         String output = new DiagnosticRenderer((file, line) -> line == 12
                 ? "let x: int = \"hello\";"
-                : "class Example {").render(diagnostic);
+                : "void main() {").render(diagnostic);
 
         assertTrue(output.contains("error[E3001]: type mismatch"));
         assertTrue(output.contains("--> main.lemon:12:15"));

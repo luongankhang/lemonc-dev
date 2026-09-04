@@ -20,7 +20,7 @@ public class ArcCliTest {
 
     private File createTestProgram() throws Exception {
         Path sourceFile = temporaryFolder.getRoot().toPath().resolve("ArcDemo.lemon");
-        String code = "class ArcDemo { void main() { int arr[2]; arr[0] = 42; printf(\"%d\", arr[0]); } }";
+        String code = "void main() { int arr[2]; arr[0] = 42; printf(\"%d\", arr[0]); }";
         Files.writeString(sourceFile, code, StandardCharsets.UTF_8);
         return sourceFile.toFile();
     }

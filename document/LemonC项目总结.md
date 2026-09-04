@@ -233,19 +233,17 @@ public void visit(Stmt.If obj) {
 
 **九九乘法表 (MulTable.lemon)：**
 ```c
-class MulTable {
-    void main() {
-        int i; int j;
-        i = 1;
-        while (i < 10) {
-            j = 1;
-            while (j < 10) {
-                printf("%d*%d=%d\t", i, j, i*j);
-                j = j + 1;
-            }
-            printNewLine();
-            i = i + 1;
+void main() {
+    int i; int j;
+    i = 1;
+    while (i < 10) {
+        j = 1;
+        while (j < 10) {
+            printf("%d*%d=%d\t", i, j, i*j);
+            j = j + 1;
         }
+        printNewLine();
+        i = i + 1;
     }
 }
 ```

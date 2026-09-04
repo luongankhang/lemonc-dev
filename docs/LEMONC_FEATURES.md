@@ -42,7 +42,7 @@ java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar examples/StringByteLo
 
 ## 2. Program Structure
 
-Every Lemon program may use the legacy single top-level `class` declaration, or declare functions directly at top level. In both forms execution begins at `void main()`; for class-free source the current JVM compatibility backend uses the source file name as its generated class identity.
+Every Lemon program consists of functions declared directly at top level (with legacy single top-level `class` declarations supported for backward compatibility). Execution begins at `void main()`; for class-free source the current JVM compatibility backend uses the source file name as its generated class identity.
 
 Class-free example: [examples/TopLevelFunctionsTest.lemon](../examples/TopLevelFunctionsTest.lemon)
 
@@ -59,18 +59,16 @@ void main() {
 Example: [examples/HelloWorld.lemon](../examples/HelloWorld.lemon)
 
 ```c
-class HelloWorld {
-    void main() {
-        int a;
-        int b;
-        a = 15;
-        b = 27;
-        printf("a=%d,b=%d,add=%d\n", a, b, add(a, b));
-    }
+void main() {
+    int a;
+    int b;
+    a = 15;
+    b = 27;
+    printf("a=%d,b=%d,add=%d\n", a, b, add(a, b));
+}
 
-    int add(int x, int y) {
-        return x + y;
-    }
+int add(int x, int y) {
+    return x + y;
 }
 ```
 
@@ -314,16 +312,14 @@ LemonC supports all standard arithmetic operations on integer and floating-point
 Example: [examples/ModTest.lemon](../examples/ModTest.lemon)
 
 ```c
-class ModTest {
-    void main() {
-        int a;
-        int b;
-        int c;
-        a = 10 % 3;
-        b = 2 + 10 % 4 * 3;
-        c = 20 / 6 + 20 % 6;
-        printf("a=%d,b=%d,c=%d\n", a, b, c);
-    }
+void main() {
+    int a;
+    int b;
+    int c;
+    a = 10 % 3;
+    b = 2 + 10 % 4 * 3;
+    c = 20 / 6 + 20 % 6;
+    printf("a=%d,b=%d,c=%d\n", a, b, c);
 }
 ```
 
@@ -472,26 +468,24 @@ outer continue skip 2
 LemonC supports static methods with parameter passing, return values, and recursion:
 
 ```c
-class MethodDemo {
-    int add(int x, int y) {
-        return x + y;
-    }
+int add(int x, int y) {
+    return x + y;
+}
 
-    void greet() {
-        printf("hello\n");
-    }
+void greet() {
+    printf("hello\n");
+}
 
-    int factorial(int n) {
-        if (n <= 1) {
-            return 1;
-        }
-        return n * factorial(n - 1);
+int factorial(int n) {
+    if (n <= 1) {
+        return 1;
     }
+    return n * factorial(n - 1);
+}
 
-    void main() {
-        greet();
-        printf("fact=%d\n", factorial(5));
-    }
+void main() {
+    greet();
+    printf("fact=%d\n", factorial(5));
 }
 ```
 
@@ -560,22 +554,20 @@ Before generating IR, LemonC executes an AST-level optimization pass ([`AstOptim
 Example: [examples/OptimizationTest.lemon](../examples/OptimizationTest.lemon)
 
 ```c
-class OptimizationTest {
-    void main() {
-        int a;
-        int b;
-        bool c;
-        a = (2 + 3) * 4;
-        b = (a * 1) + 0;
-        c = (1 < 2) && true;
-        if (c) {
-            printf("a=%d,b=%d\n", a, b);
-        } else {
-            printf("bad\n");
-        }
-        while (false) {
-            printf("dead\n");
-        }
+void main() {
+    int a;
+    int b;
+    bool c;
+    a = (2 + 3) * 4;
+    b = (a * 1) + 0;
+    c = (1 < 2) && true;
+    if (c) {
+        printf("a=%d,b=%d\n", a, b);
+    } else {
+        printf("bad\n");
+    }
+    while (false) {
+        printf("dead\n");
     }
 }
 ```
@@ -595,33 +587,31 @@ a=20,b=20
 Source: [examples/StringByteLongArrays.lemon](../examples/StringByteLongArrays.lemon)
 
 ```c
-class StringByteLongArrays {
-    int lengths(string names[], byte bytes[], long values[]) {
-        return names.length + bytes.length + values.length;
-    }
+int lengths(string names[], byte bytes[], long values[]) {
+    return names.length + bytes.length + values.length;
+}
 
-    string[] makeNames() {
-        string names[2];
-        names[0] = "Alice";
-        names[1] = "Bob";
-        return names;
-    }
+string[] makeNames() {
+    string names[2];
+    names[0] = "Alice";
+    names[1] = "Bob";
+    return names;
+}
 
-    void main() {
-        string names[2];
-        byte bytes[2];
-        long values[2];
-        int total;
-        names[0] = "Alice";
-        names[1] = "Bob";
-        bytes[0] = -128;
-        bytes[1] = 127;
-        values[0] = 10;
-        values[1] = 20;
-        total = lengths(names, bytes, values);
-        makeNames();
-        printf("array-lengths=%d\n", total);
-    }
+void main() {
+    string names[2];
+    byte bytes[2];
+    long values[2];
+    int total;
+    names[0] = "Alice";
+    names[1] = "Bob";
+    bytes[0] = -128;
+    bytes[1] = 127;
+    values[0] = 10;
+    values[1] = 20;
+    total = lengths(names, bytes, values);
+    makeNames();
+    printf("array-lengths=%d\n", total);
 }
 ```
 
@@ -636,33 +626,31 @@ array-lengths=6
 Source: [examples/LongArrayRuntime.lemon](../examples/LongArrayRuntime.lemon)
 
 ```c
-class LongArrayRuntime {
-    long sum(long values[]) {
-        int i;
-        long total;
-        total = 0;
-        for (i = 0; i < values.length; i = i + 1) {
-            total = total + values[i];
-        }
-        return total;
+long sum(long values[]) {
+    int i;
+    long total;
+    total = 0;
+    for (i = 0; i < values.length; i = i + 1) {
+        total = total + values[i];
     }
+    return total;
+}
 
-    long replaceFirst(long values[], long replacement) {
-        values[0] = replacement;
-        return values[0];
-    }
+long replaceFirst(long values[], long replacement) {
+    values[0] = replacement;
+    return values[0];
+}
 
-    void main() {
-        long values[3];
-        long total;
-        values[0] = -9223372036854775808;
-        values[1] = 2;
-        values[2] = 3;
-        printf("first=%d\n", values[0]);
-        total = sum(values);
-        printf("sum=%d\n", total);
-        printf("replaced=%d\n", replaceFirst(values, 9223372036854775807));
-    }
+void main() {
+    long values[3];
+    long total;
+    values[0] = -9223372036854775808;
+    values[1] = 2;
+    values[2] = 3;
+    printf("first=%d\n", values[0]);
+    total = sum(values);
+    printf("sum=%d\n", total);
+    printf("replaced=%d\n", replaceFirst(values, 9223372036854775807));
 }
 ```
 
@@ -722,7 +710,7 @@ The following limitations are deliberate architectural boundaries for LemonC as 
 
 | Boundary | Description |
 |---|---|
-| Single-Class Model | Programs consist of one top-level class with static methods; no object instantiation (`new Object()`), inheritance, or interfaces. |
+| Program Model | Programs consist of top-level functions with static/global semantics; no object instantiation (`new Object()`), inheritance, or interfaces. Legacy single-class wrappers are supported for compatibility. |
 | Variable Placement | All local variable and array declarations must appear at the top of the method body before statements. |
 | Scope Granularity | Variables are scoped to the method level (`MethodVarTable`). Sub-blocks (`{ ... }`) do not introduce independent shadowing scopes. |
 | Scalar String Variables | Scalar string variable assignments (`string s; s = "text";`) are not supported; strings are supported as literals, `printf` arguments, and `string[]` array elements. |

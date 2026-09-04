@@ -21,15 +21,15 @@ import static org.junit.Assert.*;
 public class ShortCompilerTest {
     @Test
     public void supportsShortVariablesParametersReturnsPromotionAndJvmCodegen() throws Exception {
-        Analysis analysis = analyze("ShortValid", "class ShortValid {\n"
-                + "    short identity(short value) { return value; }\n"
-                + "    void main() {\n"
-                + "        short value; int widened; long large;\n"
-                + "        value = 32767; widened = value + 1; large = value;\n"
-                + "        value = identity(value);\n"
-                + "        if (value < 32767) { widened = value; }\n"
-                + "        printf(\"%d\", value);\n"
-                + "    }\n}\n");
+        Analysis analysis = analyze("ShortValid", ""
+                + "short identity(short value) { return value; }\n"
+                + "void main() {\n"
+                + "    short value; int widened; long large;\n"
+                + "    value = 32767; widened = value + 1; large = value;\n"
+                + "    value = identity(value);\n"
+                + "    if (value < 32767) { widened = value; }\n"
+                + "    printf(\"%d\", value);\n"
+                + "}\n");
         assertTrue("short program should be valid: " + analysis.semantic.getDiagnostics(), analysis.semantic.passOrNot());
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(analysis.program);
@@ -45,33 +45,33 @@ public class ShortCompilerTest {
 
     @Test
     public void acceptsShortBoundaryConstantsAndRejectsOutOfRange() throws Exception {
-        assertTrue(analyze("ShortBounds", "class ShortBounds { void main() { short low; short high; low = -32768; high = 32767; } }\n").semantic.passOrNot());
-        Diagnostic diagnostic = firstDiagnostic(analyze("ShortRange", "class ShortRange { void main() { short value; value = 32768; } }\n").semantic.getDiagnostics());
+        assertTrue(analyze("ShortBounds", "void main() { short low; short high; low = -32768; high = 32767; }\n").semantic.passOrNot());
+        Diagnostic diagnostic = firstDiagnostic(analyze("ShortRange", "void main() { short value; value = 32768; }\n").semantic.getDiagnostics());
         assertEquals("E3009", diagnostic.code());
         assertTrue(diagnostic.message().contains("expected -32768..32767"));
     }
 
     @Test
     public void rejectsShortMismatchesAndNarrowingFromNonConstant() throws Exception {
-        Analysis assignment = analyze("ShortAssignment", "class ShortAssignment { void main() { short value; value = 1.5; } }\n");
+        Analysis assignment = analyze("ShortAssignment", "void main() { short value; value = 1.5; }\n");
         assertEquals("E3001", firstDiagnostic(assignment.semantic.getDiagnostics()).code());
-        Analysis narrowing = analyze("ShortNarrowing", "class ShortNarrowing { void main() { int value; short result; value = 1; result = value; } }\n");
+        Analysis narrowing = analyze("ShortNarrowing", "void main() { int value; short result; value = 1; result = value; }\n");
         assertEquals("E3001", firstDiagnostic(narrowing.semantic.getDiagnostics()).code());
     }
 
     @Test
     public void reportsShortRangeAcrossReturnArgumentAndArrayStore() throws Exception {
         assertEquals("E3009", firstDiagnostic(analyze("ShortReturnRange",
-                "class ShortReturnRange { short value() { return 32768; } void main() {} }\n").semantic.getDiagnostics()).code());
+                "short value() { return 32768; } void main() {}\n").semantic.getDiagnostics()).code());
         assertEquals("E3009", firstDiagnostic(analyze("ShortArgumentRange",
-                "class ShortArgumentRange { void use(short value) {} void main() { use(32768); } }\n").semantic.getDiagnostics()).code());
+                "void use(short value) {} void main() { use(32768); }\n").semantic.getDiagnostics()).code());
         assertEquals("E3009", firstDiagnostic(analyze("ShortElementRange",
-                "class ShortElementRange { void main() { short values[1]; values[0] = 32768; } }\n").semantic.getDiagnostics()).code());
+                "void main() { short values[1]; values[0] = 32768; }\n").semantic.getDiagnostics()).code());
     }
 
     @Test
     public void supportsShortArraysWithJvmShortArrayInstructions() throws Exception {
-        Analysis analysis = analyze("ShortArray", "class ShortArray { void main() { short values[2]; values[0] = 12; printf(\"%d\", values[0]); } }\n");
+        Analysis analysis = analyze("ShortArray", "void main() { short values[2]; values[0] = 12; printf(\"%d\", values[0]); }\n");
         assertTrue(analysis.semantic.passOrNot());
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(analysis.program);
@@ -85,7 +85,7 @@ public class ShortCompilerTest {
 
     @Test
     public void executesShortProgramOnJvm() throws Exception {
-        Analysis analysis = analyze("ShortRuntime", "class ShortRuntime { void main() { short value; int result; value = 41; result = value + 1; printf(\"%d\", result); } }\n");
+        Analysis analysis = analyze("ShortRuntime", "void main() { short value; int result; value = 41; result = value + 1; printf(\"%d\", result); }\n");
         assertTrue(analysis.semantic.passOrNot());
         TranslatorVisitor translator = new TranslatorVisitor();
         translator.visit(analysis.program);

@@ -12,7 +12,7 @@ compile-time safety, ownership verification, and the foundation for native C low
 
 ## 1. Scope and Managed Values
 
-LemonC is currently a single-class teaching language. It has no user-created
+LemonC is currently a top-level function teaching language. It has no user-created
 class instances, structs, fields, pointers, references, or explicit `new` and
 `delete` expressions. The minimum useful ARC scope is therefore:
 

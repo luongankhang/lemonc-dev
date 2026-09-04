@@ -18,7 +18,7 @@ public class ArcOwnershipTest {
     public void annotatesArrayAllocationBoundsAndScopeRelease() throws Exception {
         File dir = Files.createTempDirectory("lemonc-arc").toFile();
         File file = new File(dir, "ArcExample.lemon");
-        Files.writeString(file.toPath(), "class ArcExample { void main() { int values[2]; values[0] = 1; } }\n", StandardCharsets.UTF_8);
+        Files.writeString(file.toPath(), "void main() { int values[2]; values[0] = 1; }\n", StandardCharsets.UTF_8);
         try {
             Ast.Program.T program = new Parser(new Lexer(file)).parse();
             OwnershipIr ir = new OwnershipAnalyzer().analyze(program);
