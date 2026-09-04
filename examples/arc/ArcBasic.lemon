@@ -1,0 +1,11 @@
+// Basic ARC example demonstrating managed array allocation,
+// element indexing, bounds check, and automatic scope release.
+class ArcBasic {
+    void main() {
+        int numbers[3];
+        numbers[0] = 10;
+        numbers[1] = 20;
+        numbers[2] = 30;
+        printf("%d, %d, %d\n", numbers[0], numbers[1], numbers[2]);
+    }
+}

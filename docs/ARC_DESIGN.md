@@ -2,10 +2,13 @@
 
 ## Status
 
-This document is a design specification only. It does not enable ARC, change
-the JVM backend, or add retain/release bytecode. The current implementation
-continues to use JVM garbage collection. An ownership pass and simulator may
-be implemented only after this specification is reviewed.
+**Implemented and Active.** The ARC system features a production-quality
+control-flow graph (CFG) ownership analyzer (`OwnershipAnalyzer`), a path-sensitive
+abstract interpretation simulator (`RefcountSimulator`), standardized diagnostic
+codes (`E8001`-`E8006`), and CLI options (`--arc`, `--arc-verify`, `--arc-analysis`,
+`--arc-debug`, `--dump-arc`).
+The JVM backend continues using standard JVM garbage collection, while ARC provides
+compile-time safety, ownership verification, and the foundation for native C lowering.
 
 ## 1. Scope and Managed Values
 
@@ -167,28 +170,34 @@ global operation count. `total retain == total release` is necessary but not
 sufficient; path-sensitive state and use-after-release checks are required.
 
 ## 6. CLI and Debugging
-
-Add `--dump-arc` only after Ownership IR exists. It should print source-linked
-abstract operations, for example:
-
+ 
+LemonC provides dedicated ARC command-line options:
+ 
+- `--arc`: Enables ARC analysis and runs automatic ownership verification.
+- `--arc-verify`: Runs the path-sensitive `RefcountSimulator` on the ownership CFG and reports diagnostics (`E8001`-`E8006`), exiting with code 1 on failure.
+- `--arc-analysis` (or `--dump-arc`): Dumps the linearized sequence of memory operations and basic block events.
+- `--arc-debug`: Prints the full CFG structure including blocks, terminator jump types, successors, and per-block operations.
+ 
+Example output with `--arc-analysis`:
+ 
 ```text
-%a0 = Alloc short[]                       line 4
-Retain %a0 -> local values                line 4
-BoundsCheck values, index                 line 5
-Release local values                      line 9
+== ARC ==
+ALLOC values:@short[] (line 4)
+RETAIN values (line 4)
+BOUNDS_CHECK values (line 5)
+RELEASE values (line 9)
+SCOPE_EXIT main (line 9)
 ```
-
-The flag must not change generated JVM bytecode or runtime behavior. It should
-be compatible with existing inspection flags and should make ownership state
-visible for teaching and debugging.
-
-## 7. Implementation Plan
-
-1. Review and approve this document.
-2. Add only the `site.ilemon.arc` data model and operation validation.
-3. Add AST-to-Ownership-IR analysis after semantic validation.
-4. Add path-aware reference simulator and negative tests.
-5. Add `--dump-arc` and documentation links.
-6. Add a future C lowering proposal; do not implement C retain/release yet.
-
-Every step must preserve the existing JVM pipeline and pass `mvn clean test`.
+ 
+The flags do not alter the generated JVM bytecode, ensuring 100% backward compatibility.
+ 
+## 7. Diagnostics Reference
+ 
+| Code | Error Name | Description |
+|---|---|---|
+| `E8001` | `ARC_DOUBLE_RELEASE` | Releasing a managed reference whose refcount is already 0 or already released |
+| `E8002` | `ARC_USE_AFTER_RELEASE` | Accessing, retaining, or indexing a reference after it has been released |
+| `E8003` | `ARC_MISSING_RELEASE` | Leaking a managed heap reference at function exit or scope termination |
+| `E8004` | `ARC_OWNERSHIP_VIOLATION` | Refcount or ownership status mismatch across converging CFG branches |
+| `E8005` | `ARC_INVALID_MOVE_COPY` | Illegal move from an uninitialized or already moved value |
+| `E8006` | `ARC_LIFETIME_VIOLATION` | Reference escapes local scope without valid ownership transfer |

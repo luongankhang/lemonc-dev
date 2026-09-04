@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * LemonC command line entry point.
@@ -87,10 +88,44 @@ public class LemonC {
 
             Ast.Program.T optimizedProgram = new AstOptimizer().optimize(program);
 
-            if (options.dumpArc) {
-                out.println("== ARC ==");
-                for (var operation : new OwnershipAnalyzer().analyze(optimizedProgram).operations()) {
-                    out.println(operation);
+            if (options.dumpArc || options.arc || options.arcVerify || options.arcAnalysis || options.arcDebug) {
+                site.ilemon.arc.OwnershipAnalyzer analyzer = new site.ilemon.arc.OwnershipAnalyzer();
+                site.ilemon.arc.OwnershipIr arcIr = analyzer.analyze(optimizedProgram);
+
+                if (options.dumpArc || options.arcAnalysis || options.arcDebug) {
+                    out.println("== ARC ==");
+                    if (options.arcDebug) {
+                        for (site.ilemon.arc.OwnershipFunction func : arcIr.functions()) {
+                            out.println("Function: " + func.name() + " (returnManaged=" + func.isReturnManaged() + ")");
+                            out.println("  Managed locals: " + func.managedLocals().keySet());
+                            out.println("  Managed params: " + func.managedParameters());
+                            for (site.ilemon.arc.OwnershipBlock block : func.blocks()) {
+                                out.println("  Block [" + block.name() + "]:");
+                                for (site.ilemon.arc.MemoryOp op : block.operations()) {
+                                    out.println("    " + op);
+                                }
+                                List<String> succNames = block.successors().stream().map(site.ilemon.arc.OwnershipBlock::name).toList();
+                                out.println("    -> " + block.terminatorType() + " to " + succNames);
+                            }
+                        }
+                    } else {
+                        for (var operation : arcIr.operations()) {
+                            out.println(operation);
+                        }
+                    }
+                }
+
+                if (options.arc || options.arcVerify || options.arcDebug) {
+                    site.ilemon.arc.RefcountSimulator simulator = new site.ilemon.arc.RefcountSimulator();
+                    try {
+                        simulator.verify(arcIr);
+                    } catch (IllegalStateException e) {
+                        err.println("compile failed: ARC ownership verification failed");
+                        for (Diagnostic diagnostic : simulator.getDiagnostics()) {
+                            err.println(new DiagnosticRenderer((file, line) -> lexer.getSourceLine(line)).render(diagnostic));
+                        }
+                        return 1;
+                    }
                 }
             }
 
@@ -156,7 +191,7 @@ public class LemonC {
     }
 
     private static void usage(PrintStream err) {
-        err.println("usage: java -jar LemonC.jar <source.lemon> [--dump-tokens] [--dump-ast] [--dump-ir] [--dump-arc] [--verbose]");
+        err.println("usage: java -jar LemonC.jar <source.lemon> [--dump-tokens] [--dump-ast] [--dump-ir] [--dump-arc] [--arc] [--arc-verify] [--arc-analysis] [--arc-debug] [--verbose]");
     }
 
     private static final class CompilerOptions {
@@ -165,6 +200,10 @@ public class LemonC {
         private boolean dumpAst;
         private boolean dumpIr;
         private boolean dumpArc;
+        private boolean arc;
+        private boolean arcVerify;
+        private boolean arcAnalysis;
+        private boolean arcDebug;
         private boolean verbose;
 
         private CompilerOptions(String sourcePath) {
@@ -185,6 +224,15 @@ public class LemonC {
                     options.dumpIr = true;
                 } else if ("--dump-arc".equals(args[i])) {
                     options.dumpArc = true;
+                    options.arcAnalysis = true;
+                } else if ("--arc".equals(args[i])) {
+                    options.arc = true;
+                } else if ("--arc-verify".equals(args[i])) {
+                    options.arcVerify = true;
+                } else if ("--arc-analysis".equals(args[i])) {
+                    options.arcAnalysis = true;
+                } else if ("--arc-debug".equals(args[i])) {
+                    options.arcDebug = true;
                 } else if ("--verbose".equals(args[i])) {
                     options.verbose = true;
                 } else {

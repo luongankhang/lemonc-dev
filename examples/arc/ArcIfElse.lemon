@@ -1,0 +1,23 @@
+// ARC example demonstrating branch-sensitive ownership and join point convergence.
+class ArcIfElse {
+    void main() {
+        bool flag;
+        int left[2];
+        int right[2];
+        flag = true;
+
+        left[0] = 100;
+        right[0] = 200;
+
+        if (flag) {
+            left[1] = left[0] + 1;
+            printf("then: %d\n", left[1]);
+        } else {
+            right[1] = right[0] + 2;
+            printf("else: %d\n", right[1]);
+        }
+
+        // Both left and right remain balanced and released at scope exit
+        printf("done: %d, %d\n", left[0], right[0]);
+    }
+}

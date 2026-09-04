@@ -33,6 +33,13 @@ public final class DiagnosticCodes {
     public static final String FFI_ERROR = "E6001";
     public static final String BACKEND_ERROR = "E7001";
 
+    public static final String ARC_DOUBLE_RELEASE = "E8001";
+    public static final String ARC_USE_AFTER_RELEASE = "E8002";
+    public static final String ARC_MISSING_RELEASE = "E8003";
+    public static final String ARC_OWNERSHIP_VIOLATION = "E8004";
+    public static final String ARC_INVALID_MOVE_COPY = "E8005";
+    public static final String ARC_LIFETIME_VIOLATION = "E8006";
+
     public static final String INTERNAL_COMPILER_ERROR = "E9001";
 
     public static boolean isValid(String code) {
