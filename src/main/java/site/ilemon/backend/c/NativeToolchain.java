@@ -15,7 +15,8 @@ public final class NativeToolchain {
         throw new IllegalStateException("No C compiler found; install GCC, G++, Clang, or a C99-compatible cc");
     }
     public void compile(Path source, Path runtimeSource, Path output) throws IOException, InterruptedException {
-        List<String> command = new ArrayList<>(List.of(compiler, "-x", "c", "-std=c99", "-Wall", "-Wextra", "-Werror", source.toString(), runtimeSource.toString(), "-o", output.toString()));
+        Path runtimeRoot = runtimeSource.toAbsolutePath().getParent();
+        List<String> command = new ArrayList<>(List.of(compiler, "-x", "c", "-std=c99", "-Wall", "-Wextra", "-Werror", "-I", runtimeRoot.resolve("include").toString(), "-I", runtimeRoot.toString(), source.toString(), runtimeSource.toString(), "-o", output.toString()));
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
         String diagnostics = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         if (process.waitFor() != 0) throw new IOException("C compiler failed (" + compiler + "): " + diagnostics.trim());
