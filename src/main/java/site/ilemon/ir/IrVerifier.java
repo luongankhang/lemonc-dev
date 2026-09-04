@@ -24,8 +24,23 @@ public final class IrVerifier {
                 if (terminated) throw invalid("instruction follows terminator in block: " + block.name());
                 if (instruction.result() != null && instruction.op() == IrInstruction.Op.STORE) throw invalid("store cannot produce a result");
                 terminated = instruction.isTerminator();
+                if (instruction.isTerminator() && instruction.target() != null && !instruction.target().isBlank()) {
+                    if (!blocks.contains(instruction.target())) {
+                        // Keep the check lazy so block names are known after the set is built.
+                    }
+                }
             }
             if (!terminated) throw invalid("unterminated block: " + block.name());
+        }
+
+        for (BasicBlock block : function.blocks()) {
+            for (IrInstruction instruction : block.instructions()) {
+                if (instruction.isTerminator() && instruction.target() != null && !instruction.target().isBlank()) {
+                    if (!function.blocks().stream().anyMatch(candidate -> candidate.name().equals(instruction.target()))) {
+                        throw invalid("branch target '" + instruction.target() + "' in block '" + block.name() + "' is undefined");
+                    }
+                }
+            }
         }
     }
     private static IllegalStateException invalid(String message) { return new IllegalStateException("Invalid LemonIR: " + message); }

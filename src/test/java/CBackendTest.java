@@ -72,8 +72,8 @@ public class CBackendTest {
 
         assertTrue(c.contains("sub_res = a - b;"));
         assertTrue(c.contains("mul_res = a * b;"));
-        assertTrue(c.contains("div_res = a / b;"));
-        assertTrue(c.contains("rem_res = a % b;"));
+        assertTrue(c.contains("div_res = ((b) == 0 ? (lemon_panic_divzero(\"division by zero\"), 0) : (a / b));"));
+        assertTrue(c.contains("rem_res = ((b) == 0 ? (lemon_panic_divzero(\"remainder by zero\"), 0) : (a % b));"));
         assertTrue(c.contains("and_res = a & b;"));
         assertTrue(c.contains("or_res = a | b;"));
         assertTrue(c.contains("xor_res = a ^ b;"));
@@ -84,6 +84,24 @@ public class CBackendTest {
         assertTrue(c.contains("cmp_neq = (a != b);"));
         assertTrue(c.contains("frem_res = fmodf(10.5f, 2.0f);"));
         assertTrue(c.contains("conv_res = ((float)(a));"));
+    }
+
+    @Test
+    public void emitsRuntimeGuardForDivisionAndRemainderZeroDivisors() {
+        IrType intType = IrType.scalar(IrType.Kind.INT);
+        BasicBlock bb = new BasicBlock("entry")
+                .add(new IrInstruction(IrInstruction.Op.CONST, new IrValue("a", intType), List.of(new IrValue("10", intType)), null))
+                .add(new IrInstruction(IrInstruction.Op.CONST, new IrValue("b", intType), List.of(new IrValue("0", intType)), null))
+                .add(new IrInstruction(IrInstruction.Op.DIV, new IrValue("div_res", intType), List.of(new IrValue("a", intType), new IrValue("b", intType)), null))
+                .add(new IrInstruction(IrInstruction.Op.REM, new IrValue("rem_res", intType), List.of(new IrValue("a", intType), new IrValue("b", intType)), null))
+                .add(new IrInstruction(IrInstruction.Op.RETURN, null, List.of(new IrValue("div_res", intType)), null));
+
+        IrModule module = new IrModule("guarded_div").addFunction(new IrFunction("test_guarded_div", intType, List.of()).addBlock(bb));
+        String c = new CBackend().generate(module);
+
+        assertTrue(c.contains("lemon_panic_divzero(\"division by zero\")"));
+        assertTrue(c.contains("lemon_panic_divzero(\"remainder by zero\")"));
+        assertTrue(c.contains("(b) == 0"));
     }
 
     @Test

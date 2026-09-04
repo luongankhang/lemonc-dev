@@ -29,12 +29,22 @@ public final class CInstructionEmitter {
                 }
                 yield result + val + ";";
             }
-            case ADD, SUB, MUL, DIV -> result + binary(instruction.op(), args) + ";";
+            case ADD, SUB, MUL -> result + binary(instruction.op(), args) + ";";
+            case DIV -> {
+                if (args.length >= 2) {
+                    String rhs = args[1];
+                    yield result + "((" + rhs + ") == 0 ? (lemon_panic_divzero(\"division by zero\"), 0) : (" + args[0] + " / " + rhs + "))" + ";";
+                }
+                yield result + (args.length == 0 ? "0" : args[0]) + ";";
+            }
             case REM -> {
                 if (instruction.result() != null && instruction.result().type().kind() == IrType.Kind.FLOAT) {
                     yield result + "fmodf(" + args[0] + ", " + args[1] + ");";
                 } else if (instruction.result() != null && instruction.result().type().kind() == IrType.Kind.DOUBLE) {
                     yield result + "fmod(" + args[0] + ", " + args[1] + ");";
+                } else if (args.length >= 2) {
+                    String rhs = args[1];
+                    yield result + "((" + rhs + ") == 0 ? (lemon_panic_divzero(\"remainder by zero\"), 0) : (" + args[0] + " % " + rhs + "))" + ";";
                 }
                 yield result + (args.length < 2 ? (args.length == 0 ? "0" : args[0]) : args[0] + " % " + args[1]) + ";";
             }

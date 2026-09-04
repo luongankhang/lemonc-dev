@@ -7,6 +7,8 @@ import site.ilemon.codegen.ast.Label;
 import site.ilemon.exception.CompilerException;
 import site.ilemon.exception.ParseException;
 import site.ilemon.diagnostic.Diagnostic;
+import site.ilemon.diagnostic.DiagnosticCodes;
+import site.ilemon.diagnostic.DiagnosticEngine;
 import site.ilemon.diagnostic.DiagnosticRenderer;
 import site.ilemon.lexer.Lexer;
 import site.ilemon.lexer.Token;
@@ -214,6 +216,15 @@ public class LemonC {
             return 1;
         } catch (IOException e) {
             err.println("io error: " + e.getMessage());
+            return 1;
+        } catch (RuntimeException e) {
+            var engine = new DiagnosticEngine();
+            Diagnostic diagnostic = engine.error(DiagnosticCodes.INTERNAL_COMPILER_ERROR)
+                    .message("internal compiler error: " + (e.getMessage() == null ? "unknown runtime failure" : e.getMessage()))
+                    .primary(null, "unexpected compiler failure")
+                    .report();
+            err.println("compile failed:");
+            err.println(new DiagnosticRenderer((file, line) -> null).render(diagnostic));
             return 1;
         }
     }

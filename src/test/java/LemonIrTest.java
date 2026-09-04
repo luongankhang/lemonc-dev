@@ -34,4 +34,13 @@ public class LemonIrTest {
         BasicBlock block = new BasicBlock("entry").add(new IrInstruction(IrInstruction.Op.RETURN, null, List.of(), null));
         assertThrows(IllegalStateException.class, () -> block.add(new IrInstruction(IrInstruction.Op.CONST, null, List.of(), null)));
     }
+
+    @Test
+    public void rejectsUndefinedBranchTarget() {
+        BasicBlock entry = new BasicBlock("entry")
+                .add(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), "missing_block"));
+        IrFunction function = new IrFunction("broken_branch", IrType.scalar(IrType.Kind.VOID), List.of())
+                .addBlock(entry);
+        assertThrows(IllegalStateException.class, () -> site.ilemon.ir.IrVerifier.verify(function));
+    }
 }

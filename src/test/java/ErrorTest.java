@@ -216,6 +216,16 @@ public class ErrorTest {
         compileSource("void main() { int x; x = f(); } int f() { { return 1; } }");
     }
 
+    @Test
+    public void testIfElseReturnPathStillInitializesVariable() throws IOException {
+        compileSource("void main() { int y; int z; y = 1; z = f(y); } int f(int y) { int x; if (y > 0) { return 1; } else { x = 2; } return x; }");
+    }
+
+    @Test
+    public void testIfReturnThenAssignGuaranteesAssignment() throws IOException {
+        compileSource("void main() { int y; int z; y = 1; z = f(y); } int f(int y) { int x; if (y > 0) { x = 2; } else { return 3; } return x; }");
+    }
+
     @Test(expected = SemanticException.class)
     public void testWhileReturnDoesNotGuaranteeNonVoidMethod() throws IOException {
         compileSource("void main() {} int f() { while (true) { return 1; } }");

@@ -308,6 +308,41 @@ public class SemanticVisitor implements ISemanticVisitor {
         this.currType = obj.getType();
     }
 
+    private boolean statementTerminates(Ast.Stmt.T statement) {
+        if (statement == null) {
+            return false;
+        }
+        if (statement instanceof Ast.Stmt.Return) {
+            return true;
+        }
+        if (statement instanceof Ast.Stmt.Break || statement instanceof Ast.Stmt.Continue) {
+            return true;
+        }
+        if (statement instanceof Ast.Stmt.Block block) {
+            if (block.getStmts() == null || block.getStmts().isEmpty()) {
+                return false;
+            }
+            for (Ast.Stmt.T stmt : block.getStmts()) {
+                if (statementTerminates(stmt)) {
+                    return true;
+                }
+                if (!(stmt instanceof Ast.Stmt.If) && !(stmt instanceof Ast.Stmt.Block) && !(stmt instanceof Ast.Stmt.While) && !(stmt instanceof Ast.Stmt.For)) {
+                    return false;
+                }
+            }
+            return false;
+        }
+        if (statement instanceof Ast.Stmt.If ifStmt) {
+            if (ifStmt.getElseStmt() == null) {
+                return false;
+            }
+            boolean thenTerminates = statementTerminates(ifStmt.getThenStmt());
+            boolean elseTerminates = statementTerminates(ifStmt.getElseStmt());
+            return thenTerminates && elseTerminates;
+        }
+        return false;
+    }
+
     @Override
     public void visit(Ast.Stmt.If obj) {
         this.visit(obj.getCondition());
@@ -319,13 +354,24 @@ public class SemanticVisitor implements ISemanticVisitor {
         this.currMethodLocalVar = new HashSet<>(before);
         this.visit(obj.getThenStmt());
         HashSet<String> thenUnassigned = new HashSet<>(this.currMethodLocalVar);
+        boolean thenTerminates = statementTerminates(obj.getThenStmt());
 
         if (obj.getElseStmt() != null) {
             this.currMethodLocalVar = new HashSet<>(before);
             this.visit(obj.getElseStmt());
             HashSet<String> elseUnassigned = new HashSet<>(this.currMethodLocalVar);
-            thenUnassigned.addAll(elseUnassigned);
-            this.currMethodLocalVar = thenUnassigned;
+            boolean elseTerminates = statementTerminates(obj.getElseStmt());
+
+            if (thenTerminates && elseTerminates) {
+                this.currMethodLocalVar = new HashSet<>(before);
+            } else if (thenTerminates) {
+                this.currMethodLocalVar = new HashSet<>(elseUnassigned);
+            } else if (elseTerminates) {
+                this.currMethodLocalVar = new HashSet<>(thenUnassigned);
+            } else {
+                thenUnassigned.addAll(elseUnassigned);
+                this.currMethodLocalVar = thenUnassigned;
+            }
         } else {
             this.currMethodLocalVar = before;
         }
