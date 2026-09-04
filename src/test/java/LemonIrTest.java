@@ -36,11 +36,26 @@ public class LemonIrTest {
     }
 
     @Test
+    public void rejectsNullFunction() {
+        assertThrows(IllegalStateException.class, () -> site.ilemon.ir.IrVerifier.verify((IrFunction) null));
+    }
+
+    @Test
     public void rejectsUndefinedBranchTarget() {
         BasicBlock entry = new BasicBlock("entry")
                 .add(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), "missing_block"));
         IrFunction function = new IrFunction("broken_branch", IrType.scalar(IrType.Kind.VOID), List.of())
                 .addBlock(entry);
+        assertThrows(IllegalStateException.class, () -> site.ilemon.ir.IrVerifier.verify(function));
+    }
+
+    @Test
+    public void rejectsDuplicateBlockNames() {
+        BasicBlock entry = new BasicBlock("entry");
+        BasicBlock duplicate = new BasicBlock("entry");
+        IrFunction function = new IrFunction("broken_dup", IrType.scalar(IrType.Kind.VOID), List.of())
+                .addBlock(entry)
+                .addBlock(duplicate);
         assertThrows(IllegalStateException.class, () -> site.ilemon.ir.IrVerifier.verify(function));
     }
 }
