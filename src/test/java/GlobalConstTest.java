@@ -1,7 +1,10 @@
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import site.ilemon.ast.Ast;
 import site.ilemon.backend.c.CBackend;
 import site.ilemon.backend.c.NativeToolchain;
+import site.ilemon.compiler.LemonC;
 import site.ilemon.compiler.ModuleLoader;
 import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.ir.AstToIrLowerer;
@@ -11,7 +14,9 @@ import site.ilemon.optimizer.AstOptimizer;
 import site.ilemon.parser.Parser;
 import site.ilemon.semantic.SemanticVisitor;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,6 +35,9 @@ import static org.junit.Assert.assertTrue;
  * import mechanism, private-constant visibility, and both backends.</p>
  */
 public class GlobalConstTest {
+
+    @Rule
+    public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     // ================================================================ valid
 
@@ -295,6 +303,120 @@ public class GlobalConstTest {
         assertEquals("42", JvmTestSupport.run(compiled));
     }
 
+    // ============================================ backend matrix (both backends)
+
+    /**
+     * The same module-local {@code const} / {@code pub const} source must behave
+     * identically on the JVM and C backends: compile, execute, and compare the
+     * runtime output of the very same program on each backend.
+     */
+    @Test
+    public void globalConstAndPubConstRunIdenticallyOnBothBackends() throws Exception {
+        String source = ""
+                + "const int MAX_SIZE = 100;\n"
+                + "pub const int STEP = 5;\n"
+                + "int scaled(int x) { return x * MAX_SIZE / STEP; }\n"
+                + "void main() { printf(\"%d\", scaled(2) + MAX_SIZE); }\n";
+
+        IrModule module = lower(source);
+        String cSource = new CBackend().generate(module);
+        // Private constants get internal linkage; pub constants keep external linkage.
+        assertTrue(cSource, cSource.contains("static const int32_t MAX_SIZE = 100;"));
+        assertTrue(cSource, cSource.contains("const int32_t STEP = 5;"));
+
+        String jvmOutput = JvmTestSupport.compileAndRun("MatrixConstMain", source);
+        assertEquals("140", jvmOutput);
+        String nativeOutput = runNative(module);
+        assertEquals("JVM and native output must match for the same Lemon source",
+                jvmOutput, nativeOutput);
+    }
+
+    /**
+     * Cross-module {@code pub const} reads and function calls through an import
+     * alias (alias {@code m} for module file {@code math.lemon}) must produce
+     * identical runtime output on both backends; private constants of the
+     * imported module stay visible only inside that module's own functions.
+     */
+    @Test
+    public void pubConstAndFunctionsAcrossModulesRunIdenticallyOnBothBackends() throws Exception {
+        File dir = temporaryFolder.getRoot();
+        write(dir, "math.lemon", ""
+                + "pub const int VERSION = 7;\n"
+                + "const int SECRET_BASE = 100;\n"
+                + "pub int version() { return VERSION; }\n"
+                + "pub int secret() { return SECRET_BASE; }\n");
+        File main = write(dir, "MatrixImportMain.lemon", ""
+                + "import m = @import(\"math.lemon\");\n"
+                + "void main() {\n"
+                + "    printf(\"%d\", m.VERSION);\n"
+                + "    printf(\"%d\", m.version());\n"
+                + "    printf(\"%d\", m.secret());\n"
+                + "}\n");
+
+        JvmTestSupport.CompiledClass compiled = JvmTestSupport.compile(main);
+        String jvmOutput = JvmTestSupport.run(compiled);
+        assertEquals("77100", jvmOutput);
+        // Cross-module pub constants are still compile-time values: no fields.
+        assertTrue(JvmTestSupport.hasNoFields(compiled.classBytes()));
+
+        IrModule module = lowerFile(main);
+        String cSource = new CBackend().generate(module);
+        // pub const is re-exported under the alias; the private const stays static.
+        assertTrue(cSource, cSource.contains("const int32_t m_VERSION = 7;"));
+        assertTrue(cSource, cSource.contains("static const int32_t SECRET_BASE = 100;"));
+        String nativeOutput = runNative(module);
+        assertEquals("JVM and native output must match for the same Lemon source",
+                jvmOutput, nativeOutput);
+    }
+
+    /**
+     * Compile-fail matrix: every invalid fixture below must be rejected by both
+     * the JVM backend and the C backend (frontend stages are shared, so each
+     * {@code --target} must fail before any backend-specific code generation).
+     */
+    @Test
+    public void privateConstAccessIsRejectedByBothBackendTargets() throws Exception {
+        File dir = temporaryFolder.getRoot();
+        write(dir, "math.lemon", ""
+                + "const int SECRET = 100;\n"
+                + "int dummy() { return 0; }\n");
+        File main = write(dir, "PrivateConstMain.lemon", ""
+                + "import m = @import(\"math.lemon\");\n"
+                + "void main() { printf(\"%d\", m.SECRET); }\n");
+        assertRejectedByBothBackends(main, "no public constant 'SECRET'");
+    }
+
+    @Test
+    public void constReassignmentIsRejectedByBothBackendTargets() throws Exception {
+        File main = write(temporaryFolder.getRoot(), "ReassignConstMain.lemon",
+                "const int VALUE = 10;\nvoid main() { VALUE = 20; }\n");
+        assertRejectedByBothBackends(main, "cannot assign to constant 'VALUE'");
+    }
+
+    @Test
+    public void localConstDeclarationIsRejectedByBothBackendTargets() throws Exception {
+        File main = write(temporaryFolder.getRoot(), "LocalConstMain.lemon",
+                "void main() { const int VALUE = 10; }\n");
+        assertRejectedByBothBackends(main, "const declarations are only allowed at global scope");
+    }
+
+    @Test
+    public void nestedScopeConstIsRejectedByBothBackendTargets() throws Exception {
+        File main = write(temporaryFolder.getRoot(), "NestedConstMain.lemon",
+                "void main() { if (true) { const int VALUE = 10; } }\n");
+        assertRejectedByBothBackends(main, "const declarations are only allowed at global scope");
+    }
+
+    @Test
+    public void missingInitializerIsRejectedByBothBackendTargets() throws Exception {
+        File main = write(temporaryFolder.getRoot(), "NoInitConstMain.lemon",
+                "const int VALUE;\nvoid main() {}\n");
+        assertRejectedByBothBackends(main, "expected '='");
+        File pubMain = write(temporaryFolder.getRoot(), "NoInitPubConstMain.lemon",
+                "pub const int VALUE;\nvoid main() {}\n");
+        assertRejectedByBothBackends(pubMain, "expected '='");
+    }
+
     // =============================================================== helpers
 
     private record ParseFailure(String message) {
@@ -357,6 +479,27 @@ public class GlobalConstTest {
         } finally {
             Files.deleteIfExists(sourceFile);
             Files.deleteIfExists(exe);
+        }
+    }
+
+    /**
+     * Drives the full CLI compile for both {@code --target jvm} and
+     * {@code --target c} and asserts that each backend rejects the source with a
+     * non-zero exit code and the expected diagnostic fragments.
+     */
+    private void assertRejectedByBothBackends(File main, String... expectedFragments) throws Exception {
+        for (String target : new String[]{"jvm", "c"}) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int code = LemonC.run(new String[]{main.getPath(), "--target", target},
+                    new PrintStream(out), new PrintStream(err));
+            String diagnostics = err.toString(StandardCharsets.UTF_8);
+            assertEquals("--target " + target + " must reject " + main.getName() + ", got exit code "
+                    + code + ":\n" + diagnostics, 1, code);
+            for (String fragment : expectedFragments) {
+                assertTrue("--target " + target + " output should contain '" + fragment + "':\n" + diagnostics,
+                        diagnostics.contains(fragment));
+            }
         }
     }
 
