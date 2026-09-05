@@ -11,6 +11,7 @@ import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.diagnostic.DiagnosticCodes;
 import site.ilemon.diagnostic.DiagnosticEngine;
 import site.ilemon.diagnostic.DiagnosticRenderer;
+import site.ilemon.ir.ArcOptimizer;
 import site.ilemon.ir.AstToIrLowerer;
 import site.ilemon.ir.IrModule;
 import site.ilemon.lexer.Lexer;
@@ -142,6 +143,10 @@ public class LemonC {
             // Shared backend-independent LemonIR — the single source of truth
             // for both the JVM and C backends.
             IrModule irModule = new AstToIrLowerer().lower(optimizedProgram);
+
+            // ARC optimization pass: eliminate redundant retain/release pairs
+            new ArcOptimizer().optimize(irModule);
+
             if (options.dumpIr) {
                 out.println("== IR ==");
                 out.print(IrPrinter.print(irModule));

@@ -14,4 +14,7 @@ public final class IrFunction {
     public List<IrValue> parameters() { return parameters; }
     public List<BasicBlock> blocks() { return List.copyOf(blocks); }
     public IrFunction addBlock(BasicBlock block) { if (block == null) throw new IllegalArgumentException("block is null"); blocks.add(block); return this; }
+    public void removeEmptyBlocks() {
+        blocks.removeIf(b -> b.instructions().isEmpty());
+    }
 }
