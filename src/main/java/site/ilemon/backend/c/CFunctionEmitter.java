@@ -32,6 +32,9 @@ public final class CFunctionEmitter {
         }
         out.append(") {\n");
 
+        // Compute which variables are actually used (read) in the function
+        Set<String> usedVars = computeUsedVariables(function);
+
         // Hoist all instruction results as local variable declarations
         Set<String> paramNames = function.parameters().stream().map(IrValue::name).collect(Collectors.toSet());
         Map<String, IrType> locals = new LinkedHashMap<>();
@@ -49,6 +52,17 @@ public final class CFunctionEmitter {
         for (Map.Entry<String, IrType> entry : locals.entrySet()) {
             String cType = types.emit(entry.getValue());
             out.append("    ").append(cType).append(" ").append(safe(entry.getKey())).append(" = 0;\n");
+            // Suppress -Wunused-but-set-variable for variables written but never read
+            if (!usedVars.contains(entry.getKey())) {
+                out.append("    (void)").append(safe(entry.getKey())).append(";\n");
+            }
+        }
+
+        // Add (void) casts for unused parameters to suppress -Wunused-parameter
+        for (IrValue p : function.parameters()) {
+            if (!usedVars.contains(p.name())) {
+                out.append("    (void)").append(safe(p.name())).append(";\n");
+            }
         }
 
         // Collect used labels to avoid -Wunused-label errors with -Wall -Wextra -Werror
@@ -88,6 +102,27 @@ public final class CFunctionEmitter {
 
         out.append("}\n");
         return out.toString();
+    }
+
+    private Set<String> computeUsedVariables(IrFunction function) {
+        Set<String> used = new java.util.HashSet<>();
+        for (BasicBlock block : function.blocks()) {
+            for (IrInstruction inst : block.instructions()) {
+                // All operands are used (read)
+                for (IrValue op : inst.operands()) {
+                    used.add(op.name());
+                }
+                // External call targets like printf use their arguments
+                if (inst.op() == IrInstruction.Op.EXTERNAL_CALL && "printf".equals(inst.target())) {
+                    for (IrValue op : inst.operands()) {
+                        used.add(op.name());
+                    }
+                }
+                // Function call results that are stored in variables are used if the variable is used
+                // But we only track operands here
+            }
+        }
+        return used;
     }
 
     public static String safe(String name) {

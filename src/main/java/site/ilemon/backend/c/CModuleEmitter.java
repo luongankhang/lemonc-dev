@@ -16,6 +16,7 @@ public final class CModuleEmitter {
         out.append("#include <stddef.h>\n");
         out.append("#include <stdio.h>\n");
         out.append("#include <math.h>\n");
+        out.append("#include <limits.h>\n");
         out.append("#include \"lemon_runtime.h\"\n\n");
         out.append("typedef struct { unsigned char _opaque; } lemon_opaque_t;\n\n");
 
