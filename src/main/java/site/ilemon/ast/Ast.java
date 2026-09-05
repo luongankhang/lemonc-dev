@@ -12,6 +12,24 @@ import java.util.ArrayList;
  */
 public class Ast {
 
+    public enum Visibility { PUBLIC, PRIVATE }
+
+    public static class ImportDecl {
+        private final String name;
+        private final String path;
+        private final SourceSpan span;
+
+        public ImportDecl(String name, String path, SourceSpan span) {
+            this.name = name;
+            this.path = path;
+            this.span = span;
+        }
+
+        public String getName() { return name; }
+        public String getPath() { return path; }
+        public SourceSpan getSpan() { return span; }
+    }
+
     /**
      * Program
      */
@@ -56,8 +74,10 @@ public class Ast {
             public ArrayList<Ast.Declare.T> getFields() { return this.fields; }
             public void setFields(ArrayList<Ast.Declare.T> fields) { this.fields = fields; }
             private ArrayList<Ast.Method.T> methods;
+            private ArrayList<ImportDecl> imports = new ArrayList<>();
             public ArrayList<Ast.Method.T> getMethods() { return this.methods; }
             public void setMethods(ArrayList<Ast.Method.T> methods) { this.methods = methods; }
+            public ArrayList<ImportDecl> getImports() { return this.imports; }
 
             public MainClassSingle(String classId, ArrayList<Declare.T> fields, ArrayList<Ast.Method.T> methods) {
                 this.classId = classId;
@@ -333,6 +353,9 @@ public class Ast {
             public abstract void accept(ISemanticVisitor v);
         }
         public static class DeclareSingle extends T {
+            private Visibility visibility = Visibility.PRIVATE;
+            public Visibility getVisibility() { return visibility; }
+            public void setVisibility(Visibility visibility) { this.visibility = visibility; }
             private Type.T type;
             public Type.T getType() { return this.type; }
             public void setType(Type.T type) { this.type = type; }
@@ -1110,6 +1133,9 @@ public class Ast {
         }
 
         public static class MethodSingle extends T {
+            private Visibility visibility = Visibility.PRIVATE;
+            public Visibility getVisibility() { return visibility; }
+            public void setVisibility(Visibility visibility) { this.visibility = visibility; }
             private Ast.Type.T retType;
             public Ast.Type.T getRetType() { return this.retType; }
             public void setRetType(Ast.Type.T retType) { this.retType = retType; }

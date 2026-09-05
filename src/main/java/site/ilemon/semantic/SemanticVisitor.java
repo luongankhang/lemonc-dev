@@ -59,6 +59,8 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     private Ast.Type.T typeOfMethodDeclared;
 
+    private HashSet<String> importedModuleNames = new HashSet<>();
+
     public SemanticVisitor(){
         this(false);
     }
@@ -179,6 +181,13 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Stmt.Assign obj) {
+        if (importedModuleNames.contains(obj.getId().getId())) {
+            semanticError(DiagnosticCodes.SEM_INVALID_SYMBOL_USAGE,
+                    "cannot assign to imported module '" + obj.getId().getId() + "'",
+                    obj.getLineNum(), obj.getSpan(), "immutable module binding",
+                    "module imports are compile-time bindings", null);
+            return;
+        }
         if(obj.getExpr() instanceof Ast.Expr.T){
             this.visit((Ast.Expr.T)obj.getExpr());
             Ast.Type.T exprType = null;
@@ -415,6 +424,10 @@ public class SemanticVisitor implements ISemanticVisitor {
     @Override
     public void visit(Ast.MainClass.T obj) {
         Ast.MainClass.MainClassSingle mainClassSingle = (Ast.MainClass.MainClassSingle) obj;
+        importedModuleNames.clear();
+        for (Ast.ImportDecl importDecl : mainClassSingle.getImports()) {
+            importedModuleNames.add(importDecl.getName());
+        }
         for(int i = 0; i < mainClassSingle.getMethods().size(); i++){
             Ast.Method.MethodSingle method = (Ast.Method.MethodSingle) mainClassSingle.getMethods().get(i);
             if( methodMap.containsKey(method.getId())){

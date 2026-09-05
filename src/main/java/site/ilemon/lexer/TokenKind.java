@@ -28,6 +28,9 @@ public enum TokenKind {
 		Return,
 		Break,
 		Continue,
+		Pub,
+		Import,
+		At,
 
 		/*** Arithmetic operators ****/
 		Add,

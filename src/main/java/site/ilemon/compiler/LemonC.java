@@ -79,6 +79,8 @@ public class LemonC {
                 dumpTokens(lexer, out);
             }
 
+            new ModuleLoader().resolve(program, sourceFile.toPath());
+
             SemanticVisitor semantic = SemanticVisitor.collecting();
             semantic.visit(program);
             if (!semantic.passOrNot()) {

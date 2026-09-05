@@ -82,7 +82,8 @@ The same example also demonstrates constant folding, algebraic simplification, b
 | Comparison | `>`, `<`, `>=`, `<=`, `==`, `!=` |
 | Boolean logic | `true`, `false`, `!`, `&&`, `||`, short-circuit control flow |
 | Control flow | `if/else`, `while`, `for`, `break`, `continue`, nested loops |
-| Methods | parameters, return values, `void` methods, recursive calls, expression calls |
+| Methods | parameters, return values, `void` methods, recursive calls, expression calls, `pub` exports |
+| Modules | compile-time `import alias = @import("file.lemon")`, canonical path loading, public function exports, cycle diagnostics |
 | Output | `printf`, `printLine`, `%d` (including `byte`, `short`, `char`, `int`, `long`), `%f`, `\n`, `\t` |
 | Optimization | constant folding, boolean folding, algebraic simplification, constant branch simplification |
 | Diagnostics | parse and semantic exceptions with source line context |
@@ -102,6 +103,28 @@ void main() {
 ```
 
 See [examples/TopLevelFunctionsTest.lemon](examples/TopLevelFunctionsTest.lemon) and [examples/TopLevelArraysTest.lemon](examples/TopLevelArraysTest.lemon).
+
+### Modules and visibility
+
+Top-level functions are private by default. Prefix an exported function with `pub`, then import its module from a neighboring Lemon file:
+
+```c
+// math.lemon
+pub int add(int left, int right) {
+    return left + right;
+}
+```
+
+```c
+// main.lemon
+import math = @import("math.lemon");
+
+void main() {
+    printf("%d\n", math.add(10, 20));
+}
+```
+
+The complete example is available under [examples/modules](examples/modules). Imports are compile-time bindings, resolved relative to the importing file and rejected when the module is missing, cyclic, duplicated, or accessed through a non-public function.
 
 ## Compiler Architecture
 

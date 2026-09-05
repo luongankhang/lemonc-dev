@@ -178,10 +178,35 @@ public class Parser {
 	// Top-level programs are represented internally by a synthetic container so
 	// existing semantic and backend phases remain source-compatible.
 	private Ast.MainClass.MainClassSingle parseTopLevelProgram() throws IOException {
+		ArrayList<Ast.ImportDecl> imports = parseImports();
 		ArrayList<Ast.Method.T> methods = parseMethodList();
 		if (methods.isEmpty()) error("program must declare at least one function");
 		if (look.kind != TokenKind.EOF) expected("EOF");
-		return new Ast.MainClass.MainClassSingle(lexer.getClassName(), null, methods);
+		Ast.MainClass.MainClassSingle main = new Ast.MainClass.MainClassSingle(lexer.getClassName(), null, methods);
+		main.getImports().addAll(imports);
+		return main;
+	}
+
+	private ArrayList<Ast.ImportDecl> parseImports() throws IOException {
+		ArrayList<Ast.ImportDecl> imports = new ArrayList<>();
+		while (look.kind == TokenKind.Import) {
+			Token importToken = look;
+			move();
+			String name = look.lexeme;
+			match(new Token(TokenKind.Id));
+			match("=");
+			match("@");
+			if (!"import".equals(look.lexeme)) error("expected @import in module import");
+			move();
+			match("(");
+			if (look.kind != TokenKind.String) error("@import path must be a string literal");
+			String path = look.lexeme;
+			move();
+			match(")");
+			match(";");
+			imports.add(new Ast.ImportDecl(name, path, tokenSpan(importToken)));
+		}
+		return imports;
 	}
 
 
@@ -223,7 +248,7 @@ public class Parser {
 	}
 
 	private boolean isMethodStart() {
-		return look != null && (look.kind == TokenKind.Void || look.kind == TokenKind.Int
+		return look != null && (look.kind == TokenKind.Pub || look.kind == TokenKind.Void || look.kind == TokenKind.Int
 				|| look.kind == TokenKind.Float || look.kind == TokenKind.Double
 				|| look.kind == TokenKind.Bool || look.kind == TokenKind.Byte || look.kind == TokenKind.Short || look.kind == TokenKind.Char || look.kind == TokenKind.Long || look.kind == TokenKind.String);
 	}
@@ -244,6 +269,11 @@ public class Parser {
 	
 	// <method> -> void | int | double | methodname ( <inputparams> ) {<varDeclares> <stmts> [return <expr>]}
 	private Ast.Method.MethodSingle parseMethod() throws IOException {
+		Ast.Visibility visibility = Ast.Visibility.PRIVATE;
+		if (look.kind == TokenKind.Pub) {
+			visibility = Ast.Visibility.PUBLIC;
+			move();
+		}
 		Ast.Type.T t = parseType();
 		if (look.kind == TokenKind.Lbracket) {
 			match("[");
@@ -264,6 +294,7 @@ public class Parser {
 		Ast.Stmt.T stmt = stmts.isEmpty() ? null : stmts.get(stmts.size()-1);
 		Ast.Method.MethodSingle method = new Ast.Method.MethodSingle(t,methodName,inputParams,localParams,stmts,stmt,lineNumber);
 		method.setSpan(tokenSpan(nameToken));
+		method.setVisibility(visibility);
 		if( !methodName.equals("main")){
 			return method;
 		}else{
@@ -563,10 +594,11 @@ public class Parser {
 			Token ahead = lexer.lookahead(1);
 			
 			// Method call
-			if( ahead.kind == TokenKind.Lparen ){
-				String mthName = look.lexeme;
+			if( ahead.kind == TokenKind.Lparen || (ahead.kind == TokenKind.Dot
+					&& lexer.lookahead(2).kind == TokenKind.Id && lexer.lookahead(3).kind == TokenKind.Lparen)){
+				String mthName = qualifiedName();
 				int lineNumber = look.lineNumber;
-				Ast.Expr.T expr =  parseMethodCall();
+				Ast.Expr.T expr = parseMethodCall(mthName, lineNumber);
 				if( expr instanceof Ast.Expr.Call){
 					stmt = new Ast.Stmt.Call(mthName,((Ast.Expr.Call)expr).getInputParams(),lineNumber);
 					match(new Token(TokenKind.Semicolon));
@@ -640,10 +672,11 @@ public class Parser {
 			error("expected an assignment or method call");
 		}
 		Token ahead = lexer.lookahead(1);
-		if( ahead.kind == TokenKind.Lparen ){
-			String mthName = look.lexeme;
+			if( ahead.kind == TokenKind.Lparen || (ahead.kind == TokenKind.Dot
+					&& lexer.lookahead(2).kind == TokenKind.Id && lexer.lookahead(3).kind == TokenKind.Lparen)){
+				String mthName = qualifiedName();
 			int lineNumber = look.lineNumber;
-			Ast.Expr.T expr = parseMethodCall();
+				Ast.Expr.T expr = parseMethodCall(mthName, lineNumber);
 			if( expr instanceof Ast.Expr.Call){
 				return new Ast.Stmt.Call(mthName,((Ast.Expr.Call)expr).getInputParams(),lineNumber);
 			}
@@ -830,8 +863,9 @@ public class Parser {
 		}else if( look.kind==TokenKind.Id ){
 			Token temp = look; // Save id token
 			Token ahead = lexer.lookahead(1);
-			if( ahead.kind == TokenKind.Lparen){
-				expr = parseMethodCall();
+						if( ahead.kind == TokenKind.Lparen || (ahead.kind == TokenKind.Dot
+								&& lexer.lookahead(2).kind == TokenKind.Id && lexer.lookahead(3).kind == TokenKind.Lparen)){
+							expr = parseMethodCall();
 			}
 			// Array access: arr[i]
 			else if( ahead.kind == TokenKind.Lbracket){
@@ -894,13 +928,27 @@ public class Parser {
 
 
 	// methodCall->methodCall(Expr,Expr)
+	private String qualifiedName() throws IOException {
+		String name = look.lexeme;
+		move();
+		if (look.kind == TokenKind.Dot) {
+			move();
+			name += "_" + look.lexeme;
+			match(new Token(TokenKind.Id));
+		}
+		return name;
+	}
+
 	private Ast.Expr.T parseMethodCall() throws IOException {
+		int lineNumber = look.lineNumber;
+		String methodName = qualifiedName();
+		return parseMethodCall(methodName, lineNumber);
+	}
+
+	private Ast.Expr.T parseMethodCall(String methodName, int lineNumber) throws IOException {
 		Token ahead;
 		Ast.Expr.T expr;
-	String methodName = look.lexeme;
-	Token methodToken = look;
-		int lineNumber = look.lineNumber;
-		move();
+			Token methodToken = look;
 		match("(");
 		ArrayList<Ast.Expr.T> args = null;
 		args = new ArrayList<>();

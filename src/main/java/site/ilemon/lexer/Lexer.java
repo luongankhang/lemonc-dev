@@ -51,6 +51,8 @@ public class Lexer {
         KEYWORDS.put("return", TokenKind.Return);
         KEYWORDS.put("break", TokenKind.Break);
         KEYWORDS.put("continue", TokenKind.Continue);
+        KEYWORDS.put("pub", TokenKind.Pub);
+        KEYWORDS.put("import", TokenKind.Import);
     }
 
     public Lexer(File f) throws IOException {
@@ -189,6 +191,7 @@ public class Lexer {
                 if (isIdentifierStart(c)) return LexerState.IN_ID;
                 if (Character.isDigit(c)) return LexerState.IN_NUM;
                 if (c == '"') return LexerState.IN_STRING;
+                if (c == '@' && source.startsWith("@import", position)) return LexerState.DONE;
                 if (c == '=') return LexerState.IN_ASSIGN;
                 if (c == '<') return LexerState.IN_LT;
                 if (c == '>') return LexerState.IN_GT;
@@ -274,6 +277,7 @@ public class Lexer {
             case ';': return TokenKind.Semicolon;
             case ',': return TokenKind.Comma;
             case '.': return TokenKind.Dot;
+            case '@': return TokenKind.At;
             default: return TokenKind.Unknown;
         }
     }
@@ -420,7 +424,7 @@ public class Lexer {
     private boolean shouldConsumeOnDone(LexerState state, char c) {
         switch (state) {
             case START:
-                return isSingleCharToken(c);
+                return isSingleCharToken(c) || c == '@';
             case IN_STRING:
                 return c == '"';
             case IN_ASSIGN:

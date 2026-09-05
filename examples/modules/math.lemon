@@ -1,0 +1,7 @@
+pub int add(int a, int b) {
+    return a + b;
+}
+
+int secret() {
+    return 999;
+}
