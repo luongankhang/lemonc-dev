@@ -1,7 +1,5 @@
 import org.junit.Test;
 import site.ilemon.ast.Ast;
-import site.ilemon.codegen.ByteCodeGenerator;
-import site.ilemon.codegen.TranslatorVisitor;
 import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.lexer.Lexer;
 import site.ilemon.parser.Parser;
@@ -43,31 +41,23 @@ public class StringArrayCompilerTest {
                 analysis.semantic.passOrNot());
         assertTrue(analysis.semantic.getDiagnostics().isEmpty());
 
-        TranslatorVisitor translator = new TranslatorVisitor();
-        translator.visit(analysis.program);
-        ByteCodeGenerator generator = new ByteCodeGenerator();
-        generator.visit(translator.prog);
-        String jasmin = Files.readString(generator.getOutputFile().toPath());
-        assertTrue(jasmin.contains(".method static getNames()[Ljava/lang/String;"));
-        assertTrue(jasmin.contains(".method static useNames([Ljava/lang/String;)V"));
-        assertTrue(jasmin.contains("anewarray java/lang/String"));
-        assertTrue(jasmin.contains("aaload"));
-        assertTrue(jasmin.contains("aastore"));
+        byte[] classBytes = JvmTestSupport.compileToBytes("StringArrays", source);
+        assertTrue(JvmTestSupport.hasMethod(classBytes, "getNames", "()[Ljava/lang/String;"));
+        assertTrue(JvmTestSupport.hasMethod(classBytes, "useNames", "([Ljava/lang/String;)V"));
+        assertTrue(JvmTestSupport.hasANewArray(classBytes));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "aaload"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "aastore"));
     }
 
     @Test
     public void supportsStringArrayLengthAndLegacyStringSpelling() throws Exception {
-        Analysis analysis = analyze("StringArrayLength",
-                "void main() { String names[2]; int size; size = names.length; }\n");
+        String source = "void main() { String names[2]; int size; size = names.length; }\n";
+        Analysis analysis = analyze("StringArrayLength", source);
         assertTrue("String spelling should remain supported", analysis.semantic.passOrNot());
 
-        TranslatorVisitor translator = new TranslatorVisitor();
-        translator.visit(analysis.program);
-        ByteCodeGenerator generator = new ByteCodeGenerator();
-        generator.visit(translator.prog);
-        String jasmin = Files.readString(generator.getOutputFile().toPath());
-        assertTrue(jasmin.contains("anewarray java/lang/String"));
-        assertTrue(jasmin.contains("arraylength"));
+        byte[] classBytes = JvmTestSupport.compileToBytes("StringArrayLength", source);
+        assertTrue(JvmTestSupport.hasANewArray(classBytes));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "arraylength"));
     }
 
     @Test

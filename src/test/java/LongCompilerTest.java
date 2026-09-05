@@ -1,7 +1,5 @@
 import org.junit.Test;
 import site.ilemon.ast.Ast;
-import site.ilemon.codegen.ByteCodeGenerator;
-import site.ilemon.codegen.TranslatorVisitor;
 import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.lexer.Lexer;
 import site.ilemon.parser.Parser;
@@ -19,7 +17,7 @@ import static org.junit.Assert.assertTrue;
 public class LongCompilerTest {
     @Test
     public void supportsLongLiteralArithmeticComparisonAndJvmCodegen() throws Exception {
-        Analysis analysis = analyze("LongValid", ""
+        String source = ""
                 + "long identity(long value) { return value; }\n"
                 + "void main() {\n"
                 + "    long value;\n"
@@ -29,23 +27,20 @@ public class LongCompilerTest {
                 + "    result = result + 2;\n"
                 + "    result = identity(result);\n"
                 + "    if (result > 0) { printf(\"%d\", result); }\n"
-                + "}\n");
+                + "}\n";
+        Analysis analysis = analyze("LongValid", source);
         assertTrue("long program should be valid: " + analysis.semantic.getDiagnostics(),
                 analysis.semantic.passOrNot());
         assertTrue(analysis.semantic.getDiagnostics().isEmpty());
 
-        TranslatorVisitor translator = new TranslatorVisitor();
-        translator.visit(analysis.program);
-        ByteCodeGenerator generator = new ByteCodeGenerator();
-        generator.visit(translator.prog);
-        String jasmin = Files.readString(generator.getOutputFile().toPath());
-        assertTrue(jasmin.contains(".method static identity(J)J"));
-        assertTrue(jasmin.contains("ladd"));
-        assertTrue(jasmin.contains("lsub"));
-        assertTrue(jasmin.contains("lcmp"));
-        assertTrue(jasmin.contains("lload"));
-        assertTrue(jasmin.contains("lstore"));
-        assertTrue(jasmin.contains("lreturn"));
+        byte[] classBytes = JvmTestSupport.compileToBytes("LongValid", source);
+        assertTrue(JvmTestSupport.hasMethod(classBytes, "identity", "(J)J"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "ladd"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "lsub"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "lcmp"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "lload"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "lstore"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "lreturn"));
     }
 
     @Test

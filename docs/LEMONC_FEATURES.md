@@ -6,7 +6,7 @@ This manual provides a comprehensive specification of all language features and 
 
 ## 1. Compiler Pipeline
 
-LemonC executes a complete, classical compiler pipeline from source code to executable bytecode:
+LemonC is a **multi-backend compiler**: the frontend and analyses are shared, everything is lowered once into a backend-neutral **LemonIR**, and each backend lowers that IR to its own target:
 
 ```text
 Lemon source (.lemon)
@@ -14,19 +14,28 @@ Lemon source (.lemon)
   -> Syntax Analysis (LL(2) Recursive Descent Parser with Error Recovery)
   -> Semantic Analysis (Symbol Tables, Type Checking, Control-Flow & Return Checking)
   -> AST Optimization (Constant Folding, Algebraic Simplification, Dead Branch Removal)
-  -> JVM IR Translation (Stack-Machine IR with Backpatching)
-  -> Bytecode Generation (Worklist-based MaxStack Analysis & Jasmin IL Writer)
-  -> Jasmin Assembler (.class generation)
+  -> Ownership / ARC Analysis (shared, optional --arc verification)
+  -> LemonIR Lowering (AstToIrLowerer -> backend-neutral control-flow IR)
+  -> JVM Backend (direct JVM bytecode -> .class, no Jasmin / no .il stage)
   -> Standard JVM Execution
+  (or -> C Backend: C99 source -> gcc/clang -> native executable)
 ```
+
+The JVM backend writes class-file bytes itself (descriptors, constant pool, stack/local simulation, branch patching) and never shells out to an assembler.
 
 ### Command Line Interface
 
-Compile a source file to JVM bytecode:
+Compile a source file to JVM bytecode (the class lands in `target/lemonc`):
 
 ```bash
 java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar examples/HelloWorld.lemon
-java HelloWorld
+java -cp target/lemonc HelloWorld
+```
+
+Select the native C target explicitly:
+
+```bash
+java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar examples/HelloWorld.lemon --target c
 ```
 
 Inspection and debugging flags:
@@ -362,17 +371,17 @@ Example: [examples/CompareTest.lemon](../examples/CompareTest.lemon)
 
 ---
 
-## 9. Boolean Logic & Backpatching Short-Circuiting
+## 9. Boolean Logic & Short-Circuit Control Flow
 
-Boolean expressions use classic syntax-directed translation with backpatching:
+Boolean expressions short-circuit in the shared lowering step: `&&`/`||` are lowered into branchy control flow on LemonIR (edges become JVM labels/jumps in the JVM backend), so the right operand is only evaluated when it can change the result:
 
 | Operator | Description | Short-Circuit Behavior |
 |---|---|---|
-| `!` | Logical NOT | Inverts the true and false exit lists. |
+| `!` | Logical NOT | Inverts the taken edges of the sub-expression. |
 | `&&` | Logical AND | If left operand is false, right operand is never evaluated. |
 | `\|\|` | Logical OR | If left operand is true, right operand is never evaluated. |
 
-Backpatching maintains pending jump lists (`trueList` and `falseList`) without eagerly allocating temporary registers or materializing `0`/`1` unless assigned to a variable.
+Boolean values are materialized as `0`/`1` only when assigned to a variable; in conditions they stay as control flow.
 
 Example: [examples/BoolTest02.lemon](../examples/BoolTest02.lemon)
 
@@ -699,8 +708,9 @@ mvn test
 ```
 
 Current Test Baseline:
-- **257 Automated Tests Passing** (0 failures, 0 errors).
-- **92 Root Example Programs** compiled to `.class` files, executed on a real JVM, and verified byte-for-byte against `examples/example-output-manifest.tsv`.
+- **359 Automated Tests Passing** (0 failures, 0 errors).
+- **94 Root Example Programs** compiled to `.class` files by the JVM backend, executed on a real JVM, and verified byte-for-byte against `examples/example-output-manifest.tsv`.
+- The C backend is verified separately (`NativeEndToEndTest`): LemonIR -> C -> native compiler -> native execution.
 
 ---
 

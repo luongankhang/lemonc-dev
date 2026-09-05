@@ -1,7 +1,5 @@
 import org.junit.Test;
 import site.ilemon.ast.Ast;
-import site.ilemon.codegen.ByteCodeGenerator;
-import site.ilemon.codegen.TranslatorVisitor;
 import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.lexer.Lexer;
 import site.ilemon.parser.Parser;
@@ -19,8 +17,8 @@ import static org.junit.Assert.assertTrue;
 public class ByteArrayCompilerTest {
     @Test
     public void supportsByteArrayDeclarationAccessStoreLengthParameterAndReturn() throws Exception {
-        Analysis analysis = analyze("ByteArrays",
-                "byte[] identity(byte values[]) {\n"
+        String source = ""
+                + "byte[] identity(byte values[]) {\n"
                 + "    values[0] = 127;\n"
                 + "    return values;\n"
                 + "}\n"
@@ -32,21 +30,18 @@ public class ByteArrayCompilerTest {
                 + "    size = data.length;\n"
                 + "    identity(data);\n"
                 + "    printf(\"%d\", data[0]);\n"
-                + "}\n");
+                + "}\n";
+        Analysis analysis = analyze("ByteArrays", source);
         assertTrue("byte[] program should be valid: " + analysis.semantic.getDiagnostics(),
                 analysis.semantic.passOrNot());
         assertTrue(analysis.semantic.getDiagnostics().isEmpty());
 
-        TranslatorVisitor translator = new TranslatorVisitor();
-        translator.visit(analysis.program);
-        ByteCodeGenerator generator = new ByteCodeGenerator();
-        generator.visit(translator.prog);
-        String jasmin = Files.readString(generator.getOutputFile().toPath());
-        assertTrue(jasmin.contains(".method static identity([B)[B"));
-        assertTrue(jasmin.contains("newarray byte"));
-        assertTrue(jasmin.contains("baload"));
-        assertTrue(jasmin.contains("bastore"));
-        assertTrue(jasmin.contains("arraylength"));
+        byte[] classBytes = JvmTestSupport.compileToBytes("ByteArrays", source);
+        assertTrue(JvmTestSupport.hasMethod(classBytes, "identity", "([B)[B"));
+        assertTrue(JvmTestSupport.hasNewArray(classBytes, "byte"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "baload"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "bastore"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "arraylength"));
     }
 
     @Test

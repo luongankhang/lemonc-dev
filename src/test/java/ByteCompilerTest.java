@@ -1,7 +1,5 @@
 import org.junit.Test;
 import site.ilemon.ast.Ast;
-import site.ilemon.codegen.ByteCodeGenerator;
-import site.ilemon.codegen.TranslatorVisitor;
 import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.lexer.Lexer;
 import site.ilemon.parser.Parser;
@@ -19,8 +17,8 @@ import static org.junit.Assert.assertTrue;
 public class ByteCompilerTest {
     @Test
     public void supportsByteVariablesParametersReturnsPromotionAndJvmCodegen() throws Exception {
-        Analysis analysis = analyze("ByteValid",
-                "byte identity(byte value) { return value; }\n"
+        String source = ""
+                + "byte identity(byte value) { return value; }\n"
                 + "void main() {\n"
                 + "    byte value;\n"
                 + "    int widened;\n"
@@ -29,21 +27,18 @@ public class ByteCompilerTest {
                 + "    value = identity(value);\n"
                 + "    if (value < 127) { widened = value; }\n"
                 + "    printf(\"%d\", value);\n"
-                + "}\n");
+                + "}\n";
+        Analysis analysis = analyze("ByteValid", source);
 
         assertTrue("byte program should be valid: " + analysis.semantic.getDiagnostics(),
                 analysis.semantic.passOrNot());
         assertTrue(analysis.semantic.getDiagnostics().isEmpty());
 
-        TranslatorVisitor translator = new TranslatorVisitor();
-        translator.visit(analysis.program);
-        ByteCodeGenerator generator = new ByteCodeGenerator();
-        generator.visit(translator.prog);
-        String jasmin = Files.readString(generator.getOutputFile().toPath());
-        assertTrue(jasmin.contains(".method static identity(B)B"));
-        assertTrue(jasmin.contains("ireturn"));
-        assertTrue(jasmin.contains("istore"));
-        assertTrue(jasmin.contains("iload"));
+        byte[] classBytes = JvmTestSupport.compileToBytes("ByteValid", source);
+        assertTrue(JvmTestSupport.hasMethod(classBytes, "identity", "(B)B"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "ireturn"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "istore"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "iload"));
     }
 
     @Test

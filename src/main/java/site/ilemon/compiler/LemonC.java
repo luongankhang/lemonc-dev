@@ -1,34 +1,39 @@
 package site.ilemon.compiler;
 
 import site.ilemon.ast.Ast;
-import site.ilemon.codegen.ByteCodeGenerator;
-import site.ilemon.codegen.TranslatorVisitor;
-import site.ilemon.codegen.ast.Label;
+import site.ilemon.backend.BackendOptions;
+import site.ilemon.backend.BackendResult;
+import site.ilemon.backend.c.CBackend;
+import site.ilemon.backend.jvm.JvmBackend;
 import site.ilemon.exception.CompilerException;
 import site.ilemon.exception.ParseException;
 import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.diagnostic.DiagnosticCodes;
 import site.ilemon.diagnostic.DiagnosticEngine;
 import site.ilemon.diagnostic.DiagnosticRenderer;
+import site.ilemon.ir.AstToIrLowerer;
+import site.ilemon.ir.IrModule;
 import site.ilemon.lexer.Lexer;
 import site.ilemon.lexer.Token;
 import site.ilemon.optimizer.AstOptimizer;
 import site.ilemon.parser.Parser;
 import site.ilemon.semantic.SemanticVisitor;
-import site.ilemon.arc.OwnershipAnalyzer;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
  * LemonC command line entry point.
+ *
+ * <p>Multi-backend pipeline:</p>
+ * <pre>
+ *   Lemon Source → Lexer → Parser → Semantic → Optimizer → ARC → LemonIR
+ *     ├── JvmBackend → .class   (direct JVM bytecode, no Jasmin)
+ *     └── CBackend   → .c → native compiler
+ * </pre>
  */
 public class LemonC {
 
@@ -61,8 +66,6 @@ public class LemonC {
                 err.println("error: file is not readable - " + options.sourcePath);
                 return 1;
             }
-
-            Label.resetCounter();
 
             Lexer lexer = new Lexer(sourceFile);
             Parser parser = new Parser(lexer);
@@ -136,80 +139,39 @@ public class LemonC {
                 }
             }
 
-            if ("c".equalsIgnoreCase(options.target) || options.emitC) {
-                site.ilemon.ir.AstToIrLowerer lowerer = new site.ilemon.ir.AstToIrLowerer();
-                site.ilemon.ir.IrModule irModule = lowerer.lower(optimizedProgram);
-                site.ilemon.backend.c.CBackend cBackend = new site.ilemon.backend.c.CBackend();
-                String cSource = cBackend.generate(irModule);
-
-                Path cPath = null;
-                if (options.emitC) {
-                    if (options.outputPath != null && options.outputPath.endsWith(".c")) {
-                        cPath = Path.of(options.outputPath);
-                    } else {
-                        cPath = Path.of(options.sourcePath.replaceAll("\\.lemon$", ".c"));
-                    }
-                    if (cPath.toAbsolutePath().getParent() != null) {
-                        Files.createDirectories(cPath.toAbsolutePath().getParent());
-                    }
-                    Files.writeString(cPath, cSource, StandardCharsets.UTF_8);
-                    if (options.verbose) {
-                        out.println("Wrote C source to: " + cPath);
-                    }
-                }
-
-                if ("c".equalsIgnoreCase(options.target)) {
-                    if (cPath == null) {
-                        cPath = Path.of(options.sourcePath.replaceAll("\\.lemon$", ".c"));
-                        if (cPath.toAbsolutePath().getParent() != null) {
-                            Files.createDirectories(cPath.toAbsolutePath().getParent());
-                        }
-                        Files.writeString(cPath, cSource, StandardCharsets.UTF_8);
-                    }
-                    Path exePath;
-                    if (options.outputPath != null && !options.outputPath.endsWith(".c")) {
-                        exePath = Path.of(options.outputPath);
-                    } else {
-                        String base = options.sourcePath.replaceAll("\\.lemon$", "");
-                        exePath = Path.of(base);
-                    }
-
-                    site.ilemon.backend.c.NativeToolchain toolchain = site.ilemon.backend.c.NativeToolchain.discover();
-                    Path runtimeSource = Path.of("runtime", "lemon_runtime.c");
-                    if (!Files.exists(runtimeSource)) {
-                        runtimeSource = Path.of(System.getProperty("user.dir"), "runtime", "lemon_runtime.c");
-                    }
-                    try {
-                        Path compiledExe = toolchain.compile(cPath, runtimeSource, exePath);
-                        if (options.verbose) {
-                            out.println("Native compilation succeeded: " + compiledExe);
-                        }
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        err.println("compile failed: native build interrupted");
-                        return 1;
-                    }
-                    return 0;
-                }
-                if (options.emitC && !"jvm".equalsIgnoreCase(options.target)) {
-                    return 0;
-                }
-            }
-
-            TranslatorVisitor translator = new TranslatorVisitor();
-            translator.visit(optimizedProgram);
+            // Shared backend-independent LemonIR — the single source of truth
+            // for both the JVM and C backends.
+            IrModule irModule = new AstToIrLowerer().lower(optimizedProgram);
             if (options.dumpIr) {
                 out.println("== IR ==");
-                out.print(IrPrinter.print(translator.prog));
+                out.print(IrPrinter.print(irModule));
             }
 
-            ByteCodeGenerator generator = new ByteCodeGenerator();
-            generator.visit(translator.prog);
-            File ilFile = generator.getOutputFile();
-            assembleWithJasmin(generator.getOutputDir(), ilFile, out, err, options.verbose);
-            File classFile = generator.getClassFile(translator.prog.mainClass.id);
-            if (!classFile.isFile() || classFile.length() == 0) {
-                throw new CompilerException("Jasmin did not generate class file: " + classFile.getPath());
+            BackendOptions backendOptions = new BackendOptions(
+                    options.target,
+                    sourceFile.toPath().toAbsolutePath().normalize(),
+                    Path.of("target", "lemonc"),
+                    options.outputPath == null ? null : Path.of(options.outputPath),
+                    options.verbose);
+
+            if ("c".equalsIgnoreCase(options.target) || options.emitC) {
+                BackendResult cResult = new CBackend().emit(irModule, backendOptions);
+                if (options.verbose) {
+                    out.println("Wrote C source to: " + cResult.primaryOutput());
+                    if (cResult.outputs().size() > 1) {
+                        out.println("Native compilation succeeded: " + cResult.outputs().get(1));
+                    }
+                }
+                return 0;
+            }
+
+            BackendResult jvmResult = new JvmBackend().emit(irModule, backendOptions);
+            Path classFile = jvmResult.primaryOutput();
+            if (options.verbose) {
+                out.println("Generated: " + classFile);
+            }
+            if (!classFile.toFile().isFile() || classFile.toFile().length() == 0) {
+                throw new CompilerException("JVM backend did not generate class file: " + classFile);
             }
             return 0;
         } catch (CompilerException e) {
@@ -234,27 +196,6 @@ public class LemonC {
     private static void printSemanticDiagnostics(SemanticVisitor semantic, Lexer lexer, PrintStream err) {
         for (Diagnostic diagnostic : semantic.getDiagnostics()) {
             err.println(new DiagnosticRenderer((file, line) -> lexer.getSourceLine(line)).render(diagnostic));
-        }
-    }
-
-    private static void assembleWithJasmin(File outputDir, File ilFile, PrintStream out, PrintStream err, boolean verbose) {
-        PrintStream originalOut = System.out;
-        PrintStream originalErr = System.err;
-        PrintStream quiet = new PrintStream(new OutputStream() {
-            @Override
-            public void write(int b) {
-            }
-        });
-        synchronized (LemonC.class) {
-            try {
-                System.setOut(verbose ? out : quiet);
-                System.setErr(verbose ? err : quiet);
-                jasmin.Main.main(new String[]{"-d", outputDir.getPath(), ilFile.getPath()});
-            } finally {
-                System.setOut(originalOut);
-                System.setErr(originalErr);
-                quiet.close();
-            }
         }
     }
 

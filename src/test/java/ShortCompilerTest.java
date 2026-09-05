@@ -1,27 +1,23 @@
 import org.junit.Test;
 import site.ilemon.ast.Ast;
-import site.ilemon.codegen.ByteCodeGenerator;
-import site.ilemon.codegen.TranslatorVisitor;
 import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.lexer.Lexer;
 import site.ilemon.parser.Parser;
 import site.ilemon.semantic.SemanticVisitor;
 
 import java.io.File;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class ShortCompilerTest {
     @Test
     public void supportsShortVariablesParametersReturnsPromotionAndJvmCodegen() throws Exception {
-        Analysis analysis = analyze("ShortValid", ""
+        String source = ""
                 + "short identity(short value) { return value; }\n"
                 + "void main() {\n"
                 + "    short value; int widened; long large;\n"
@@ -29,18 +25,15 @@ public class ShortCompilerTest {
                 + "    value = identity(value);\n"
                 + "    if (value < 32767) { widened = value; }\n"
                 + "    printf(\"%d\", value);\n"
-                + "}\n");
+                + "}\n";
+        Analysis analysis = analyze("ShortValid", source);
         assertTrue("short program should be valid: " + analysis.semantic.getDiagnostics(), analysis.semantic.passOrNot());
-        TranslatorVisitor translator = new TranslatorVisitor();
-        translator.visit(analysis.program);
-        ByteCodeGenerator generator = new ByteCodeGenerator();
-        generator.visit(translator.prog);
-        String jasmin = Files.readString(generator.getOutputFile().toPath());
-        assertTrue(jasmin.contains(".method static identity(S)S"));
-        assertTrue(jasmin.contains("iadd"));
-        assertTrue(jasmin.contains("ireturn"));
-        assertTrue(jasmin.contains("istore"));
-        assertTrue(jasmin.contains("iload"));
+        byte[] classBytes = JvmTestSupport.compileToBytes("ShortValid", source);
+        assertTrue(JvmTestSupport.hasMethod(classBytes, "identity", "(S)S"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "iadd"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "ireturn"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "istore"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "iload"));
     }
 
     @Test
@@ -71,45 +64,21 @@ public class ShortCompilerTest {
 
     @Test
     public void supportsShortArraysWithJvmShortArrayInstructions() throws Exception {
-        Analysis analysis = analyze("ShortArray", "void main() { short values[2]; values[0] = 12; printf(\"%d\", values[0]); }\n");
+        String source = "void main() { short values[2]; values[0] = 12; printf(\"%d\", values[0]); }\n";
+        Analysis analysis = analyze("ShortArray", source);
         assertTrue(analysis.semantic.passOrNot());
-        TranslatorVisitor translator = new TranslatorVisitor();
-        translator.visit(analysis.program);
-        ByteCodeGenerator generator = new ByteCodeGenerator();
-        generator.visit(translator.prog);
-        String jasmin = Files.readString(generator.getOutputFile().toPath());
-        assertTrue(jasmin.contains("newarray short"));
-        assertTrue(jasmin.contains("saload"));
-        assertTrue(jasmin.contains("sastore"));
+        byte[] classBytes = JvmTestSupport.compileToBytes("ShortArray", source);
+        assertTrue(JvmTestSupport.hasNewArray(classBytes, "short"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "saload"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "sastore"));
     }
 
     @Test
     public void executesShortProgramOnJvm() throws Exception {
-        Analysis analysis = analyze("ShortRuntime", "void main() { short value; int result; value = 41; result = value + 1; printf(\"%d\", result); }\n");
+        String source = "void main() { short value; int result; value = 41; result = value + 1; printf(\"%d\", result); }\n";
+        Analysis analysis = analyze("ShortRuntime", source);
         assertTrue(analysis.semantic.passOrNot());
-        TranslatorVisitor translator = new TranslatorVisitor();
-        translator.visit(analysis.program);
-        ByteCodeGenerator generator = new ByteCodeGenerator();
-        generator.visit(translator.prog);
-        PrintStream originalOut = System.out;
-        PrintStream originalErr = System.err;
-        PrintStream quiet = new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8);
-        try {
-            System.setOut(quiet);
-            System.setErr(quiet);
-            jasmin.Main.main(new String[]{"-d", generator.getOutputDir().getPath(), generator.getOutputFile().getPath()});
-        } finally {
-            System.setOut(originalOut);
-            System.setErr(originalErr);
-            quiet.close();
-        }
-        Process process = new ProcessBuilder(javaExecutable(),
-                "-cp", generator.getOutputDir().getPath(), "ShortRuntime").redirectErrorStream(true).start();
-        boolean completed = process.waitFor(10, TimeUnit.SECONDS);
-        String output = readAll(process.getInputStream());
-        assertTrue("JVM execution timed out: " + output, completed);
-        assertEquals("JVM failed: " + output, 0, process.exitValue());
-        assertEquals("42", output);
+        assertEquals("42", JvmTestSupport.compileAndRun("ShortRuntime", source));
     }
 
     private Analysis analyze(String className, String source) throws Exception {
@@ -133,20 +102,6 @@ public class ShortCompilerTest {
         return diagnostics.get(0);
     }
 
-    private String readAll(InputStream stream) throws Exception {
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        byte[] data = new byte[256];
-        int read;
-        while ((read = stream.read(data)) != -1) {
-            buffer.write(data, 0, read);
-        }
-        return buffer.toString(StandardCharsets.UTF_8);
+    private record Analysis(Ast.Program.T program, SemanticVisitor semantic) {
     }
-
-    private String javaExecutable() {
-        String executable = System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java";
-        return new File(new File(System.getProperty("java.home"), "bin"), executable).getPath();
-    }
-
-    private record Analysis(Ast.Program.T program, SemanticVisitor semantic) {}
 }

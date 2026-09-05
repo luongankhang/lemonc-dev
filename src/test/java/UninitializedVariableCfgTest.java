@@ -1,7 +1,5 @@
-import org.junit.Before;
 import org.junit.Test;
 import site.ilemon.ast.Ast;
-import site.ilemon.codegen.ast.Label;
 import site.ilemon.exception.SemanticException;
 import site.ilemon.lexer.Lexer;
 import site.ilemon.parser.Parser;
@@ -18,11 +16,6 @@ import static org.junit.Assert.*;
  * Audits the logic in SemanticVisitor for tracking variable initialization across control flow paths.
  */
 public class UninitializedVariableCfgTest {
-
-    @Before
-    public void setUp() {
-        Label.resetCounter();
-    }
 
     // ===== Nested if statements =====
 

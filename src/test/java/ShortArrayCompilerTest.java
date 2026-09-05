@@ -1,45 +1,39 @@
 import org.junit.Test;
 import site.ilemon.ast.Ast;
-import site.ilemon.codegen.ByteCodeGenerator;
-import site.ilemon.codegen.TranslatorVisitor;
 import site.ilemon.diagnostic.Diagnostic;
 import site.ilemon.lexer.Lexer;
 import site.ilemon.parser.Parser;
 import site.ilemon.semantic.SemanticVisitor;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.InputStream;
-import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class ShortArrayCompilerTest {
     @Test
     public void supportsShortArrayDeclarationAccessStoreLengthParameterAndReturn() throws Exception {
-        Analysis analysis = analyze("ShortArrays", ""
+        String source = ""
                 + "short[] identity(short values[]) { values[0] = 32767; return values; }\n"
-                + "void main() { short data[2]; int size; data[0] = -32768; data[1] = 32767; size = data.length; identity(data); printf(\"%d\", data[0]); }\n");
+                + "void main() { short data[2]; int size; data[0] = -32768; data[1] = 32767; size = data.length; identity(data); printf(\"%d\", data[0]); }\n";
+        Analysis analysis = analyze("ShortArrays", source);
         assertTrue(analysis.semantic.passOrNot());
-        TranslatorVisitor translator = new TranslatorVisitor();
-        translator.visit(analysis.program);
-        ByteCodeGenerator generator = new ByteCodeGenerator();
-        generator.visit(translator.prog);
-        String jasmin = Files.readString(generator.getOutputFile().toPath());
-        assertTrue(jasmin.contains(".method static identity([S)[S"));
-        assertTrue(jasmin.contains("newarray short"));
-        assertTrue(jasmin.contains("saload"));
-        assertTrue(jasmin.contains("sastore"));
-        assertTrue(jasmin.contains("arraylength"));
+        byte[] classBytes = JvmTestSupport.compileToBytes("ShortArrays", source);
+        assertTrue(JvmTestSupport.hasMethod(classBytes, "identity", "([S)[S"));
+        assertTrue(JvmTestSupport.hasNewArray(classBytes, "short"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "saload"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "sastore"));
+        assertTrue(JvmTestSupport.hasMnemonic(classBytes, "arraylength"));
     }
 
     @Test
     public void rejectsDifferentArrayTypesAndInvalidShortElements() throws Exception {
-        Analysis argument = analyze("ShortArrayArgument", "void use(short values[]) {} void main() { int values[2]; use(values); }\n");
+        Analysis argument = analyze("ShortArrayArgument",
+                "void use(short values[]) {} void main() { int values[2]; use(values); }\n");
         Diagnostic argumentDiagnostic = first(argument.semantic.getDiagnostics());
         assertEquals("E3003", argumentDiagnostic.code());
         assertTrue(argumentDiagnostic.message().contains("expected short[]"));
@@ -53,20 +47,10 @@ public class ShortArrayCompilerTest {
 
     @Test
     public void executesShortArrayOnJvm() throws Exception {
-        Analysis analysis = analyze("ShortArrayRuntime", "void main() { short values[1]; values[0] = 42; printf(\"%d\", values[0]); }\n");
+        String source = "void main() { short values[1]; values[0] = 42; printf(\"%d\", values[0]); }\n";
+        Analysis analysis = analyze("ShortArrayRuntime", source);
         assertTrue(analysis.semantic.passOrNot());
-        TranslatorVisitor translator = new TranslatorVisitor();
-        translator.visit(analysis.program);
-        ByteCodeGenerator generator = new ByteCodeGenerator();
-        generator.visit(translator.prog);
-        PrintStream oldOut = System.out, oldErr = System.err;
-        PrintStream quiet = new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8);
-        try { System.setOut(quiet); System.setErr(quiet); jasmin.Main.main(new String[]{"-d", generator.getOutputDir().getPath(), generator.getOutputFile().getPath()}); }
-        finally { System.setOut(oldOut); System.setErr(oldErr); quiet.close(); }
-        Process process = new ProcessBuilder(javaExecutable(), "-cp", generator.getOutputDir().getPath(), "ShortArrayRuntime").redirectErrorStream(true).start();
-        assertTrue(process.waitFor(10, TimeUnit.SECONDS));
-        assertEquals(0, process.exitValue());
-        assertEquals("42", readAll(process.getInputStream()));
+        assertEquals("42", JvmTestSupport.compileAndRun("ShortArrayRuntime", source));
     }
 
     private Analysis analyze(String className, String source) throws Exception {
@@ -79,13 +63,17 @@ public class ShortArrayCompilerTest {
             SemanticVisitor semantic = SemanticVisitor.collecting();
             semantic.visit(program);
             return new Analysis(program, semantic);
-        } finally { Files.deleteIfExists(file.toPath()); Files.deleteIfExists(directory.toPath()); }
+        } finally {
+            Files.deleteIfExists(file.toPath());
+            Files.deleteIfExists(directory.toPath());
+        }
     }
-    private Diagnostic first(List<Diagnostic> diagnostics) { assertFalse(diagnostics.isEmpty()); return diagnostics.get(0); }
-    private String readAll(InputStream stream) throws Exception { ByteArrayOutputStream buffer = new ByteArrayOutputStream(); byte[] data = new byte[256]; int n; while ((n = stream.read(data)) != -1) buffer.write(data, 0, n); return buffer.toString(StandardCharsets.UTF_8); }
-    private String javaExecutable() {
-        String executable = System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java";
-        return new File(new File(System.getProperty("java.home"), "bin"), executable).getPath();
+
+    private Diagnostic first(List<Diagnostic> diagnostics) {
+        assertFalse(diagnostics.isEmpty());
+        return diagnostics.get(0);
     }
-    private record Analysis(Ast.Program.T program, SemanticVisitor semantic) {}
+
+    private record Analysis(Ast.Program.T program, SemanticVisitor semantic) {
+    }
 }

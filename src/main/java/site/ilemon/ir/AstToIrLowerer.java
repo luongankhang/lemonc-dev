@@ -168,7 +168,21 @@ public final class AstToIrLowerer {
             IrType targetType = ctx.variableTypes.get(targetId);
             if (targetType == null) targetType = IrType.scalar(IrType.Kind.INT);
 
-            IrValue rhsVal = lowerExpr(assign.getExpr(), ctx);
+            IrValue rhsVal;
+            if (targetType.kind() == IrType.Kind.DOUBLE
+                    && assign.getExpr() instanceof Ast.Expr.Number number
+                    && number.getType() instanceof Ast.Type.Float) {
+                // Direct assignment of a decimal literal to a double keeps the
+                // exact decimal value (legacy JVM behavior, C-style literal
+                // typing): emit the constant as double, skipping the float32
+                // round-trip the general widening would perform.
+                rhsVal = ctx.newTemp(IrType.scalar(IrType.Kind.DOUBLE));
+                ctx.emit(new IrInstruction(IrInstruction.Op.CONST, rhsVal,
+                        List.of(new IrValue(String.valueOf(number.getValue()),
+                                IrType.scalar(IrType.Kind.DOUBLE))), null));
+            } else {
+                rhsVal = lowerExpr(assign.getExpr(), ctx);
+            }
             if (isManaged(targetType)) {
                 if (isManaged(rhsVal.type())) {
                     ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(rhsVal), "lemon_retain"));
@@ -405,17 +419,9 @@ public final class AstToIrLowerer {
         } else if (expr instanceof Ast.Expr.Mod mod) {
             return lowerBinary(IrInstruction.Op.REM, mod.getLeft(), mod.getRight(), ctx);
         } else if (expr instanceof Ast.Expr.And and) {
-            IrValue left = lowerExpr(and.getLeft(), ctx);
-            IrValue right = lowerExpr(and.getRight(), ctx);
-            IrValue res = ctx.newTemp(IrType.scalar(IrType.Kind.BOOL));
-            ctx.emit(new IrInstruction(IrInstruction.Op.AND, res, List.of(left, right), null));
-            return res;
+            return lowerBooleanOperator(true, and.getLeft(), and.getRight(), ctx);
         } else if (expr instanceof Ast.Expr.Or or) {
-            IrValue left = lowerExpr(or.getLeft(), ctx);
-            IrValue right = lowerExpr(or.getRight(), ctx);
-            IrValue res = ctx.newTemp(IrType.scalar(IrType.Kind.BOOL));
-            ctx.emit(new IrInstruction(IrInstruction.Op.OR, res, List.of(left, right), null));
-            return res;
+            return lowerBooleanOperator(false, or.getLeft(), or.getRight(), ctx);
         } else if (expr instanceof Ast.Expr.Not not) {
             IrValue opVal = lowerExpr(not.getExpr(), ctx);
             IrValue res = ctx.newTemp(IrType.scalar(IrType.Kind.BOOL));
@@ -488,12 +494,113 @@ public final class AstToIrLowerer {
             IrValue converted = ctx.newTemp(commonType);
             ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(right), null));
             right = converted;
-        }
-
-        IrValue res = ctx.newTemp(commonType);
+        }        IrValue res = ctx.newTemp(commonType);
         ctx.emit(new IrInstruction(op, res, List.of(left, right), null));
         return res;
     }
+
+    /**
+     * Lowers {@code &&}/{@code ||}. When an operand may have side effects (a
+     * call), evaluation short-circuits through blocks so the right operand runs
+     * only when needed (the language's original semantics). Purely computed
+     * operators stay as flat AND/OR instructions, keeping their output shape
+     * unchanged for both backends.
+     */
+    private IrValue lowerBooleanOperator(boolean isAnd, Ast.Expr.T leftExpr, Ast.Expr.T rightExpr,
+                                         MethodLoweringContext ctx) {
+        if (!exprContainsCall(leftExpr) && !exprContainsCall(rightExpr)) {
+            IrValue left = lowerExpr(leftExpr, ctx);
+            IrValue right = lowerExpr(rightExpr, ctx);
+            IrValue res = ctx.newTemp(IrType.scalar(IrType.Kind.BOOL));
+            ctx.emit(new IrInstruction(isAnd ? IrInstruction.Op.AND : IrInstruction.Op.OR,
+                    res, List.of(left, right), null));
+            return res;
+        }
+
+        IrType boolType = IrType.scalar(IrType.Kind.BOOL);
+        IrValue res = ctx.newTemp(boolType);
+
+        // Evaluate the left operand, then branch away when it decides the result.
+        IrValue left = lowerExpr(leftExpr, ctx);
+        IrValue decision = ctx.newTemp(boolType);
+        String decisionSymbol = isAnd ? "==" : "!=";
+        ctx.emit(new IrInstruction(IrInstruction.Op.CMP, decision,
+                List.of(left, new IrValue("0", left.type())), decisionSymbol));
+        // AND: !left -> result is false; OR: left -> result is true.
+        BasicBlock rhsBlock = ctx.createBlock(isAnd ? "and_rhs" : "or_rhs");
+        BasicBlock skipBlock = ctx.createBlock(isAnd ? "and_skip" : "or_skip");
+        BasicBlock endBlock = ctx.createBlock(isAnd ? "and_end" : "or_end");
+        ctx.emit(new IrInstruction(IrInstruction.Op.COND_BRANCH, null, List.of(decision), skipBlock.name()));
+
+        // Right operand runs when the left operand did not decide the result.
+        ctx.startBlock(rhsBlock);
+        IrValue right = lowerExpr(rightExpr, ctx);
+        ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, res, List.of(right), null));
+        ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), endBlock.name()));
+
+        // Skip path materializes the decided constant.
+        ctx.startBlock(skipBlock);
+        ctx.emit(new IrInstruction(IrInstruction.Op.CONST, res,
+                List.of(new IrValue(isAnd ? "false" : "true", boolType)), null));
+        ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), endBlock.name()));
+
+        ctx.startBlock(endBlock);
+        return res;
+    }
+
+    /** True when evaluating the expression could run a function call. */
+    private boolean exprContainsCall(Ast.Expr.T expr) {
+        if (expr instanceof Ast.Expr.Call) {
+            return true;
+        }
+        if (expr instanceof Ast.Expr.Add a) {
+            return exprContainsCall(a.getLeft()) || exprContainsCall(a.getRight());
+        }
+        if (expr instanceof Ast.Expr.Sub s) {
+            return exprContainsCall(s.getLeft()) || exprContainsCall(s.getRight());
+        }
+        if (expr instanceof Ast.Expr.Mul m) {
+            return exprContainsCall(m.getLeft()) || exprContainsCall(m.getRight());
+        }
+        if (expr instanceof Ast.Expr.Div d) {
+            return exprContainsCall(d.getLeft()) || exprContainsCall(d.getRight());
+        }
+        if (expr instanceof Ast.Expr.Mod mo) {
+            return exprContainsCall(mo.getLeft()) || exprContainsCall(mo.getRight());
+        }
+        if (expr instanceof Ast.Expr.And an) {
+            return exprContainsCall(an.getLeft()) || exprContainsCall(an.getRight());
+        }
+        if (expr instanceof Ast.Expr.Or or) {
+            return exprContainsCall(or.getLeft()) || exprContainsCall(or.getRight());
+        }
+        if (expr instanceof Ast.Expr.Not n) {
+            return exprContainsCall(n.getExpr());
+        }
+        if (expr instanceof Ast.Expr.GT gt) {
+            return exprContainsCall(gt.getLeft()) || exprContainsCall(gt.getRight());
+        }
+        if (expr instanceof Ast.Expr.LT lt) {
+            return exprContainsCall(lt.getLeft()) || exprContainsCall(lt.getRight());
+        }
+        if (expr instanceof Ast.Expr.GTE ge) {
+            return exprContainsCall(ge.getLeft()) || exprContainsCall(ge.getRight());
+        }
+        if (expr instanceof Ast.Expr.LTE le) {
+            return exprContainsCall(le.getLeft()) || exprContainsCall(le.getRight());
+        }
+        if (expr instanceof Ast.Expr.EQ eq) {
+            return exprContainsCall(eq.getLeft()) || exprContainsCall(eq.getRight());
+        }
+        if (expr instanceof Ast.Expr.NEQ ne) {
+            return exprContainsCall(ne.getLeft()) || exprContainsCall(ne.getRight());
+        }
+        if (expr instanceof Ast.Expr.ArrayAccess aa) {
+            return exprContainsCall(aa.getIndex());
+        }
+        return false;
+    }
+
 
     private IrValue lowerCmp(String symbol, Ast.Expr.T leftExpr, Ast.Expr.T rightExpr, MethodLoweringContext ctx) {
         IrValue left = lowerExpr(leftExpr, ctx);

@@ -1,7 +1,5 @@
 package site.ilemon.ast;
 
-import site.ilemon.codegen.ast.Label;
-import site.ilemon.list.DoublyLinkedList;
 import site.ilemon.visitor.ISemanticVisitor;
 import site.ilemon.util.SourceSpan;
 
@@ -101,10 +99,6 @@ public class Ast {
      */
     public static class Stmt{
         public static abstract class T{
-            private DoublyLinkedList<Label> breakList = new DoublyLinkedList<>();
-            public DoublyLinkedList<Label> getBreakList() { return this.breakList; }
-            private DoublyLinkedList<Label> continueList = new DoublyLinkedList<>();
-            public DoublyLinkedList<Label> getContinueList() { return this.continueList; }
             private int lineNum;
             public int getLineNum() { return this.lineNum; }
             public void setLineNum(int lineNum) { this.lineNum = lineNum; }

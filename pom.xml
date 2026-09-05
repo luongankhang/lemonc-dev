@@ -16,24 +16,12 @@
 		<maven.compiler.target>21</maven.compiler.target>
 	</properties>
 
-	<repositories>
-		<repository>
-			<id>project-local-repo</id>
-			<url>file://${project.basedir}/jars/maven-repo</url>
-		</repository>
-	</repositories>
-
 	<dependencies>
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
 			<version>4.13.2</version>
 			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>com.jasmin</groupId>
-			<artifactId>jasmin</artifactId>
-			<version>1.0</version>
 		</dependency>
 	</dependencies>
 

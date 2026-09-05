@@ -2,16 +2,16 @@
 
 **LemonC is a production-focused C-like compiler written in Java.**
 
-It compiles Lemon source code to real JVM `.class` files through lexical analysis, recursive descent parsing, semantic analysis, AST optimization, backpatching-based control-flow translation, Jasmin assembly, and bytecode generation.
+It is a **multi-backend compiler**: one shared frontend (lexer, parser, semantic analysis, ownership/ARC analysis) lowers to a backend-neutral **LemonIR**, which feeds two independent backends — a **JVM backend** that writes real JVM `.class` files directly (bytecode is emitted by hand, with no Jasmin assembler and no `.il` stage), and a **C backend** that emits C99 source for a native compiler. Both backends are validated end-to-end against real program output.
 
-LemonC 是一个面向实际编译器工程实践的 C-like 编译器。它不仅能生成和检查中间表示，也能把 `.lemon` 源程序真正编译成 JVM 字节码，并用 JVM 运行结果做端到端回归验证。
+LemonC 是一个面向实际编译器工程实践的 C-like 编译器。它不仅能生成和检查中间表示，也能把 `.lemon` 源程序真正编译成 JVM 字节码或原生可执行文件，并用真实运行结果做端到端回归验证。
 
 <p align="center">
-  <img src="./docs/assets/lemonc-pipeline.png" alt="LemonC compiler pipeline" width="100%">
+  <img src="./docs/assets/lemonc-pipeline.svg" alt="LemonC compiler pipeline" width="100%">
 </p>
 
 ```text
-Java 21 | Maven | JVM bytecode | 257 tests passing | 92 examples | MIT License
+Java 21 | Maven | LemonIR → JVM or C backend | 359 tests passing | 94 examples | MIT License
 ```
 
 ## Why LemonC
@@ -52,7 +52,7 @@ void main() {
 }
 ```
 
-Compile, inspect, and run:
+Compile, inspect, and run (the JVM backend writes `.class` straight to `target/lemonc`):
 
 ```bash
 mvn clean package
@@ -60,8 +60,10 @@ mvn clean package
 java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar \
   examples/OptimizationTest.lemon --dump-tokens --dump-ast --dump-ir
 
-java OptimizationTest
+java -cp target/lemonc OptimizationTest
 ```
+
+The same source can target the C backend instead (`--target c`), producing native code through gcc/clang.
 
 Real JVM output:
 
@@ -138,16 +140,21 @@ flowchart TB
 
     subgraph MiddleEnd
         O["site.ilemon.optimizer<br/>AST optimizer"]
+        A["site.ilemon.arc<br/>ownership / ARC analysis"]
+        IR["site.ilemon.ir<br/>AstToIrLowerer → LemonIR<br/>(shared, backend-neutral CFG)"]
     end
 
-    subgraph Backend
-        T["site.ilemon.codegen.TranslatorVisitor<br/>AST to JVM IR"]
-        B["site.ilemon.codegen.ByteCodeGenerator<br/>Jasmin IL writer"]
-        J["jasmin.Main<br/>IL to .class"]
+    subgraph Backends
+        J["site.ilemon.backend.jvm<br/>JvmBackend → direct bytecode<br/>→ .class"]
+        C["site.ilemon.backend.c<br/>CBackend → C source<br/>→ gcc/clang → native"]
     end
 
-    L --> P --> S --> O --> T --> B --> J
+    L --> P --> S --> O --> A --> IR
+    IR --> J
+    IR --> C
 ```
+
+LemonIR is the single abstraction shared by both backends. It is not shaped after either target: it holds backend-neutral control flow and typed operations, and each backend is responsible for lowering it to its own target (JVM bytecode or C source). No JVM-specific concept leaks into LemonIR, and no C-specific concept leaks into the JVM backend. The frontend, semantic analysis, ownership/ARC analysis, module resolution, and LemonIR itself are shared; only the final lowering differs.
 
 | Module | Core classes | Responsibility |
 |---|---|---|
@@ -156,13 +163,23 @@ flowchart TB
 | `site.ilemon.ast` | `Ast` | Define source-level expressions, statements, types, methods, and programs |
 | `site.ilemon.semantic` | `SemanticVisitor`, `MethodVarTable`, `Symbol` | Type checking, declaration checks, assignment checks, return checks |
 | `site.ilemon.optimizer` | `AstOptimizer` | Perform safe AST-level simplifications |
-| `site.ilemon.codegen` | `TranslatorVisitor`, `ByteCodeGenerator` | Translate AST to JVM IR and write Jasmin assembly |
-| `site.ilemon.codegen.ast` | `Ast`, `Label` | Define backend JVM instruction-level IR |
+| `site.ilemon.arc` | `OwnershipAnalyzer`, `RefcountSimulator`, `OwnershipIr` | Shared ownership/ARC analysis for managed values (used before lowering) |
+| `site.ilemon.ir` | `AstToIrLowerer`, `IrModule`, `IrVerifier`, `IrPrinter` | Lower the optimized AST to the backend-neutral LemonIR CFG |
+| `site.ilemon.backend` | `Backend`, `BackendOptions`, `BackendResult` | Backend-neutral contract implemented by every backend |
+| `site.ilemon.backend.jvm` | `JvmBackend`, `JvmClassWriter`, `JvmMethodEmitter`, `JvmInstructionEmitter`, `JvmStackTracker`, `JvmTypeMapper` | Lower LemonIR directly to JVM bytecode and write `.class` files (no Jasmin) |
+| `site.ilemon.backend.c` | `CBackend`, `CFunctionEmitter`, `CInstructionEmitter`, `CTypeEmitter` | Lower LemonIR to C source and invoke the native compiler |
 | `site.ilemon.compiler` | `LemonC`, `AstPrinter`, `IrPrinter` | CLI entrypoint and developer-facing diagnostics/dumps |
 
-## Backpatching In Action
+Backend selection is explicit at the CLI:
 
-LemonC uses classic backpatching for boolean expressions and flow-control statements. Boolean code generation maintains pending jump lists instead of eagerly materializing `0` or `1`.
+```bash
+lemonc --target jvm program.lemon   # default: writes program.class
+lemonc --target c   program.lemon   # writes program.c, then runs gcc/clang
+```
+
+## Short-Circuit Control Flow In Action
+
+LemonC preserves classic C short-circuit semantics for `&&` and `||`: the right operand is only evaluated when it can change the result. When the shared `AstToIrLowerer` lowers a boolean expression it emits the branchy LemonIR shape below instead of eagerly materializing `0` or `1`.
 
 For:
 
@@ -174,7 +191,7 @@ if (a < b || c < d && e < f) {
 }
 ```
 
-The conceptual control-flow shape is:
+The LemonIR control-flow shape is:
 
 ```mermaid
 flowchart LR
@@ -186,28 +203,21 @@ flowchart LR
     E -- false --> F
 ```
 
-The implementation follows the textbook rules:
+Both backends consume this CFG unchanged:
 
 ```text
-E1 || E2:
-  backpatch(E1.falseList, E2.entry)
-  E.trueList  = merge(E1.trueList, E2.trueList)
-  E.falseList = E2.falseList
-
-E1 && E2:
-  backpatch(E1.trueList, E2.entry)
-  E.trueList  = E2.trueList
-  E.falseList = merge(E1.falseList, E2.falseList)
+E1 || E2:   the false edge of E1 leads to E2; E2's exits decide the whole expression
+E1 && E2:   the true  edge of E1 leads to E2; E2's exits decide the whole expression
 ```
 
-This makes the project useful for compiler engineers studying syntax-directed translation and control-flow generation.
+The JVM backend turns each CFG edge into JVM labels and conditional jumps; the C backend emits `&&`/`||` operators or explicit branches. Because the CFG is the source of truth, neither backend re-analyzes the AST to rebuild control flow.
 
 ## JVM Output Is Tested, Not Assumed
 
 Every root example under [examples](examples) is compiled and executed by [AllExamplesJvmTest.java](src/test/java/AllExamplesJvmTest.java):
 
 <p align="center">
-  <img src="./docs/assets/lemonc-test-loop.png" alt="LemonC end-to-end JVM regression loop" width="100%">
+  <img src="./docs/assets/lemonc-test-loop.svg" alt="LemonC end-to-end JVM regression loop" width="100%">
 </p>
 
 Run the suite:
@@ -219,8 +229,8 @@ mvn test
 Current coverage:
 
 ```text
-Tests run: 241, Failures: 0, Errors: 0, Skipped: 0
-88 root examples verified by real JVM execution
+Tests run: 359, Failures: 0, Errors: 0, Skipped: 0
+94 root examples verified by real JVM execution
 ```
 
 ## More Real Examples
@@ -286,7 +296,7 @@ JDK 1.8+
 Maven 3.3+
 ```
 
-Build directly. The Jasmin dependency is resolved from the project-local Maven repository under `jars/maven-repo`.
+The compiler is self-contained — the JVM backend writes `.class` files directly, so there is no third-party bytecode/assembler dependency. (The C backend additionally expects `gcc` or `clang` on `PATH` when `--target c` is used.)
 
 ```bash
 mvn clean package
@@ -296,7 +306,7 @@ Compile and run a Lemon program:
 
 ```bash
 java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar examples/Fib.lemon
-java Fib
+java -cp target/lemonc Fib
 ```
 
 Inspect compiler stages:
@@ -373,15 +383,16 @@ void main() {
 
 | Test class | Count | Purpose |
 |---|---:|---|
-| `AllExamplesJvmTest` | 1 | Compile every root example to `.class`, run JVM, compare stdout |
-| `AstOptimizerTest` | 5 | Verify AST optimization behavior |
-| `ByteCodeGeneratorTest` | 13 | Verify JVM bytecode and stack/local metadata |
-| `CompilerTest` | 69 | End-to-end compiler tests |
-| `ErrorTest` | 40 | Negative parse and semantic tests |
-| `LexerTest` | 18 | Lexer tests |
-| `ParserTest` | 18 | Parser tests |
-| `SemanticTest` | 1 | Semantic visitor smoke test |
-| `TranslatorVisitorTest` | 11 | JVM IR translation tests |
+| Test class | Purpose |
+|---|---|
+| `AllExamplesJvmTest` | Compile every root example to `.class` via the JVM backend, run it, compare stdout against the manifest |
+| `JvmBackendTest` | Structural tests of direct bytecode emission: descriptors, raw opcodes, max_stack/max_locals, verifier-valid control flow |
+| `CompilerTest` | End-to-end compiler tests |
+| `NativeEndToEndTest`, `CBackendTest` | C backend: LemonIR → C source → gcc/clang → native execution |
+| `ArcCliTest`, `ArcOwnershipTest`, `ImportScopeArcTest`, `ArcControlFlowTest` | Shared ownership/ARC analysis and import scoping |
+| `LemonIrTest`, `ModuleSystemTest`, `LemonCCliTest` | LemonIR lowering/verification, module imports, CLI flags |
+| `LexerTest`, `ParserTest`, `ErrorTest`, `SemanticTest`, `AstOptimizerTest` | Frontend stages |
+| `ByteCompilerTest`, `LongCompilerTest`, `ShortArrayCompilerTest`, … | Per-type JVM codegen and diagnostics |
 
 ## Repository Map
 
@@ -392,11 +403,16 @@ src/main/java/site/ilemon
   parser/           recursive descent parser
   semantic/         symbol tables and type checking
   optimizer/        AST optimization
-  codegen/          JVM IR and Jasmin generation
+  arc/              ownership / ARC analysis (shared)
+  ir/               LemonIR: backend-neutral CFG lowering + verification
+  backend/          backend-neutral Backend contract (Backend, BackendOptions, BackendResult)
+  backend/jvm/      JVM backend: LemonIR → direct JVM bytecode → .class
+  backend/c/        C backend: LemonIR → C99 source → gcc/clang
   compiler/         CLI, AST printer, IR printer
 
-examples/           82 Lemon programs and output manifest
-docs/               feature guide and review notes
+examples/           94 Lemon programs and output manifest
+runtime/            C runtime sources used by the C backend
+docs/               feature guide and architecture notes
 tools/              native backend experiment, kept outside main source
 src/test/java/      automated compiler tests
 ```

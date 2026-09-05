@@ -36,7 +36,7 @@ public class LemonCCliTest {
 
         // Assert
         assertEquals(0, exitCode);
-        // Success might still produce some output (e.g. from printf in the program or verbose Jasmin steps if enabled internally)
+        // Success might still produce some output (e.g. from printf in the program or verbose steps if enabled internally).
         // The key is that errContent should be empty or contain no errors.
         assertTrue(errContent.toString().isEmpty() || !errContent.toString().contains("error"));
     }

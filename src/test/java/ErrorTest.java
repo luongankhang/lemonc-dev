@@ -1,7 +1,5 @@
-import org.junit.Before;
 import org.junit.Test;
 import site.ilemon.ast.Ast;
-import site.ilemon.codegen.ast.Label;
 import site.ilemon.exception.ParseException;
 import site.ilemon.exception.SemanticException;
 import site.ilemon.lexer.Lexer;
@@ -19,11 +17,6 @@ import static org.junit.Assert.*;
  * Each test verifies a specific error scenario.
  */
 public class ErrorTest {
-
-    @Before
-    public void setUp() {
-        Label.resetCounter();
-    }
 
     // ===== Semantic errors =====
 

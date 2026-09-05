@@ -1,7 +1,5 @@
 import org.junit.Test;
 import site.ilemon.ast.Ast;
-import site.ilemon.codegen.ByteCodeGenerator;
-import site.ilemon.codegen.TranslatorVisitor;
 import site.ilemon.lexer.Lexer;
 import site.ilemon.parser.Parser;
 import site.ilemon.semantic.SemanticVisitor;
@@ -31,17 +29,13 @@ public class NewPrimitiveTypesCompilerTest {
             SemanticVisitor semantic = SemanticVisitor.collecting();
             semantic.visit(program);
             assertTrue(semantic.passOrNot());
-            TranslatorVisitor translator = new TranslatorVisitor();
-            translator.visit(program);
-            ByteCodeGenerator generator = new ByteCodeGenerator();
-            generator.visit(translator.prog);
-            String jasmin = Files.readString(generator.getOutputFile().toPath());
-            assertTrue(jasmin.contains("takeShort(S)S"));
-            assertTrue(jasmin.contains("takeShortArray([S)[S"));
-            assertTrue(jasmin.contains("takeChar(C)C"));
-            assertTrue(jasmin.contains("takeCharArray([C)[C"));
-            assertTrue(jasmin.contains("newarray short"));
-            assertTrue(jasmin.contains("newarray char"));
+            byte[] classBytes = JvmTestSupport.compileToBytes("NewPrimitiveTypes", source);
+            assertTrue(JvmTestSupport.hasMethod(classBytes, "takeShort", "(S)S"));
+            assertTrue(JvmTestSupport.hasMethod(classBytes, "takeShortArray", "([S)[S"));
+            assertTrue(JvmTestSupport.hasMethod(classBytes, "takeChar", "(C)C"));
+            assertTrue(JvmTestSupport.hasMethod(classBytes, "takeCharArray", "([C)[C"));
+            assertTrue(JvmTestSupport.hasNewArray(classBytes, "short"));
+            assertTrue(JvmTestSupport.hasNewArray(classBytes, "char"));
         } finally {
             Files.deleteIfExists(file.toPath());
             Files.deleteIfExists(directory.toPath());

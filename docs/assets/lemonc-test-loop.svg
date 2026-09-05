@@ -1,19 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="250" viewBox="0 0 1120 250" role="img" aria-labelledby="title desc">
   <title id="title">LemonC end-to-end JVM regression loop</title>
-  <desc id="desc">Eighty-two examples are compiled, assembled, executed by JVM, and compared with an output manifest.</desc>
+  <desc id="desc">Ninety-four examples are compiled to class files by the JVM backend, executed by the JVM, and compared with an output manifest.</desc>
   <rect width="1120" height="250" rx="18" fill="#fbfcf8"/>
   <text x="40" y="50" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#18201a">JVM output is tested, not assumed</text>
-  <text x="40" y="80" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#58645d">Every root example is compiled into a class file, executed on the JVM, and checked against the manifest.</text>
+  <text x="40" y="80" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#58645d">Every root example is compiled straight into a class file, executed on the JVM, and checked against the manifest.</text>
   <g font-family="Segoe UI, Arial, sans-serif" text-anchor="middle">
     <circle cx="150" cy="150" r="46" fill="#ffffff" stroke="#bad7c7" stroke-width="2"/>
-    <text x="150" y="144" font-size="19" font-weight="700" fill="#18201a">82</text>
+    <text x="150" y="144" font-size="19" font-weight="700" fill="#18201a">94</text>
     <text x="150" y="166" font-size="13" fill="#58645d">examples</text>
     <circle cx="350" cy="150" r="46" fill="#ffffff" stroke="#bad7c7" stroke-width="2"/>
     <text x="350" y="144" font-size="19" font-weight="700" fill="#18201a">compile</text>
-    <text x="350" y="166" font-size="13" fill="#58645d">LemonC</text>
+    <text x="350" y="166" font-size="13" fill="#58645d">JVM backend</text>
     <circle cx="550" cy="150" r="46" fill="#ffffff" stroke="#bad7c7" stroke-width="2"/>
-    <text x="550" y="144" font-size="19" font-weight="700" fill="#18201a">assemble</text>
-    <text x="550" y="166" font-size="13" fill="#58645d">Jasmin</text>
+    <text x="550" y="141" font-size="19" font-weight="700" fill="#18201a">.class</text>
+    <text x="550" y="163" font-size="13" fill="#58645d">direct bytecode</text>
     <circle cx="750" cy="150" r="46" fill="#ffffff" stroke="#bad7c7" stroke-width="2"/>
     <text x="750" y="144" font-size="19" font-weight="700" fill="#18201a">run</text>
     <text x="750" y="166" font-size="13" fill="#58645d">JVM</text>
