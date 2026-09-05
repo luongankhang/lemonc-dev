@@ -3,6 +3,7 @@
 *.il
 target/
 bin/
+.freebuff
 
 # Temporary compiler output and scratch files
 out.txt
