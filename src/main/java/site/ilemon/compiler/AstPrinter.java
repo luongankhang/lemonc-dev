@@ -32,6 +32,15 @@ public final class AstPrinter {
     private void mainClass(Ast.MainClass.T mainClass, int depth) {
         if (mainClass instanceof Ast.MainClass.MainClassSingle node) {
             line(depth, "Class " + node.getClassId());
+            if (node.getConstants() != null && !node.getConstants().isEmpty()) {
+                line(depth + 1, "Constants");
+                for (Ast.ConstDecl constant : node.getConstants()) {
+                    String visibility = constant.getVisibility() == Ast.Visibility.PUBLIC ? "pub " : "";
+                    String value = constant.getResolvedValue() == null ? "?" : constant.getResolvedValue();
+                    line(depth + 2, visibility + "const " + type(constant.getType()) + " "
+                            + constant.getId() + " = " + value);
+                }
+            }
             if (node.getMethods() != null) {
                 for (Ast.Method.T method : node.getMethods()) {
                     method(method, depth + 1);

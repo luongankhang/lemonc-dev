@@ -6,13 +6,26 @@ import site.ilemon.ir.IrValue;
 
 /** Emits target-independent LemonIR instructions as readable C statements. */
 public final class CInstructionEmitter {
+    private final java.util.Set<String> constNames;
+
+    public CInstructionEmitter() {
+        this(java.util.Set.of());
+    }
+
+    public CInstructionEmitter(java.util.Set<String> constNames) {
+        this.constNames = constNames == null ? java.util.Set.of() : constNames;
+    }
+
     public String emit(IrInstruction instruction, CTypeEmitter types) {
         String result = instruction.result() == null ? "" : instruction.result().name() + " = ";
         String[] args = instruction.operands().stream().map(IrValue::name).toArray(String[]::new);
         return switch (instruction.op()) {
             case CONST -> {
                 String val = args.length == 0 ? "0" : args[0];
-                if (instruction.result() != null && instruction.result().type().kind() == IrType.Kind.STRING) {
+                if (constNames.contains(val)) {
+                    // Global constant read: reference the declared identifier as-is.
+                    yield result + CFunctionEmitter.safe(val) + ";";
+                } else if (instruction.result() != null && instruction.result().type().kind() == IrType.Kind.STRING) {
                     if (!val.startsWith("\"")) {
                         val = "\"" + val + "\"";
                     }

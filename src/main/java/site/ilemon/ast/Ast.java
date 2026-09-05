@@ -29,6 +29,45 @@ public class Ast {
     }
 
     /**
+     * Global/module-level immutable constant declaration:
+     * {@code const int MAX = 10;} or {@code pub const int VERSION = 1;}.
+     * Constants are only allowed at global scope and must have a literal initializer.
+     */
+    public static class ConstDecl {
+        private String id;
+        private Type.T type;
+        private Expr.T initializer;
+        private Visibility visibility = Visibility.PRIVATE;
+        private int lineNum;
+        private SourceSpan span;
+        /** Resolved literal value as text (e.g. "1024", "true", "1.5"), set by semantic analysis. */
+        private String resolvedValue;
+
+        public ConstDecl(Type.T type, String id, Expr.T initializer, Visibility visibility, int lineNum) {
+            this.type = type;
+            this.id = id;
+            this.initializer = initializer;
+            this.visibility = visibility;
+            this.setLineNum(lineNum);
+        }
+
+        public String getId() { return id; }
+        public void setId(String id) { this.id = id; }
+        public Type.T getType() { return type; }
+        public void setType(Type.T type) { this.type = type; }
+        public Expr.T getInitializer() { return initializer; }
+        public void setInitializer(Expr.T initializer) { this.initializer = initializer; }
+        public Visibility getVisibility() { return visibility; }
+        public void setVisibility(Visibility visibility) { this.visibility = visibility; }
+        public int getLineNum() { return lineNum; }
+        public void setLineNum(int lineNum) { this.lineNum = lineNum; }
+        public SourceSpan getSpan() { return span; }
+        public void setSpan(SourceSpan span) { this.span = span; }
+        public String getResolvedValue() { return resolvedValue; }
+        public void setResolvedValue(String resolvedValue) { this.resolvedValue = resolvedValue; }
+    }
+
+    /**
      * Program
      */
     public static class Program{
@@ -73,9 +112,12 @@ public class Ast {
             public void setFields(ArrayList<Ast.Declare.T> fields) { this.fields = fields; }
             private ArrayList<Ast.Method.T> methods;
             private ArrayList<ImportDecl> imports = new ArrayList<>();
+            private ArrayList<ConstDecl> constants = new ArrayList<>();
             public ArrayList<Ast.Method.T> getMethods() { return this.methods; }
             public void setMethods(ArrayList<Ast.Method.T> methods) { this.methods = methods; }
             public ArrayList<ImportDecl> getImports() { return this.imports; }
+            public ArrayList<ConstDecl> getConstants() { return this.constants; }
+            public void setConstants(ArrayList<ConstDecl> constants) { this.constants = constants; }
 
             public MainClassSingle(String classId, ArrayList<Declare.T> fields, ArrayList<Ast.Method.T> methods) {
                 this.classId = classId;
@@ -1162,6 +1204,15 @@ public class Ast {
             private Ast.Stmt.T retExp;
             public Ast.Stmt.T getRetExp() { return this.retExp; }
             public void setRetExp(Ast.Stmt.T retExp) { this.retExp = retExp; }
+            /**
+             * Constants of the module that declares this method. Set by the module
+             * loader when a public method is re-exported into another module, so its
+             * body can still resolve the declaring module's constants (including
+             * private ones). Null means "use the program's own constants".
+             */
+            private java.util.List<ConstDecl> moduleConsts;
+            public java.util.List<ConstDecl> getModuleConsts() { return this.moduleConsts; }
+            public void setModuleConsts(java.util.List<ConstDecl> moduleConsts) { this.moduleConsts = moduleConsts; }
 
             public MethodSingle(Ast.Type.T  retType, String id,
                                 ArrayList<Declare.T> formals,

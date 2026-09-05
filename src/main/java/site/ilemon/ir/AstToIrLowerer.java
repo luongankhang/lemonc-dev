@@ -13,6 +13,9 @@ public final class AstToIrLowerer {
     private int labelCounter = 0;
     private int tempCounter = 0;
 
+    /** Program-level constants (including {@code alias_NAME} re-exports from imports). */
+    private List<Ast.ConstDecl> programConsts = List.of();
+
     private record LoopContext(BasicBlock breakTarget, BasicBlock continueTarget) {}
 
     private final Map<String, IrType> methodReturnTypes = new HashMap<>();
@@ -27,6 +30,10 @@ public final class AstToIrLowerer {
         }
 
         IrModule module = new IrModule(main.getClassId() != null ? main.getClassId() : "Main");
+        programConsts = main.getConstants() == null ? List.of() : main.getConstants();
+        for (Ast.ConstDecl constant : programConsts) {
+            registerConstant(module, constant);
+        }
 
         // Pre-scan all method signatures
         for (Ast.Method.T m : main.getMethods()) {
@@ -52,6 +59,13 @@ public final class AstToIrLowerer {
         // Lower each method
         for (Ast.Method.T m : main.getMethods()) {
             if (m instanceof Ast.Method.MethodSingle method) {
+                // Constants reachable from this method's declaring module must be
+                // visible to the backends (C declarations / JVM value substitution).
+                if (method.getModuleConsts() != null) {
+                    for (Ast.ConstDecl constant : method.getModuleConsts()) {
+                        registerConstant(module, constant);
+                    }
+                }
                 module.addFunction(lowerMethod(method));
             }
         }
@@ -98,8 +112,9 @@ public final class AstToIrLowerer {
         BasicBlock entry = new BasicBlock("entry");
         blocks.add(entry);
 
+        List<Ast.ConstDecl> methodConsts = method.getModuleConsts() != null ? method.getModuleConsts() : programConsts;
         MethodLoweringContext ctx = new MethodLoweringContext(
-                irFunc, blocks, entry, variableTypes, managedLocals, isMain, returnType
+                irFunc, blocks, entry, variableTypes, managedLocals, isMain, returnType, methodConsts
         );
 
         // In entry block: allocate arrays and initialize locals
@@ -156,6 +171,38 @@ public final class AstToIrLowerer {
         }
 
         return irFunc;
+    }
+
+    /** Adds a resolved AST constant to the module's backend-neutral table. */
+    private void registerConstant(IrModule module, Ast.ConstDecl constant) {
+        if (constant == null || constant.getResolvedValue() == null) {
+            return;
+        }
+        IrType type = toIrType(constant.getType());
+        String value = constant.getResolvedValue();
+        if (type.kind() == IrType.Kind.STRING) {
+            // Store the quoted, C-escaped representation, like string literals.
+            value = "\"" + escapeCString(value) + "\"";
+        }
+        module.addConstant(new IrModule.IrConstant(
+                constant.getId(), type, value, constant.getVisibility() == Ast.Visibility.PUBLIC));
+    }
+
+    /** Resolves a name to a global constant: the method's module table first, then the program's. */
+    private Ast.ConstDecl findConst(String name, MethodLoweringContext ctx) {
+        if (ctx.consts != null) {
+            for (Ast.ConstDecl constant : ctx.consts) {
+                if (constant.getId().equals(name)) {
+                    return constant;
+                }
+            }
+        }
+        for (Ast.ConstDecl constant : programConsts) {
+            if (constant.getId().equals(name)) {
+                return constant;
+            }
+        }
+        return null;
     }
 
     private void lowerStmt(Ast.Stmt.T stmt, MethodLoweringContext ctx) {
@@ -406,7 +453,22 @@ public final class AstToIrLowerer {
             return res;
         } else if (expr instanceof Ast.Expr.Id id) {
             IrType t = ctx.variableTypes.get(id.getId());
-            if (t == null) t = IrType.scalar(IrType.Kind.INT);
+            if (t != null) {
+                return new IrValue(id.getId(), t);
+            }
+            Ast.ConstDecl constant = findConst(id.getId(), ctx);
+            if (constant != null && constant.getResolvedValue() != null) {
+                // Read of a global constant: materialize its value. The CONST
+                // operand carries the constant name; backends resolve it through
+                // the module's constant table (C emits an identifier reference,
+                // JVM inlines the value).
+                IrType cType = toIrType(constant.getType());
+                IrValue res = ctx.newTemp(cType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.CONST, res,
+                        List.of(new IrValue(constant.getId(), cType)), null));
+                return res;
+            }
+            t = IrType.scalar(IrType.Kind.INT);
             return new IrValue(id.getId(), t);
         } else if (expr instanceof Ast.Expr.Add add) {
             return lowerBinary(IrInstruction.Op.ADD, add.getLeft(), add.getRight(), ctx);
@@ -708,9 +770,11 @@ public final class AstToIrLowerer {
         final IrType returnType;
         final Deque<LoopContext> loopStack = new ArrayDeque<>();
 
+        final List<Ast.ConstDecl> consts;
+
         MethodLoweringContext(IrFunction function, List<BasicBlock> blocks, BasicBlock currentBlock,
                               Map<String, IrType> variableTypes, Set<String> managedLocals,
-                              boolean isMain, IrType returnType) {
+                              boolean isMain, IrType returnType, List<Ast.ConstDecl> consts) {
             this.function = function;
             this.blocks = blocks;
             this.currentBlock = currentBlock;
@@ -718,6 +782,7 @@ public final class AstToIrLowerer {
             this.managedLocals = managedLocals;
             this.isMain = isMain;
             this.returnType = returnType;
+            this.consts = consts;
         }
 
         BasicBlock createBlock(String prefix) {

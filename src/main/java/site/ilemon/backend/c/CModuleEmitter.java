@@ -4,6 +4,8 @@ import site.ilemon.ir.IrFunction;
 import site.ilemon.ir.IrModule;
 import site.ilemon.ir.IrValue;
 
+import java.util.Map;
+
 public final class CModuleEmitter {
     private final CTypeEmitter types = new CTypeEmitter();
 
@@ -16,6 +18,22 @@ public final class CModuleEmitter {
         out.append("#include <math.h>\n");
         out.append("#include \"lemon_runtime.h\"\n\n");
         out.append("typedef struct { unsigned char _opaque; } lemon_opaque_t;\n\n");
+
+        // Global constants. Private constants are file-scope static; public ones
+        // follow the existing export model (compile-time module visibility, so
+        // no header/export machinery is needed for a single translation unit).
+        for (Map.Entry<String, IrModule.IrConstant> entry : module.constants().entrySet()) {
+            IrModule.IrConstant constant = entry.getValue();
+            String cType = types.emit(constant.type());
+            String qualifier = cType.startsWith("const ") ? "" : "const ";
+            String storage = constant.pub() ? "" : "static ";
+            out.append(storage).append(qualifier).append(cType).append(' ')
+                    .append(CFunctionEmitter.safe(constant.name()))
+                    .append(" = ").append(constant.value()).append(";\n");
+        }
+        if (!module.constants().isEmpty()) {
+            out.append('\n');
+        }
 
         // Forward function prototypes
         for (IrFunction function : module.functions()) {
@@ -31,7 +49,7 @@ public final class CModuleEmitter {
         }
         out.append("\n");
 
-        CFunctionEmitter functions = new CFunctionEmitter();
+        CFunctionEmitter functions = new CFunctionEmitter(module.constants().keySet());
         module.functions().forEach(function -> out.append(functions.emit(function)).append('\n'));
         return out.toString();
     }

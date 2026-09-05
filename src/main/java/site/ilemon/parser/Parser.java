@@ -44,6 +44,12 @@ import static site.ilemon.lexer.TokenKind.Num;
  */
 public class Parser {
 
+	/** Import aliases seen so far; module-qualified members ({@code alias.MEMBER}) parse as qualified ids. */
+	private final java.util.Set<String> importAliases = new java.util.HashSet<>();
+
+	/** Set when a {@code const} declaration is found inside a function body; the diagnostic must escape recovery. */
+	private boolean constScopeViolation = false;
+
 	private Lexer lexer; // Lexer instance
 
 	private Token look;  // Current token
@@ -179,11 +185,27 @@ public class Parser {
 	// existing semantic and backend phases remain source-compatible.
 	private Ast.MainClass.MainClassSingle parseTopLevelProgram() throws IOException {
 		ArrayList<Ast.ImportDecl> imports = parseImports();
-		ArrayList<Ast.Method.T> methods = parseMethodList();
+		ArrayList<Ast.Method.T> methods = new ArrayList<>();
+		ArrayList<Ast.ConstDecl> constants = new ArrayList<>();
+		while (isMethodStart() || isConstStart()) {
+			try {
+				if (isConstStart()) {
+					constants.add(parseConstDecl());
+				} else {
+					methods.add(parseMethod());
+				}
+			} catch (ParseException failure) {
+				if (constScopeViolation) {
+					throw failure;
+				}
+				synchronizeToMethodBoundary();
+			}
+		}
 		if (methods.isEmpty()) error("program must declare at least one function");
 		if (look.kind != TokenKind.EOF) expected("EOF");
 		Ast.MainClass.MainClassSingle main = new Ast.MainClass.MainClassSingle(lexer.getClassName(), null, methods);
 		main.getImports().addAll(imports);
+		main.getConstants().addAll(constants);
 		return main;
 	}
 
@@ -205,6 +227,7 @@ public class Parser {
 			match(")");
 			match(";");
 			imports.add(new Ast.ImportDecl(name, path, tokenSpan(importToken)));
+			importAliases.add(name);
 		}
 		return imports;
 	}
@@ -221,8 +244,24 @@ public class Parser {
 		}
 		move();
 		match("{");
-		ArrayList<Ast.Method.T> methods = parseMethodList();
+		ArrayList<Ast.Method.T> methods = new ArrayList<>();
+		ArrayList<Ast.ConstDecl> constants = new ArrayList<>();
+		while (isMethodStart() || isConstStart()) {
+			try {
+				if (isConstStart()) {
+					constants.add(parseConstDecl());
+				} else {
+					methods.add(parseMethod());
+				}
+			} catch (ParseException failure) {
+				if (constScopeViolation) {
+					throw failure;
+				}
+				synchronizeToMethodBoundary();
+			}
+		}
 		mainClass = new Ast.MainClass.MainClassSingle(className,null,methods);
+		mainClass.getConstants().addAll(constants);
 		if (look.kind == TokenKind.Rbrace) {
 			match("}");
 		} else if (!diagnosticEngine.hasErrors()) {
@@ -234,23 +273,43 @@ public class Parser {
 		return mainClass;
 	}
 
-	// <methodList> -> <method>*
-	private ArrayList<Ast.Method.T> parseMethodList() throws IOException {
-		ArrayList<Ast.Method.T> methods = new ArrayList<>();
-		while (isMethodStart()) {
-			try {
-				methods.add(parseMethod());
-			} catch (ParseException failure) {
-				synchronizeToMethodBoundary();
-			}
+	private boolean isMethodStart() {
+		if (look == null) {
+			return false;
 		}
-		return methods;
+		// `pub` starts a method unless it is `pub const`.
+		if (look.kind == TokenKind.Pub) {
+			return lexer.lookahead(1) == null || lexer.lookahead(1).kind != TokenKind.Const;
+		}
+		return look.kind == TokenKind.Void || look.kind == TokenKind.Int
+				|| look.kind == TokenKind.Float || look.kind == TokenKind.Double
+				|| look.kind == TokenKind.Bool || look.kind == TokenKind.Byte || look.kind == TokenKind.Short || look.kind == TokenKind.Char || look.kind == TokenKind.Long || look.kind == TokenKind.String;
 	}
 
-	private boolean isMethodStart() {
-		return look != null && (look.kind == TokenKind.Pub || look.kind == TokenKind.Void || look.kind == TokenKind.Int
-				|| look.kind == TokenKind.Float || look.kind == TokenKind.Double
-				|| look.kind == TokenKind.Bool || look.kind == TokenKind.Byte || look.kind == TokenKind.Short || look.kind == TokenKind.Char || look.kind == TokenKind.Long || look.kind == TokenKind.String);
+	private boolean isConstStart() {
+		return look != null && (look.kind == TokenKind.Const
+				|| (look.kind == TokenKind.Pub && lexer.lookahead(1) != null && lexer.lookahead(1).kind == TokenKind.Const));
+	}
+
+	// <constDecl> -> [pub] const <type> <id> = <literal> ;
+	private Ast.ConstDecl parseConstDecl() throws IOException {
+		Ast.Visibility visibility = Ast.Visibility.PRIVATE;
+		if (look.kind == TokenKind.Pub) {
+			visibility = Ast.Visibility.PUBLIC;
+			move();
+		}
+		match(new Token(TokenKind.Const));
+		Ast.Type.T type = parseType();
+		Token idToken = look;
+		String id = look.lexeme;
+		int lineNumber = look.lineNumber;
+		match(new Token(TokenKind.Id));
+		match("=");
+		Ast.Expr.T initializer = parseExpr();
+		match(";");
+		Ast.ConstDecl declaration = new Ast.ConstDecl(type, id, initializer, visibility, lineNumber);
+		declaration.setSpan(tokenSpan(idToken));
+		return declaration;
 	}
 
 	private void synchronizeToMethodBoundary() {
@@ -491,10 +550,17 @@ public class Parser {
 
 	private ArrayList<Ast.Stmt.T> parseStmts() throws IOException {
 		ArrayList<Ast.Stmt.T> rs = new ArrayList<>();
+		if (isConstStart()) {
+			constScopeViolation = true;
+			error("const declarations are only allowed at global scope");
+		}
 		while (isStatementStart()) {
 			try {
 				rs.add(parseStmt());
 			} catch (ParseException failure) {
+				if (constScopeViolation) {
+					throw failure;
+				}
 				synchronizeToStatementBoundary();
 			}
 		}
@@ -522,9 +588,14 @@ public class Parser {
 
 	private Ast.Stmt.T parseStmt() throws IOException {
 		Ast.Stmt.T stmt = null;
+		if (isConstStart()) {
+			constScopeViolation = true;
+			error("const declarations are only allowed at global scope");
+		}
 		if (look.kind == TokenKind.Import) {
 			ArrayList<Ast.ImportDecl> imports = parseImports();
 			if (imports.size() != 1) error("expected one local module import");
+			importAliases.add(imports.get(0).getName());
 			return new Ast.Stmt.Import(imports.get(0));
 		}
 		
@@ -885,15 +956,21 @@ public class Parser {
 				expr.setSpan(tokenSpan(temp));
 			}
 			else if( ahead.kind == TokenKind.Dot){
-				String arrayName = look.lexeme;
+				String baseName = look.lexeme;
 				int lineNum = temp.lineNumber;
 				move(); // consume id
 				match(".");
-				if (!"length".equals(look.lexeme)) {
+				String member = look.lexeme;
+				match(new Token(TokenKind.Id));
+				if ("length".equals(member)) {
+					expr = new Ast.Expr.ArrayLength(baseName, lineNum);
+				} else if (importAliases.contains(baseName)) {
+					// Module-qualified read: alias.MEMBER -> alias_MEMBER
+					expr = new Ast.Expr.Id(baseName + "_" + member, lineNum);
+				} else {
 					error("array property must be length");
 				}
-				match(new Token(TokenKind.Id));
-				expr = new Ast.Expr.ArrayLength(arrayName, lineNum);
+				expr.setSpan(tokenSpan(temp));
 			}
 			else{
 				expr = new Ast.Expr.Id(look.lexeme, temp.lineNumber);

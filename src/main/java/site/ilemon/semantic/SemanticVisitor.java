@@ -58,6 +58,11 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     private HashMap<String,Ast.Method.MethodSingle> methodMap;
 
+    /** Global constants visible in the current program (incl. re-exported {@code alias_NAME} copies). */
+    private HashMap<String, Ast.ConstDecl> globalConsts = new HashMap<>();
+    /** Identity guard so a shared imported-module constant is validated once. */
+    private java.util.Set<Ast.ConstDecl> validatedConsts = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
     private Ast.Type.T typeOfMethodDeclared;
 
     private HashSet<String> importedModuleNames = new HashSet<>();
@@ -190,6 +195,15 @@ public class SemanticVisitor implements ISemanticVisitor {
                     "module imports are compile-time bindings", null);
             return;
         }
+        MethodVarTable assignTable = this.methodVarTable.get(currMethodName);
+        boolean isLocalTarget = assignTable != null && assignTable.get(obj.getId().getId()) != null;
+        if (!isLocalTarget && resolveConst(obj.getId().getId()) != null) {
+            semanticError(DiagnosticCodes.SEM_CONST_IMMUTABLE,
+                    "cannot assign to constant '" + obj.getId().getId() + "': constants are immutable",
+                    obj.getLineNum(), obj.getSpan(), "immutable constant",
+                    "constants cannot be reassigned after declaration", null);
+            return;
+        }
         if(obj.getExpr() instanceof Ast.Expr.T){
             this.visit((Ast.Expr.T)obj.getExpr());
             Ast.Type.T exprType = null;
@@ -315,12 +329,29 @@ public class SemanticVisitor implements ISemanticVisitor {
             obj.setType(this.currType);
             return;
         }
-        if( mTable.get(obj.getId()) == null )
+        if( mTable.get(obj.getId()) == null ){
+            // Not a local: resolve against global constants (locals shadow constants).
+            Ast.ConstDecl constant = resolveConst(obj.getId());
+            if (constant != null) {
+                obj.setType(constant.getType());
+                this.currType = constant.getType();
+                return;
+            }
+            int separator = obj.getId().indexOf('_');
+            if (separator > 0 && importedModuleNames.contains(obj.getId().substring(0, separator))) {
+                semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                        "module import '" + obj.getId().substring(0, separator)
+                                + "' has no public constant '" + obj.getId().substring(separator + 1) + "'",
+                        obj.getLineNum(), obj.getSpan(), "unknown constant",
+                        "private constants are not accessible from other modules", null);
+                this.currType = unknownType();
+                obj.setType(this.currType);
+                return;
+            }
             semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE, "undefined variable: " + obj.getId(),
                     obj.getLineNum(), obj.getSpan(), "unknown variable",
                     "the name is not declared in the current method scope",
                     nearestName(obj.getId(), mTable.names()));
-        if (mTable.get(obj.getId()) == null) {
             this.currType = unknownType();
             obj.setType(this.currType);
             return;
@@ -332,6 +363,100 @@ public class SemanticVisitor implements ISemanticVisitor {
             obj.setType(mTable.get(obj.getId()));
         }
         this.currType = obj.getType();
+    }
+
+    /**
+     * Resolves a name to a global constant: first the constants of the module that
+     * declares the current method (so re-exported bodies see private module
+     * constants), then the program's own constants (including {@code alias_NAME}
+     * re-exports from imports). Locals are resolved by the caller first.
+     */
+    private Ast.ConstDecl resolveConst(String name) {
+        Ast.Method.MethodSingle method = this.methodMap.get(currMethodName);
+        if (method != null && method.getModuleConsts() != null) {
+            for (Ast.ConstDecl constant : method.getModuleConsts()) {
+                if (constant.getId().equals(name)) {
+                    return constant;
+                }
+            }
+        }
+        return globalConsts.get(name);
+    }
+
+    /** Validates one global constant declaration and resolves its literal value. */
+    private void visitConstDecl(Ast.ConstDecl constant) {
+        if (constant == null || !validatedConsts.add(constant)) {
+            return;
+        }
+        Ast.Type.T type = constant.getType();
+        if (type == null || isArrayType(type) || type.getKind() == TypeKind.VOID) {
+            semanticError(DiagnosticCodes.SEM_CONST_INITIALIZER,
+                    "constant '" + constant.getId() + "' must have a scalar type",
+                    constant.getLineNum(), constant.getSpan(), "invalid constant type",
+                    "constants cannot be arrays or void", null);
+            return;
+        }
+        Ast.Expr.T initializer = constant.getInitializer();
+        if (!isLiteralInitializer(initializer)) {
+            semanticError(DiagnosticCodes.SEM_CONST_INITIALIZER,
+                    "constant '" + constant.getId() + "' must be initialized with a literal value",
+                    constant.getLineNum(), constant.getSpan(), "non-literal initializer",
+                    "constant initializers must be compile-time literals", null);
+            return;
+        }
+        this.visit(initializer);
+        Ast.Type.T initializerType = this.currType;
+        if (!isAssignable(type, initializerType, initializer)) {
+            if (!rangeErrorIfNeeded(type, initializerType, initializer, constant.getLineNum(),
+                    constant.getSpan(), "constant initializer for '" + constant.getId() + "'")
+                    && !shortRangeErrorIfNeeded(type, initializerType, initializer, constant.getLineNum(),
+                    constant.getSpan(), "constant initializer for '" + constant.getId() + "'")) {
+                typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(type), typeName(initializerType),
+                        expressionName(initializer), constant.getLineNum(), constant.getSpan(),
+                        "constant initializer for '" + constant.getId() + "'", null);
+            }
+        }
+        constant.setResolvedValue(resolveLiteralValue(initializer));
+    }
+
+    /**
+     * True for scalar literals and the parser-generated unary-minus form
+     * {@code 0 - <number>} so negative constants like {@code -30000} qualify.
+     */
+    private boolean isLiteralInitializer(Ast.Expr.T initializer) {
+        if (initializer instanceof Ast.Expr.Number
+                || initializer instanceof Ast.Expr.True
+                || initializer instanceof Ast.Expr.False
+                || initializer instanceof Ast.Expr.Str) {
+            return true;
+        }
+        if (initializer instanceof Ast.Expr.Sub sub
+                && sub.getLeft() instanceof Ast.Expr.Number zero
+                && "0".equals(String.valueOf(zero.getValue()))) {
+            return sub.getRight() instanceof Ast.Expr.Number;
+        }
+        return false;
+    }
+
+    /** Extracts the literal text of a validated constant initializer. */
+    private String resolveLiteralValue(Ast.Expr.T initializer) {
+        if (initializer instanceof Ast.Expr.True) {
+            return "true";
+        }
+        if (initializer instanceof Ast.Expr.False) {
+            return "false";
+        }
+        if (initializer instanceof Ast.Expr.Str) {
+            return ((Ast.Expr.Str) initializer).getValue();
+        }
+        if (initializer instanceof Ast.Expr.Number number) {
+            return String.valueOf(number.getValue());
+        }
+        if (initializer instanceof Ast.Expr.Sub sub) {
+            String right = resolveLiteralValue(sub.getRight());
+            return right == null ? null : "-" + right;
+        }
+        return null;
     }
 
     private boolean statementTerminates(Ast.Stmt.T statement) {
@@ -461,6 +586,31 @@ public class SemanticVisitor implements ISemanticVisitor {
             }else{
                 methodMap.put(method.getId(),method);
                 methodNameRetTypeMap.put(method.getId(),method.getRetType());
+            }
+        }
+        // Global constants: register, check duplicates, and validate initializers.
+        globalConsts.clear();
+        validatedConsts.clear();
+        for (Ast.ConstDecl constant : mainClassSingle.getConstants()) {
+            if (globalConsts.containsKey(constant.getId()) || methodMap.containsKey(constant.getId())) {
+                semanticError(DiagnosticCodes.SEM_DUPLICATE_DECLARATION,
+                        "duplicate constant declaration: " + constant.getId(),
+                        constant.getLineNum(), constant.getSpan(), "duplicate constant",
+                        "the constant was declared earlier", null);
+            } else {
+                globalConsts.put(constant.getId(), constant);
+                visitConstDecl(constant);
+            }
+        }
+        // Constants reachable through re-exported methods (their declaring module's
+        // table) must also be validated; they stay out of globalConsts so private
+        // module constants are never resolvable by bare name from this module.
+        for (Ast.Method.T node : mainClassSingle.getMethods()) {
+            Ast.Method.MethodSingle method = (Ast.Method.MethodSingle) node;
+            if (method.getModuleConsts() != null) {
+                for (Ast.ConstDecl constant : method.getModuleConsts()) {
+                    visitConstDecl(constant);
+                }
             }
         }
         validateMainMethod();

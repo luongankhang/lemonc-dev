@@ -80,10 +80,36 @@ public final class ModuleLoader {
                 if (existing.add(exportedName)) {
                     Ast.Method.MethodSingle exported = method;
                     exported.setId(exportedName);
+                    // The exported body may reference its declaring module's
+                    // constants (including private ones), so keep that table.
+                    exported.setModuleConsts(imported.getConstants());
                     owner.getMethods().add(exported);
                 }
             }
         }
+        // Re-export public constants as alias_NAME so the importing module can
+        // read them through module-qualified syntax (math.VERSION -> math_VERSION).
+        // Private constants are not copied and therefore stay invisible.
+        for (Ast.ConstDecl constDecl : imported.getConstants()) {
+            if (constDecl.getVisibility() == Ast.Visibility.PUBLIC) {
+                String exportedName = importDecl.getName() + "_" + constDecl.getId();
+                if (!existingConst(owner).contains(exportedName)) {
+                    Ast.ConstDecl exported = new Ast.ConstDecl(
+                            constDecl.getType(), exportedName, constDecl.getInitializer(),
+                            constDecl.getVisibility(), constDecl.getLineNum());
+                    exported.setSpan(constDecl.getSpan());
+                    owner.getConstants().add(exported);
+                }
+            }
+        }
+    }
+
+    private static Set<String> existingConst(Ast.MainClass.MainClassSingle owner) {
+        Set<String> names = new HashSet<>();
+        for (Ast.ConstDecl constDecl : owner.getConstants()) {
+            names.add(constDecl.getId());
+        }
+        return names;
     }
 
     private Ast.MainClass.MainClassSingle load(Path path) throws IOException {

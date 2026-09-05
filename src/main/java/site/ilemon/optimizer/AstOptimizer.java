@@ -20,15 +20,23 @@ public class AstOptimizer {
         for (Ast.Method.T method : single.getMethods()) {
             methods.add(optimizeMethod(method));
         }
-        return new Ast.MainClass.MainClassSingle(single.getClassId(), single.getFields(), methods);
+        Ast.MainClass.MainClassSingle optimized = new Ast.MainClass.MainClassSingle(
+                single.getClassId(), single.getFields(), methods);
+        // Preserve module bookkeeping: imports and global constants are consumed
+        // by later phases (semantic analysis and lowering) after optimization.
+        optimized.getImports().addAll(single.getImports());
+        optimized.getConstants().addAll(single.getConstants());
+        return optimized;
     }
 
     private Ast.Method.T optimizeMethod(Ast.Method.T method) {
         Ast.Method.MethodSingle single = (Ast.Method.MethodSingle) method;
         ArrayList<Ast.Stmt.T> statements = optimizeStatements(single.getStms());
         Ast.Stmt.T retExp = single.getRetExp() == null ? null : optimizeStmt(single.getRetExp());
-        return new Ast.Method.MethodSingle(single.getRetType(), single.getId(),
+        Ast.Method.MethodSingle optimized = new Ast.Method.MethodSingle(single.getRetType(), single.getId(),
                 single.getFormals(), single.getLocals(), statements, retExp, single.getLineNum());
+        optimized.setModuleConsts(single.getModuleConsts());
+        return optimized;
     }
 
     private ArrayList<Ast.Stmt.T> optimizeStatements(ArrayList<Ast.Stmt.T> statements) {

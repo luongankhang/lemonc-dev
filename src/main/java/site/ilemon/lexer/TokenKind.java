@@ -29,6 +29,7 @@ public enum TokenKind {
 		Break,
 		Continue,
 		Pub,
+		Const,
 		Import,
 		At,
 

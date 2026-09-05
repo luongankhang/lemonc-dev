@@ -9,7 +9,15 @@ import java.util.stream.Collectors;
 
 public final class CFunctionEmitter {
     private final CTypeEmitter types = new CTypeEmitter();
-    private final CInstructionEmitter instructions = new CInstructionEmitter();
+    private final CInstructionEmitter instructions;
+
+    public CFunctionEmitter() {
+        this(java.util.Set.of());
+    }
+
+    public CFunctionEmitter(java.util.Set<String> constNames) {
+        this.instructions = new CInstructionEmitter(constNames);
+    }
 
     public String emit(IrFunction function) {
         StringBuilder out = new StringBuilder();

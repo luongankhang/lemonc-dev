@@ -125,6 +125,7 @@ final class JvmInstructionEmitter {
     private final JvmCodeBuilder code;
     private final Map<String, JvmLocalAllocator.Local> locals;
     private final Map<String, MethodSignature> signatures;
+    private final IrModule module;
     private final String className;
     private final boolean isMain;
     private final IrType returnType;
@@ -142,6 +143,7 @@ final class JvmInstructionEmitter {
         this.pool = pool;
         this.code = code;
         this.locals = locals;
+        this.module = module;
         this.className = module.name();
         this.isMain = isMain;
         this.returnType = returnType;
@@ -190,6 +192,11 @@ final class JvmInstructionEmitter {
     private void emitConst(IrInstruction instruction) {
         IrValue result = instruction.result();
         String raw = instruction.operands().isEmpty() ? "0" : instruction.operands().get(0).name();
+        IrModule.IrConstant constant = module.constants().get(raw);
+        if (constant != null) {
+            // Global constant read: inline the resolved literal value.
+            raw = constant.value();
+        }
         pushConstant(raw, result.type());
         store(result);
     }

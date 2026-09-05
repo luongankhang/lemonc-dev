@@ -359,6 +359,38 @@ public final class JvmTestSupport {
             java.util.Map.entry("byte", 8), java.util.Map.entry("short", 9),
             java.util.Map.entry("int", 10), java.util.Map.entry("long", 11));
 
+    /** True when the class file declares no fields (constants are inlined, not stored). */
+    public static boolean hasNoFields(byte[] classBytes) throws IOException {
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(classBytes));
+        in.readInt();                       // magic
+        in.readUnsignedShort();             // minor
+        in.readUnsignedShort();             // major
+        int cpCount = in.readUnsignedShort();
+        int i = 1;
+        while (i < cpCount) {
+            int tag = in.readUnsignedByte();
+            switch (tag) {
+                case 1 -> in.skipBytes(in.readUnsignedShort());
+                case 3, 4 -> in.skipBytes(4);
+                case 5, 6 -> in.skipBytes(8);
+                case 7, 8, 16, 19, 20 -> in.skipBytes(2);
+                case 9, 10, 11, 12, 17, 18 -> in.skipBytes(4);
+                case 15 -> in.skipBytes(3);
+                default -> throw new IOException("unexpected constant pool tag " + tag);
+            }
+            i++;
+            if (tag == 5 || tag == 6) {
+                i++; // long/double occupy two pool entries
+            }
+        }
+        in.readUnsignedShort();             // access flags
+        in.readUnsignedShort();             // this class
+        in.readUnsignedShort();             // super class
+        int interfaceCount = in.readUnsignedShort();
+        in.skipBytes(interfaceCount * 2);
+        return in.readUnsignedShort() == 0; // field count
+    }
+
     /** True when the opcode appears in the code of any parsed method. */
     public static boolean anyMethodHasOpcode(byte[] classBytes, int opcode) throws IOException {
         for (MethodInfo method : readMethods(classBytes)) {

@@ -52,6 +52,7 @@ public class Lexer {
         KEYWORDS.put("break", TokenKind.Break);
         KEYWORDS.put("continue", TokenKind.Continue);
         KEYWORDS.put("pub", TokenKind.Pub);
+        KEYWORDS.put("const", TokenKind.Const);
         KEYWORDS.put("import", TokenKind.Import);
     }
 

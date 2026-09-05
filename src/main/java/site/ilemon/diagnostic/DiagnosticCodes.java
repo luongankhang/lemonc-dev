@@ -16,6 +16,8 @@ public final class DiagnosticCodes {
     public static final String SEM_DUPLICATE_DECLARATION = "E2003";
     public static final String SEM_INVALID_SYMBOL_USAGE = "E2004";
     public static final String SEM_INVALID_SCOPE = "E2005";
+    public static final String SEM_CONST_IMMUTABLE = "E2006";
+    public static final String SEM_CONST_INITIALIZER = "E2007";
     public static final String SEM_GENERAL = "E2099";
 
     public static final String TYPE_ASSIGNMENT = "E3001";
