@@ -56,6 +56,7 @@ public class PointerTest {
         fixtures.put("pointer_null", "1421");
         fixtures.put("pointer_comparison", "1011");
         fixtures.put("pointer_functions", "1212100");
+        fixtures.put("pointer_param_store", "42");
         return fixtures;
     }
 
@@ -74,6 +75,12 @@ public class PointerTest {
                 new String[]{"cannot return pointer to local variable"});
         fixtures.put("pointer_invalid_operation",
                 new String[]{"invalid pointer arithmetic"});
+        fixtures.put("pointer_escape_local",
+                new String[]{"cannot store pointer to local variable through dereference"});
+        fixtures.put("pointer_escape_param",
+                new String[]{"cannot store pointer to local variable through dereference"});
+        fixtures.put("pointer_escape_multi",
+                new String[]{"cannot store pointer to local variable through dereference"});
         return fixtures;
     }
 

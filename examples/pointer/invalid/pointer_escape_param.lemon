@@ -1,0 +1,15 @@
+// pointer_escape_param.lemon: storing the address of a local through a
+// parameter pointer escapes the local's lifetime and is rejected.
+void setThroughParam(int* param_ptr) {
+    int local_value;
+    local_value = 42;
+    *param_ptr = &local_value;  // ERROR: local_value's address escapes through param
+}
+
+void main() {
+    int global_x;
+    int* global_ptr;
+    global_x = 10;
+    global_ptr = &global_x;
+    setThroughParam(global_ptr);
+}

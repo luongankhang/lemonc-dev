@@ -1,0 +1,13 @@
+// pointer_param_store.lemon: storing a value through a parameter pointer is valid.
+void setThroughParam(int* param_ptr, int value) {
+    *param_ptr = value;  // OK: storing a value, not an address
+}
+
+void main() {
+    int global_x;
+    int* global_ptr;
+    global_x = 10;
+    global_ptr = &global_x;
+    setThroughParam(global_ptr, 42);
+    printf("%d", *global_ptr);  // should print 42
+}

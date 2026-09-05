@@ -33,3 +33,6 @@ output.asm
 # OS
 .DS_Store
 Thumbs.db
+
+# agent
+nvidiacoder01.md

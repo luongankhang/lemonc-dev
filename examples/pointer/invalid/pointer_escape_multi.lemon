@@ -1,0 +1,10 @@
+// pointer_escape_multi.lemon: storing the address of a local through a
+// multi-level dereference (**param_pp = &local) escapes the local's lifetime and is rejected.
+void setThroughParam(int** param_pp) {
+    int local_value;
+    local_value = 42;
+    *param_pp = &local_value;  // ERROR: local_value's address escapes
+}
+
+void main() {
+}

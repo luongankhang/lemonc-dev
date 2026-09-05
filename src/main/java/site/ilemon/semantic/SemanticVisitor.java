@@ -935,6 +935,18 @@ public class SemanticVisitor implements ISemanticVisitor {
         Ast.Type.T targetType = this.currType;
         this.visit(obj.getExpr());
         Ast.Type.T valueType = this.currType;
+        // Escape analysis: storing the address of a local through a dereference
+        // allows the address to escape the current frame (e.g., *global = &local).
+        // This check runs first to give a more specific error for the escape case.
+        if (exprMayPointToLocal(obj.getExpr())) {
+            semanticError(DiagnosticCodes.SEM_POINTER_ESCAPE,
+                    "cannot store pointer to local variable through dereference: the referenced storage dies when the function returns",
+                    obj.getLineNum(), obj.getSpan(), "dangling pointer escape",
+                    "do not store the address of a local variable through a pointer", "store the value directly or use a pointer received as a parameter");
+            return;
+        }
+        // General pointer write prohibition: storing any pointer through dereference
+        // is not supported (use direct pointer assignment instead).
         if (isPointerType(valueType) || valueType != null && valueType.getKind() == TypeKind.NULL) {
             semanticError(DiagnosticCodes.TYPE_POINTER_WRITE,
                     "assignment through a dereference must store a value scalar, not a pointer",

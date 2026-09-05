@@ -142,6 +142,17 @@ public final class OwnershipAnalyzer {
                 ctx.recordOp(retainOp);
                 ctx.recordOp(storeOp);
             }
+        } else if (stmt instanceof Ast.Stmt.DerefAssign derefAssign) {
+            // Track pointer store through dereference. Check if the stored value
+            // is an address of a local (escape), which the semantic pass should
+            // have rejected, but we record it for the simulator to verify.
+            String sourceId = extractIdentifier(derefAssign.getExpr());
+            boolean sourceIsLocalAddr = sourceId != null && isLocalAddress(derefAssign.getExpr(), ctx);
+            if (sourceIsLocalAddr) {
+                // Record a STORE of a local address - the simulator will flag this.
+                MemoryOp storeOp = new MemoryOp(MemoryOp.Kind.STORE, "escape:" + sourceId, line, span);
+                ctx.recordOp(storeOp);
+            }
         } else if (stmt instanceof Ast.Stmt.Call call) {
             MemoryOp enterOp = new MemoryOp(MemoryOp.Kind.CALL_ENTER, call.getName(), line, span);
             MemoryOp exitOp = new MemoryOp(MemoryOp.Kind.CALL_EXIT, call.getName(), line, span);
@@ -344,6 +355,29 @@ public final class OwnershipAnalyzer {
             return id.getId();
         }
         return null;
+    }
+
+    /**
+     * Check if an expression is (or contains) the address of a local variable.
+     * Conservative: any address-of expression could be a local address.
+     */
+    private boolean isLocalAddress(Ast.Expr.T expr, MethodContext ctx) {
+        if (expr instanceof Ast.Expr.AddressOf) {
+            return true;
+        }
+        if (expr instanceof Ast.Expr.Deref deref) {
+            return isLocalAddress(deref.getOperand(), ctx);
+        }
+        if (expr instanceof Ast.Expr.Call call) {
+            if (call.getInputParams() != null) {
+                for (Ast.Expr.T arg : call.getInputParams()) {
+                    if (isLocalAddress(arg, ctx)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private static final class MethodContext {

@@ -328,6 +328,14 @@ public final class RefcountSimulator {
             }
             case STORE -> {
                 String expr = op.value();
+                // Check for pointer escape: storing a local address through dereference
+                if (expr.startsWith("escape:")) {
+                    String escapedLocal = expr.substring("escape:".length());
+                    report(Severity.ERROR, DiagnosticCodes.ARC_LIFETIME_VIOLATION,
+                            "Pointer escape detected: storing address of local variable '" + escapedLocal
+                                    + "' through dereference allows it to outlive its scope",
+                            span, "local address escapes here");
+                }
                 if (expr.contains("=")) {
                     String[] parts = expr.split("=", 2);
                     String target = extractRootName(parts[0].trim());

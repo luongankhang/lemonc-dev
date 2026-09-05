@@ -15,6 +15,33 @@ import static org.junit.Assert.assertTrue;
 public class ArcDiagnosticTest {
 
     @Test
+    public void testDetectsPointerEscapeThroughDereference() {
+        OwnershipFunction func = new OwnershipFunction("testPointerEscape", false);
+        func.addManagedLocal("local_arr", "@int[]");
+        func.addParameter("global_ptr", false); // Not managed, just a raw pointer
+
+        OwnershipBlock entry = new OwnershipBlock("entry");
+        entry.addOp(new MemoryOp(MemoryOp.Kind.ALLOC, "local_arr:@int[]", 1));
+        // Simulate: *global_ptr = &local_arr (escape of local address through dereference)
+        entry.addOp(new MemoryOp(MemoryOp.Kind.STORE, "escape:local_arr", 2));
+        entry.setTerminatorType(OwnershipBlock.TerminatorType.RETURN);
+
+        func.setEntryBlock(entry);
+        OwnershipIr ir = new OwnershipIr();
+        ir.addFunction(func);
+
+        RefcountSimulator simulator = new RefcountSimulator();
+        try {
+            simulator.verify(ir);
+            org.junit.Assert.fail("Expected verification failure on pointer escape");
+        } catch (IllegalStateException e) {
+            assertTrue(simulator.hasErrors());
+            List<Diagnostic> diagnostics = simulator.getDiagnostics();
+            assertTrue(diagnostics.stream().anyMatch(d -> d.code().equals(DiagnosticCodes.ARC_LIFETIME_VIOLATION)));
+        }
+    }
+
+    @Test
     public void testDetectsDoubleRelease() {
         OwnershipFunction func = new OwnershipFunction("testDoubleRelease", false);
         func.addManagedLocal("arr", "@int[]");
