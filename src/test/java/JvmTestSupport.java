@@ -115,7 +115,7 @@ public final class JvmTestSupport {
         }
         program = new AstOptimizer().optimize(program);
         IrModule irModule = new AstToIrLowerer().lower(program);
-        BackendOptions options = new BackendOptions("jvm",
+        BackendOptions options = BackendOptions.of("jvm",
                 sourceFile.toPath().toAbsolutePath().normalize(),
                 outDir.toPath(), null, false);
         new JvmBackend().emit(irModule, options);

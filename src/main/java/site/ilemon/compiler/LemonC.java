@@ -157,7 +157,8 @@ public class LemonC {
                     sourceFile.toPath().toAbsolutePath().normalize(),
                     Path.of("target", "lemonc"),
                     options.outputPath == null ? null : Path.of(options.outputPath),
-                    options.verbose);
+                    options.verbose,
+                    options.arcDebug);
 
             if ("c".equalsIgnoreCase(options.target) || options.emitC) {
                 BackendResult cResult = new CBackend().emit(irModule, backendOptions);

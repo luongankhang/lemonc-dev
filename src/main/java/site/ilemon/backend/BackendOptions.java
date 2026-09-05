@@ -12,9 +12,19 @@ public record BackendOptions(
         Path sourcePath,
         Path outputDirectory,
         Path outputPath,
-        boolean verbose) {
+        boolean verbose,
+        boolean arcDebug) {
 
     public BackendOptions {
         target = target == null ? "jvm" : target;
+        arcDebug = arcDebug;
+    }
+
+    /**
+     * Creates options with arcDebug defaulting to false for backward compatibility.
+     */
+    public static BackendOptions of(String target, Path sourcePath, Path outputDirectory,
+                                    Path outputPath, boolean verbose) {
+        return new BackendOptions(target, sourcePath, outputDirectory, outputPath, verbose, false);
     }
 }

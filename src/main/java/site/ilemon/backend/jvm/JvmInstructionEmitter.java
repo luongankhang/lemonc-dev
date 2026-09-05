@@ -18,8 +18,15 @@ import java.util.Map;
  * pipeline: printf is lowered to {@code System.out.print} calls, ARC
  * retain/release calls are dropped (JVM GC owns array lifetimes), and
  * bounds checks rely on the JVM's native array checks.</p>
+ * 
+ * <p>When arcDebug is enabled, emits diagnostic output for ARC operations
+ * to aid debugging and verification.</p>
  */
 final class JvmInstructionEmitter {
+
+    // ...existing code...
+    
+    private final boolean arcDebug;
 
     // Opcodes used by this backend.
     private static final int ACONST_NULL = 0x01;
@@ -149,7 +156,7 @@ final class JvmInstructionEmitter {
     JvmInstructionEmitter(JvmTypeMapper mapper, JvmClassWriter pool, JvmCodeBuilder code,
                           Map<String, JvmLocalAllocator.Local> locals, IrModule module,
                           String functionName, boolean isMain, IrType returnType,
-                          java.util.Set<String> cells) {
+                          java.util.Set<String> cells, boolean arcDebug) {
         this.mapper = mapper;
         this.pool = pool;
         this.code = code;
@@ -159,6 +166,7 @@ final class JvmInstructionEmitter {
         this.isMain = isMain;
         this.returnType = returnType;
         this.cells = cells == null ? java.util.Set.of() : cells;
+        this.arcDebug = arcDebug;
         this.signatures = new HashMap<>();
         for (var function : module.functions()) {
             signatures.put(function.name(), new MethodSignature(
@@ -640,6 +648,14 @@ final class JvmInstructionEmitter {
             case "printf" -> emitPrintf(instruction.operands());
             case "lemon_retain", "lemon_release" -> {
                 // JVM arrays are garbage-collected; ARC runtime calls are no-ops here.
+                if (arcDebug && !instruction.operands().isEmpty()) {
+                    IrValue operand = instruction.operands().get(0);
+                    // Emit debug output to System.err showing the ARC operation
+                    String opName = function.equals("lemon_retain") ? "RETAIN" : "RELEASE";
+                    code.cpRef(GETSTATIC, pool.fieldRef("java/lang/System", "err", SYSTEM_OUT_FIELD));
+                    code.ldc(pool.stringRef("[ARC] " + opName + " " + operand.name() + " at " + className), 1);
+                    code.invoke(INVOKEVIRTUAL, pool.methodRef("java/io/PrintStream", "println", "(Ljava/lang/String;)V"), 2, 0);
+                }
             }
             default -> throw new CompilerException(
                     "unsupported JVM runtime call: " + function);

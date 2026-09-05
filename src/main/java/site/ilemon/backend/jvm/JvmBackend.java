@@ -37,13 +37,13 @@ public final class JvmBackend implements Backend {
         Path directory = options != null && options.outputDirectory() != null
                 ? options.outputDirectory()
                 : Path.of(DEFAULT_OUTPUT_DIR);
-        Path classFile = writeClass(module, directory);
+        Path classFile = writeClass(module, directory, options.arcDebug());
         return new BackendResult(List.of(classFile), module.name(), name());
     }
 
     /** Renders the module to a {@code .class} file inside {@code outputDirectory}. */
-    public Path writeClass(IrModule module, Path outputDirectory) throws IOException {
-        byte[] bytes = toBytecode(module);
+    public Path writeClass(IrModule module, Path outputDirectory, boolean arcDebug) throws IOException {
+        byte[] bytes = toBytecode(module, arcDebug);
         Files.createDirectories(outputDirectory);
         Path classFile = outputDirectory.resolve(module.name() + ".class");
         Files.write(classFile, bytes);
@@ -52,13 +52,18 @@ public final class JvmBackend implements Backend {
 
     /** Renders the module to JVM class-file bytes (test-friendly). */
     public byte[] toBytecode(IrModule module) {
+        return toBytecode(module, false);
+    }
+
+    /** Renders the module to JVM class-file bytes with ARC debug option. */
+    public byte[] toBytecode(IrModule module, boolean arcDebug) {
         if (module == null) {
             throw new CompilerException("cannot emit a null LemonIR module");
         }
         IrVerifier.verify(module);
         JvmClassWriter writer = new JvmClassWriter();
         List<JvmMethod> methods = module.functions().stream()
-                .map(function -> new JvmMethodEmitter().emit(function, module, writer))
+                .map(function -> new JvmMethodEmitter().emit(function, module, writer, arcDebug))
                 .toList();
         return writer.writeClass(module, methods);
     }
