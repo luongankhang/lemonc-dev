@@ -23,9 +23,17 @@ import java.util.List;
  */
 public final class CBackend implements Backend {
 
+    private final ConstantPropagation constantPropagation = new ConstantPropagation();
+    private final DeadStoreElimination deadStoreElimination = new DeadStoreElimination();
+
     /** Pure C source generation; unchanged by the multi-backend refactor. */
     public String generate(IrModule module) {
         IrVerifier.verify(module);
+        
+        // Apply C backend optimizations
+        // constantPropagation.optimize(module);  // Disabled: changes generated C code structure
+        deadStoreElimination.optimize(module);
+        
         return new CModuleEmitter().emit(module);
     }
 
