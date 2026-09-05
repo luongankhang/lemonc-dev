@@ -244,6 +244,8 @@ public final class AstToIrLowerer {
                 }
                 ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
             }
+        } else if (stmt instanceof Ast.Stmt.DerefAssign derefAssign) {
+            lowerDerefAssign(derefAssign, ctx);
         } else if (stmt instanceof Ast.Stmt.ArrayAssign arrayAssign) {
             String arrName = arrayAssign.getArrayName();
             IrType arrType = ctx.variableTypes.get(arrName);
@@ -430,6 +432,39 @@ public final class AstToIrLowerer {
         }
     }
 
+    /**
+     * Lowers {@code *p = v}, {@code **pp = v}, ... by walking the dereference
+     * chain down to the storage cell that receives {@code v}. Every pointer
+     * dereference carries an explicit runtime null check, so a null pointer
+     * dereference is a defined runtime error on both backends.
+     */
+    private void lowerDerefAssign(Ast.Stmt.DerefAssign statement, MethodLoweringContext ctx) {
+        Ast.Expr.Deref target = statement.getTarget();
+        int depth = 0;
+        Ast.Expr.T base = target;
+        while (base instanceof Ast.Expr.Deref deref) {
+            depth++;
+            base = deref.getOperand();
+        }
+
+        // Resolve the address chain down to the level-1 storage (n-1 derefs).
+        IrValue address = lowerExpr(base, ctx);
+        for (int i = 1; i < depth; i++) {
+            IrValue next = ctx.newTemp(address.type().elementType());
+            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, next, List.of(address), null));
+            address = next;
+        }
+
+        IrType elemType = address.type().elementType();
+        IrValue value = lowerExpr(statement.getExpr(), ctx);
+        if (value.type().kind() != elemType.kind()) {
+            IrValue converted = ctx.newTemp(elemType);
+            ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(value), null));
+            value = converted;
+        }
+        ctx.emit(new IrInstruction(IrInstruction.Op.STORE, null, List.of(address, value), null));
+    }
+
     private IrValue lowerExpr(Ast.Expr.T expr, MethodLoweringContext ctx) {
         if (expr instanceof Ast.Expr.Number num) {
             IrType t = toIrType(num.getType());
@@ -502,6 +537,28 @@ public final class AstToIrLowerer {
             return lowerCmp("==", eq.getLeft(), eq.getRight(), ctx);
         } else if (expr instanceof Ast.Expr.NEQ neq) {
             return lowerCmp("!=", neq.getLeft(), neq.getRight(), ctx);
+        } else if (expr instanceof Ast.Expr.AddressOf addressOf) {
+            if (!(addressOf.getOperand() instanceof Ast.Expr.Id id)) {
+                throw new IllegalArgumentException("address-of operand is not a variable");
+            }
+            IrType targetType = ctx.variableTypes.get(id.getId());
+            if (targetType == null) targetType = IrType.scalar(IrType.Kind.INT);
+            IrValue res = ctx.newTemp(IrType.pointer(targetType, 0));
+            ctx.emit(new IrInstruction(IrInstruction.Op.ADDRESS_OF, res, List.of(new IrValue(id.getId(), targetType)), null));
+            return res;
+        } else if (expr instanceof Ast.Expr.Deref deref) {
+            IrValue pointer = lowerExpr(deref.getOperand(), ctx);
+            IrType pointee = pointer.type().elementType() != null
+                    ? pointer.type().elementType()
+                    : IrType.scalar(IrType.Kind.INT);
+            IrValue res = ctx.newTemp(pointee);
+            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, res, List.of(pointer), null));
+            return res;
+        } else if (expr instanceof Ast.Expr.Null nullExpr) {
+            IrType nullType = IrType.pointer(IrType.scalar(IrType.Kind.VOID), 0);
+            IrValue res = ctx.newTemp(nullType);
+            ctx.emit(new IrInstruction(IrInstruction.Op.CONST, res, List.of(new IrValue("null", nullType)), null));
+            return res;
         } else if (expr instanceof Ast.Expr.ArrayAccess access) {
             String arrName = access.getArrayName();
             IrType arrType = ctx.variableTypes.get(arrName);
@@ -664,9 +721,20 @@ public final class AstToIrLowerer {
     }
 
 
+    private boolean isPointerKind(IrType type) {
+        return type != null && type.kind() == IrType.Kind.POINTER;
+    }
+
     private IrValue lowerCmp(String symbol, Ast.Expr.T leftExpr, Ast.Expr.T rightExpr, MethodLoweringContext ctx) {
         IrValue left = lowerExpr(leftExpr, ctx);
         IrValue right = lowerExpr(rightExpr, ctx);
+        // Pointer equality/inequality compares the pointer values directly;
+        // null is a typed pointer constant, so no numeric conversion applies.
+        if (isPointerKind(left.type()) || isPointerKind(right.type())) {
+            IrValue res = ctx.newTemp(IrType.scalar(IrType.Kind.BOOL));
+            ctx.emit(new IrInstruction(IrInstruction.Op.CMP, res, List.of(left, right), symbol));
+            return res;
+        }
         IrType commonType = commonNumericType(left.type(), right.type());
 
         if (left.type().kind() != commonType.kind()) {
@@ -709,6 +777,10 @@ public final class AstToIrLowerer {
         if (type instanceof Ast.Type.Float) return IrType.scalar(IrType.Kind.FLOAT);
         if (type instanceof Ast.Type.Double) return IrType.scalar(IrType.Kind.DOUBLE);
         if (type instanceof Ast.Type.Str) return IrType.scalar(IrType.Kind.STRING);
+        if (type instanceof Ast.Type.Pointer pointer) {
+            return IrType.pointer(toIrType(pointer.getPointee()), 0);
+        }
+        if (type instanceof Ast.Type.Null) return IrType.pointer(IrType.scalar(IrType.Kind.VOID), 0);
 
         if (type instanceof Ast.Type.IntArray) return IrType.array(IrType.scalar(IrType.Kind.INT));
         if (type instanceof Ast.Type.ByteArray) return IrType.array(IrType.scalar(IrType.Kind.BYTE));

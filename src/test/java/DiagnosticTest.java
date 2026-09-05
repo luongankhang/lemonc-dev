@@ -187,9 +187,19 @@ public class DiagnosticTest {
 
     @Test
     public void lexerReportsSingleAmpersandAndPipe() throws Exception {
-        assertLexErrorContains(
-                "void main() { bool a; bool b; a = true; b = false; if (a & b) {} }",
-                "did you mean '&&'");
+        // A single '&' is the address-of operator now, so it lexes fine and the
+        // mistake surfaces as a syntax error when it follows an expression.
+        File file = writeSource("Test",
+                "void main() { bool a; bool b; a = true; b = false; if (a & b) {} }");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = LemonC.run(new String[]{file.getPath()},
+                new PrintStream(out, true, "UTF-8"),
+                new PrintStream(err, true, "UTF-8"));
+        assertEquals(1, exitCode);
+        assertTrue(err.toString("UTF-8"), err.toString("UTF-8").contains("expected ')'"));
+
+        // A single '|' is not a LemonC token: the lexer still suggests '||'.
         assertLexErrorContains(
                 "void main() { bool a; bool b; a = true; b = false; if (a | b) {} }",
                 "did you mean '||'");

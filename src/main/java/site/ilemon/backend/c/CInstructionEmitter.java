@@ -39,9 +39,19 @@ public final class CInstructionEmitter {
                     if (!val.contains(".")) {
                         val = val + ".0";
                     }
+                } else if (instruction.result() != null && instruction.result().type().kind() == IrType.Kind.POINTER) {
+                    if ("null".equals(val)) {
+                        val = "NULL";
+                    } else if (!"0".equals(val)) {
+                        // Pointer constants other than null/0 cannot be
+                        // spelled literally in C; materialize a null and let
+                        // later pointer-typed CONVERTs cast it.
+                        val = "NULL";
+                    }
                 }
                 yield result + val + ";";
             }
+            case ADDRESS_OF -> result + "&(" + (args.length == 0 ? "0" : args[0]) + ");";
             case ADD, SUB, MUL -> result + binary(instruction.op(), args) + ";";
             case DIV -> {
                 if (args.length >= 2) {
@@ -86,14 +96,17 @@ public final class CInstructionEmitter {
                     if ("length".equals(instruction.target())) {
                         yield result + "(int32_t)(" + args[0] + "->length);";
                     }
-                    yield result + "*" + args[0] + ";";
+                    // Pointer dereference: null dereference is a defined
+                    // runtime error (diagnosed, then abort), never UB.
+                    yield result + "*(lemon_require_ptr(" + args[0] + "), " + args[0] + ");";
                 }
                 String elemType = instruction.result() != null ? types.emit(instruction.result().type()) : "void*";
                 yield result + "*((" + elemType + "*)lemon_array_at(" + args[0] + ", (size_t)(" + args[1] + ")));";
             }
             case STORE -> {
                 if (args.length <= 2) {
-                    yield "*" + args[0] + " = " + args[1] + ";";
+                    // Pointer store: guarded against null, like the LOAD path.
+                    yield "*(lemon_require_ptr(" + args[0] + "), " + args[0] + ") = " + args[1] + ";";
                 }
                 String elemType = instruction.operands().size() > 2 ? types.emit(instruction.operands().get(2).type()) : "int32_t";
                 yield "*((" + elemType + "*)lemon_array_at(" + args[0] + ", (size_t)(" + args[1] + "))) = " + args[2] + ";";

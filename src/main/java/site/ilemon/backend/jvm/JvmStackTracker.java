@@ -134,7 +134,8 @@ final class JvmStackTracker {
 
     private static boolean isReturn(int opcode) {
         return opcode == 0xAC || opcode == 0xAD || opcode == 0xAE
-                || opcode == 0xAF || opcode == 0xB0 || opcode == 0xB1;
+                || opcode == 0xAF || opcode == 0xB0 || opcode == 0xB1
+                || opcode == 0xBF; // athrow also terminates the block
     }
 
     /** Applies a branch instruction in place: pops the condition operands (goto pops nothing). */
@@ -142,9 +143,12 @@ final class JvmStackTracker {
         if (opcode >= 0x99 && opcode <= 0x9E) {
             // if<cond>: pops one int
             pop(stack, 1);
-        } else if (opcode >= 0x9F && opcode <= 0xA4) {
-            // if_icmp<cond>: pops two ints
+        } else if (opcode >= 0x9F && opcode <= 0xA6) {
+            // if_icmp<cond> / if_acmp<cond>: pops two values
             pop(stack, 2);
+        } else if (opcode == 0xC6 || opcode == 0xC7) {
+            // ifnull / ifnonnull: pops one reference
+            pop(stack, 1);
         }
     }
 
@@ -174,6 +178,12 @@ final class JvmStackTracker {
                 return heightOf(stack);
             case 0x59: // dup
                 stack.add(stack.get(stack.size() - 1));
+                return heightOf(stack);
+            case 0xBB: // new
+                stack.add(1);
+                return heightOf(stack);
+            case 0xBF: // athrow
+                pop(stack, 1);
                 return heightOf(stack);
             case 0x5B: // dup_x2 (only used for 2-slot print values below System.out)
                 return dupX2(stack);
@@ -234,7 +244,7 @@ final class JvmStackTracker {
             case 0xB2: // getstatic
                 stack.add(1);
                 return heightOf(stack);
-            case 0xB6, 0xB8: // invokevirtual, invokestatic
+            case 0xB6, 0xB7, 0xB8: // invokevirtual, invokespecial, invokestatic
                 int argSlots = (insn.extra >>> 8) & 0xFF;
                 int returnSlots = insn.extra & 0xFF;
                 pop(stack, argSlots);

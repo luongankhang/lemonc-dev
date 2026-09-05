@@ -1,0 +1,12 @@
+// pointer_basic.lemon: address-of, dereference read/write round trip.
+void main() {
+    int value;
+    int* ptr;
+    int result;
+    value = 42;
+    ptr = &value;
+    result = *ptr;
+    printf("%d", result);
+    *ptr = 100;
+    printf("%d", value);
+}

@@ -377,8 +377,24 @@ public class Parser {
 		if (!isTypeToken(look.kind)) {
 			return false;
 		}
-		Token id = lexer.lookahead(1);
-		return id != null && id.kind == TokenKind.Id;
+		// A declaration is `type [*]* id` (or `type id[size]`): peek past any
+		// declarator stars to confirm an identifier follows.
+		Token ahead = lexer.lookahead(1);
+		if (ahead == null) {
+			return false;
+		}
+		if (ahead.kind == TokenKind.Id) {
+			return true;
+		}
+		if (ahead.kind == TokenKind.Mul) {
+			int offset = 2;
+			Token candidate = lexer.lookahead(offset);
+			while (candidate != null && candidate.kind == TokenKind.Mul) {
+				candidate = lexer.lookahead(++offset);
+			}
+			return candidate != null && candidate.kind == TokenKind.Id;
+		}
+		return false;
 	}
 
 	// // <declare> -> type id; | type id[size];
@@ -503,49 +519,59 @@ public class Parser {
 
 
 	private Ast.Type.T parseType() {
+		Ast.Type.T type;
 		if( look.kind == TokenKind.Int ){
 			move();
-			return new Ast.Type.Int();
+			type = new Ast.Type.Int();
 		}
 		else if(look.kind == TokenKind.Void){
 			move();
-			return new Ast.Type.Void();
+			type = new Ast.Type.Void();
 		}
 		else if(look.kind == TokenKind.Float){
 			move();
-			return new Ast.Type.Float();
+			type = new Ast.Type.Float();
 		}
 		else if(look.kind == TokenKind.Double){
 			move();
-			return new Ast.Type.Double();
+			type = new Ast.Type.Double();
 		}
 		else if(look.kind == TokenKind.Bool){
 			move();
-			return new Ast.Type.Bool();
+			type = new Ast.Type.Bool();
 		}
 		else if(look.kind == TokenKind.Byte){
 			move();
-			return new Ast.Type.Byte();
+			type = new Ast.Type.Byte();
 		}
 		else if(look.kind == TokenKind.Short){
 			move();
-			return new Ast.Type.Short();
+			type = new Ast.Type.Short();
 		}
 		else if(look.kind == TokenKind.Char){
 			move();
-			return new Ast.Type.Char();
+			type = new Ast.Type.Char();
 		}
 		else if(look.kind == TokenKind.Long){
 			move();
-			return new Ast.Type.Long();
+			type = new Ast.Type.Long();
 		}
 		else if(look.kind == TokenKind.String){
 			move();
-			return new Ast.Type.Str();
+			type = new Ast.Type.Str();
 		}
-		else 
+		else {
 			error("expected type keyword int, float, double, bool, byte, short, char, long, string, or void");
-		return null;
+			return null;
+		}
+		// C-like declarator stars: int* p / int** pp / int*** ppp. The star binds
+		// to the type keyword (left of the identifier), nesting for multi-level
+		// pointers.
+		while (look.kind == TokenKind.Mul) {
+			move();
+			type = new Ast.Type.Pointer(type);
+		}
+		return type;
 	}
 
 	private ArrayList<Ast.Stmt.T> parseStmts() throws IOException {
@@ -573,7 +599,8 @@ public class Parser {
 				|| look.kind == TokenKind.If || look.kind == TokenKind.While || look.kind == TokenKind.For
 				|| look.kind == TokenKind.Lbrace || look.kind == TokenKind.Id
 				|| look.kind == TokenKind.Break || look.kind == TokenKind.Continue
-				|| look.kind == TokenKind.Return);
+				|| look.kind == TokenKind.Return
+				|| look.kind == TokenKind.Mul);
 	}
 
 	private void synchronizeToStatementBoundary() {
@@ -666,8 +693,22 @@ public class Parser {
 			match(new Token(TokenKind.Rparen));
 			Ast.Stmt.T body = parseStmt();
 			stmt = new Ast.Stmt.For(init, condition, update, body, lineNumber);
+		}		else if( look.kind == TokenKind.Mul ) {
+			// Pointer dereference assignment: *ptr = expr; (**pp = expr; ...)
+			Token derefToken = look;
+			int lineNumber = look.lineNumber;
+			Ast.Expr.T target = parseFactor();
+			if (!(target instanceof Ast.Expr.Deref)) {
+				error("expected a dereference on the left side of this assignment");
+			}
+			match(new Token(TokenKind.Assign));
+			Ast.Expr.T expr = parseExpr();
+			match(new Token(TokenKind.Semicolon));
+			Ast.Stmt.DerefAssign derefAssign = new Ast.Stmt.DerefAssign((Ast.Expr.Deref) target, expr, lineNumber);
+			derefAssign.setSpan(tokenSpan(derefToken));
+			stmt = derefAssign;
 		}
-		else if ( look.kind == TokenKind.Id ) {
+		else if( look.kind == TokenKind.Id ) {
 			Token ahead = lexer.lookahead(1);
 			
 			// Method call
@@ -881,9 +922,37 @@ public class Parser {
 	//  		| Integer Literal
 	//  		| id
 	//          | not(<expression>)
+	//          | * <factor>    (dereference)
+	//          | & <factor>    (address-of)
+	//          | null
 	private Ast.Expr.T parseFactor() throws IOException{
 		Ast.Expr.T expr = null;
-		if(look.kind==TokenKind.Lparen){
+		if(look.kind==TokenKind.Mul){
+			// Unary dereference: *p / **p. (A binary '*' is only reached after a
+			// left operand has been parsed, so this branch is unambiguous.)
+			Token derefToken = look;
+			int lineNumber = look.lineNumber;
+			move();
+			Ast.Expr.T operand = parseFactor();
+			Ast.Expr.Deref deref = new Ast.Expr.Deref(operand, lineNumber);
+			deref.setSpan(tokenSpan(derefToken));
+			return deref;
+		}else if(look.kind==TokenKind.Amp){
+			Token ampToken = look;
+			int lineNumber = look.lineNumber;
+			move();
+			Ast.Expr.T operand = parseFactor();
+			Ast.Expr.AddressOf addressOf = new Ast.Expr.AddressOf(operand, lineNumber);
+			addressOf.setSpan(tokenSpan(ampToken));
+			return addressOf;
+		}else if(look.kind==TokenKind.Null){
+			Token nullToken = look;
+			int lineNumber = look.lineNumber;
+			move();
+			Ast.Expr.Null nullExpr = new Ast.Expr.Null(lineNumber);
+			nullExpr.setSpan(tokenSpan(nullToken));
+			return nullExpr;
+		}else if(look.kind==TokenKind.Lparen){
 			move();
 			expr = parseExpr();
 			match(new Token(TokenKind.Rparen));

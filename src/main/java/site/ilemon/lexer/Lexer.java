@@ -54,6 +54,7 @@ public class Lexer {
         KEYWORDS.put("pub", TokenKind.Pub);
         KEYWORDS.put("const", TokenKind.Const);
         KEYWORDS.put("import", TokenKind.Import);
+        KEYWORDS.put("null", TokenKind.Null);
     }
 
     public Lexer(File f) throws IOException {
@@ -233,8 +234,9 @@ public class Lexer {
                 return LexerState.DONE;
 
             case IN_AND:
-                if (c == '&') return LexerState.DONE;
-                return LexerState.ERROR;
+                // "&&" consumes the second ampersand; a lone '&' is the address-of
+                // operator and simply terminates the token.
+                return LexerState.DONE;
 
             case IN_OR:
                 if (c == '|') return LexerState.DONE;
@@ -407,7 +409,8 @@ public class Lexer {
                 return TokenKind.Not;
 
             case IN_AND:
-                return TokenKind.And;
+                if (lexeme.equals("&&")) return TokenKind.And;
+                return TokenKind.Amp;
 
             case IN_OR:
                 return TokenKind.Or;
@@ -492,7 +495,8 @@ public class Lexer {
                 return new Token(TokenKind.Not, lexeme, span);
 
             case IN_AND:
-                return new Token(TokenKind.And, lexeme, span);
+                if (lexeme.equals("&&")) return new Token(TokenKind.And, lexeme, span);
+                return new Token(TokenKind.Amp, lexeme, span);
 
             case IN_OR:
                 return new Token(TokenKind.Or, lexeme, span);

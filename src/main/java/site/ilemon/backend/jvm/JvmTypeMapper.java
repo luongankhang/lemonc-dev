@@ -37,6 +37,12 @@ final class JvmTypeMapper {
             // bool arrays are JVM boolean[] ([Z) even though scalar bool maps
             // to I; array creation, element access and descriptors must agree.
             case ARRAY -> "[" + arrayElementDescriptor(type.elementType());
+            // A pointer value is the reference to a single-element cell whose
+            // element is the pointee value; pointer descriptors therefore are
+            // array descriptors of the cell element type. This gives pointers
+            // an explicit, type-tagged JVM representation (never a raw JVM
+            // reference exposed as a "pointer").
+            case POINTER, REFERENCE -> "[" + cellElementDescriptor(type.elementType());
             default -> throw new IllegalArgumentException(
                     "no JVM descriptor for LemonIR type " + type.kind());
         };
@@ -52,11 +58,23 @@ final class JvmTypeMapper {
         return descriptor(elementType);
     }
 
+    /** Element type of a pointer cell: bool cells are JVM boolean[]. */
+    private String cellElementDescriptor(IrType elementType) {
+        if (elementType.kind() == IrType.Kind.BOOL) {
+            return "Z";
+        }
+        if (elementType.kind() == IrType.Kind.ARRAY) {
+            return "[" + arrayElementDescriptor(elementType.elementType());
+        }
+        return descriptor(elementType); // recursion handles pointer-of-pointer
+    }
+
     /** Number of JVM local/operand-stack slots for a value of this type. */
     int slots(IrType type) {
         return switch (type.kind()) {
             case LONG, DOUBLE -> 2;
             case ARRAY, STRING, BOOL, BYTE, SHORT, CHAR, INT, FLOAT -> 1;
+            case POINTER, REFERENCE -> 1;
             default -> 0;
         };
     }

@@ -1,0 +1,7 @@
+// pointer_type_mismatch.lemon: pointer assignment requires identical pointee
+// types (no implicit float*/int* conversion).
+void main() {
+    int* p;
+    float value;
+    p = &value;
+}

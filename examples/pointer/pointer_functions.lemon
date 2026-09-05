@@ -1,0 +1,31 @@
+// pointer_functions.lemon: pointers cross function boundaries as parameters
+// and return values; mutations through a parameter alias the caller's local.
+int bump(int* q) {
+    *q = *q + 5;
+    return *q;
+}
+
+int* selectPtr(int* first, int* second, int useFirst) {
+    if (useFirst != 0) {
+        return first;
+    }
+    return second;
+}
+
+void main() {
+    int x;
+    int y;
+    int* p;
+    int* q;
+    int r;
+    x = 7;
+    y = 100;
+    p = &x;
+    q = selectPtr(p, &y, 1);
+    r = bump(q);
+    printf("%d", r);
+    printf("%d", x);
+    q = selectPtr(&x, &y, 0);
+    r = *q;
+    printf("%d", r);
+}

@@ -1,0 +1,16 @@
+// pointer_assignment.lemon: a pointer variable can be re-bound to another
+// local; writes go through the current binding.
+void main() {
+    int a;
+    int b;
+    int* p;
+    a = 10;
+    b = 20;
+    p = &a;
+    printf("%d", *p);
+    p = &b;
+    printf("%d", *p);
+    *p = 30;
+    printf("%d", a);
+    printf("%d", b);
+}

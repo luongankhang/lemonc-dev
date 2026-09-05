@@ -23,6 +23,7 @@ final class JvmInstructionEmitter {
 
     // Opcodes used by this backend.
     private static final int ACONST_NULL = 0x01;
+    private static final int DUP = 0x59;
     private static final int IALOAD = 0x2E;
     private static final int LALOAD = 0x2F;
     private static final int FALOAD = 0x30;
@@ -86,6 +87,11 @@ final class JvmInstructionEmitter {
     private static final int DCMPG = 0x98;
     private static final int IFEQ = 0x99;
     private static final int IFNE = 0x9A;
+    private static final int IF_ACMPEQ = 0xA5;
+    private static final int IF_ACMPNE = 0xA6;
+    private static final int IFNULL = 0xC6;
+    private static final int NEW = 0xBB;
+    private static final int ATHROW = 0xBF;
     private static final int IF_ICMPEQ = 0x9F;
     private static final int IF_ICMPNE = 0xA0;
     private static final int IF_ICMPLT = 0xA1;
@@ -101,6 +107,7 @@ final class JvmInstructionEmitter {
     private static final int RETURN = 0xB1;
     private static final int GETSTATIC = 0xB2;
     private static final int INVOKEVIRTUAL = 0xB6;
+    private static final int INVOKESPECIAL = 0xB7;
     private static final int INVOKESTATIC = 0xB8;
     private static final int NEWARRAY = 0xBC;
     private static final int ANEWARRAY = 0xBD;
@@ -130,6 +137,9 @@ final class JvmInstructionEmitter {
     private final boolean isMain;
     private final IrType returnType;
 
+    /** Names of locals whose address is taken; they live in single-element cells. */
+    private final java.util.Set<String> cells;
+
     private int labelCounter = 0;
 
     /** Function signature used for call descriptors. */
@@ -138,7 +148,8 @@ final class JvmInstructionEmitter {
 
     JvmInstructionEmitter(JvmTypeMapper mapper, JvmClassWriter pool, JvmCodeBuilder code,
                           Map<String, JvmLocalAllocator.Local> locals, IrModule module,
-                          String functionName, boolean isMain, IrType returnType) {
+                          String functionName, boolean isMain, IrType returnType,
+                          java.util.Set<String> cells) {
         this.mapper = mapper;
         this.pool = pool;
         this.code = code;
@@ -147,6 +158,7 @@ final class JvmInstructionEmitter {
         this.className = module.name();
         this.isMain = isMain;
         this.returnType = returnType;
+        this.cells = cells == null ? java.util.Set.of() : cells;
         this.signatures = new HashMap<>();
         for (var function : module.functions()) {
             signatures.put(function.name(), new MethodSignature(
@@ -170,6 +182,7 @@ final class JvmInstructionEmitter {
             case CONVERT -> emitConvert(instruction);
             case LOAD -> emitLoad(instruction);
             case STORE -> emitStore(instruction);
+            case ADDRESS_OF -> emitAddressOf(instruction);
             case ALLOC -> emitAlloc(instruction);
             case CALL -> emitCall(instruction);
             case RETURN -> emitReturn(instruction);
@@ -197,12 +210,30 @@ final class JvmInstructionEmitter {
             // Global constant read: inline the resolved literal value.
             raw = constant.value();
         }
+        JvmLocalAllocator.Local local = locals.get(result.name());
+        if (local != null && cells.contains(result.name())) {
+            // Address-taken local: allocate its single-element cell, keep the
+            // cell reference in the local slot, then store the initial value
+            // into cell[0].
+            createCellArray(result.type());            // [cell]
+            code.simple(DUP);                         // [cell, cell]
+            code.store(ASTORE, local.slot());         // [cell]
+            code.ldc(pool.integer(0), 1);             // [cell, 0]
+            pushConstant(raw, result.type());         // [cell, 0, value]
+            code.simple(arrayStoreOpcode(result.type()));
+            return;
+        }
         pushConstant(raw, result.type());
         store(result);
     }
 
     private void pushConstant(String raw, IrType type) {
         switch (type.kind()) {
+            case POINTER, REFERENCE -> {
+                // The only materializable pointer constants are null / zero;
+                // both are the null reference in the cell representation.
+                code.simple(ACONST_NULL);
+            }
             case BOOL -> {
                 int value;
                 if ("true".equals(raw)) {
@@ -264,7 +295,18 @@ final class JvmInstructionEmitter {
         String symbol = instruction.target() == null ? "==" : instruction.target();
         IrType operandType = left.type();
 
-        if (mapper.isIntFamily(operandType)) {
+        if (operandType.kind() == IrType.Kind.POINTER || operandType.kind() == IrType.Kind.REFERENCE) {
+            // Pointer equality/inequality compares the cell references.
+            loadValue(left);
+            loadValue(right);
+            int opcode = switch (symbol) {
+                case "==" -> IF_ACMPEQ;
+                case "!=" -> IF_ACMPNE;
+                default -> throw new CompilerException(
+                        "unsupported pointer comparison symbol '" + symbol + "'");
+            };
+            emitMaterializedBranch(opcode);
+        } else if (mapper.isIntFamily(operandType)) {
             loadValue(left);
             loadValue(right);
             emitMaterializedBranch(compareOpcode(symbol));
@@ -330,6 +372,16 @@ final class JvmInstructionEmitter {
         // Direct decimal-literal-to-double assignments are already exact in the
         // shared lowering (the constant arrives typed as double); any remaining
         // FLOAT -> DOUBLE convert is a genuine float32 widening.
+        JvmLocalAllocator.Local target = locals.get(instruction.result().name());
+        if (target != null && cells.contains(target.name())) {
+            // Assignment to an address-taken local: [cell, 0, value].
+            code.load(ALOAD, target.slot());
+            code.ldc(pool.integer(0), 1);
+            loadValue(source);
+            emitConversion(from, to);
+            code.simple(arrayStoreOpcode(to));
+            return;
+        }
         loadValue(source);
         emitConversion(from, to);
         store(instruction.result());
@@ -405,6 +457,16 @@ final class JvmInstructionEmitter {
             store(result);
             return;
         }
+        if (operands.size() == 1) {
+            // Pointer dereference: *(p). Null dereference is a defined runtime
+            // error (diagnosed and thrown), never a raw NPE.
+            loadValue(operands.get(0));
+            emitNullDerefGuard();
+            code.ldc(pool.integer(0), 1);
+            code.simple(arrayLoadOpcode(result.type()));
+            store(result);
+            return;
+        }
         loadValue(operands.get(0));
         loadValue(operands.get(1));
         code.simple(arrayLoadOpcode(result.type()));
@@ -413,10 +475,73 @@ final class JvmInstructionEmitter {
 
     private void emitStore(IrInstruction instruction) {
         List<IrValue> operands = instruction.operands();
+        if (operands.size() == 2) {
+            // Pointer store: *(p) = v, guarded like the dereference load.
+            loadValue(operands.get(0));
+            emitNullDerefGuard();
+            code.ldc(pool.integer(0), 1);
+            loadValue(operands.get(1));
+            code.simple(arrayStoreOpcode(operands.get(1).type()));
+            return;
+        }
         loadValue(operands.get(0));
         loadValue(operands.get(1));
         loadValue(operands.get(2));
         code.simple(arrayStoreOpcode(operands.get(2).type()));
+    }
+
+    /**
+     * Assumes a pointer on the operand stack. Leaves the pointer in place when
+     * non-null; on null, reports a defined runtime error and terminates the
+     * method by throwing.
+     */
+    private void emitNullDerefGuard() {
+        String fatal = freshLabel("null_deref");
+        String ok = freshLabel("null_deref_ok");
+        code.simple(DUP);
+        code.branch(IFNULL, fatal);
+        code.branch(GOTO, ok);
+        code.label(fatal);
+        code.simple(POP);
+        emitNullDerefFatal();
+        code.label(ok);
+    }
+
+    /** Prints a diagnostic to {@code System.err} and throws (never returns). */
+    private void emitNullDerefFatal() {
+        code.cpRef(GETSTATIC, pool.fieldRef("java/lang/System", "err", SYSTEM_OUT_FIELD));
+        code.ldc(pool.stringRef("Lemon runtime error: null pointer dereference"), 1);
+        code.invoke(INVOKEVIRTUAL, pool.methodRef("java/io/PrintStream", "println", "(Ljava/lang/String;)V"), 2, 0);
+        code.cpRef(NEW, pool.classRef("java/lang/RuntimeException"));
+        code.simple(DUP);
+        code.ldc(pool.stringRef("null pointer dereference"), 1);
+        code.invoke(INVOKESPECIAL, pool.methodRef("java/lang/RuntimeException", "<init>", "(Ljava/lang/String;)V"), 2, 0);
+        code.simple(ATHROW);
+    }
+
+    /** Creates a single-element cell array for an address-taken local. */
+    private void createCellArray(IrType elementType) {
+        code.ldc(pool.integer(1), 1);
+        if (mapper.isIntFamily(elementType) || elementType.kind() == IrType.Kind.LONG
+                || elementType.kind() == IrType.Kind.FLOAT || elementType.kind() == IrType.Kind.DOUBLE) {
+            code.newarray(arrayTypeCode(elementType));
+        } else {
+            // Element is a reference (pointer/string): allocate an array of
+            // references via ANEWARRAY with the element's array descriptor.
+            code.cpRef(ANEWARRAY, pool.classRef(mapper.descriptor(elementType)));
+        }
+    }
+
+    private void emitAddressOf(IrInstruction instruction) {
+        IrValue operand = instruction.operands().get(0);
+        JvmLocalAllocator.Local local = locals.get(operand.name());
+        if (local == null || !cells.contains(operand.name())) {
+            throw new CompilerException(
+                    "address-of target is not an addressable local cell: " + operand.name());
+        }
+        // The pointer value is the cell reference held in the local slot.
+        code.load(ALOAD, local.slot());
+        store(instruction.result());
     }
 
     private void emitAlloc(IrInstruction instruction) {
@@ -440,7 +565,7 @@ final class JvmInstructionEmitter {
             case LONG -> LALOAD;
             case FLOAT -> FALOAD;
             case DOUBLE -> DALOAD;
-            case STRING -> AALOAD;
+            case STRING, POINTER, REFERENCE, ARRAY -> AALOAD;
             default -> throw new CompilerException("no JVM array load for " + elementType.kind());
         };
     }
@@ -454,7 +579,7 @@ final class JvmInstructionEmitter {
             case LONG -> LASTORE;
             case FLOAT -> FASTORE;
             case DOUBLE -> DASTORE;
-            case STRING -> AASTORE;
+            case STRING, POINTER, REFERENCE, ARRAY -> AASTORE;
             default -> throw new CompilerException("no JVM array store for " + elementType.kind());
         };
     }
@@ -629,6 +754,13 @@ final class JvmInstructionEmitter {
     private void loadValue(IrValue value) {
         JvmLocalAllocator.Local local = locals.get(value.name());
         if (local != null) {
+            if (cells.contains(value.name())) {
+                // Value read of an address-taken local: load cell[0].
+                code.load(ALOAD, local.slot());
+                code.ldc(pool.integer(0), 1);
+                code.simple(arrayLoadOpcode(local.type()));
+                return;
+            }
             code.load(loadOpcode(local.type()), local.slot());
             return;
         }
@@ -639,6 +771,10 @@ final class JvmInstructionEmitter {
         JvmLocalAllocator.Local local = locals.get(value.name());
         if (local == null) {
             return; // void results and constants have no local slot
+        }
+        if (cells.contains(value.name())) {
+            throw new CompilerException(
+                    "direct store to address-taken local must be a cell write: " + value.name());
         }
         code.store(storeOpcode(local.type()), local.slot());
     }

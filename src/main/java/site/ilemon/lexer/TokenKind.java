@@ -32,6 +32,7 @@ public enum TokenKind {
 		Const,
 		Import,
 		At,
+		Null,
 
 		/*** Arithmetic operators ****/
 		Add,
@@ -70,6 +71,7 @@ public enum TokenKind {
 		FloatLiteral,
 		CharLiteral,
 		Assign,
+		Amp,
 		Unknown, PrintLine,
 
 	}

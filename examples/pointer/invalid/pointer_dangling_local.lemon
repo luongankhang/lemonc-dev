@@ -1,0 +1,12 @@
+// pointer_dangling_local.lemon: returning the address of a local escapes the
+// local's lifetime and is rejected (no dangling pointers).
+int* getPointer() {
+    int value;
+    int* p;
+    value = 42;
+    p = &value;
+    return p;
+}
+
+void main() {
+}

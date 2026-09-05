@@ -34,6 +34,9 @@ public interface ISemanticVisitor {
 	void visit(Ast.Expr.Str obj);
 	void visit(Ast.Expr.ArrayAccess obj);
 	void visit(Ast.Expr.ArrayLength obj);
+	void visit(Ast.Expr.AddressOf obj);
+	void visit(Ast.Expr.Deref obj);
+	void visit(Ast.Expr.Null obj);
 
 	void visit(Ast.Type.T obj);
 	void visit(Ast.Type.Bool obj);
@@ -56,6 +59,8 @@ public interface ISemanticVisitor {
 	void visit(Ast.Type.DoubleArray obj);
 	void visit(Ast.Type.BoolArray obj);
 	void visit(Ast.Type.StringArray obj);
+	void visit(Ast.Type.Pointer obj);
+	void visit(Ast.Type.Null obj);
 
 	void visit(Ast.Program.T programSingle);
 	void visit(Ast.Declare.T obj);
@@ -75,6 +80,7 @@ public interface ISemanticVisitor {
 	void visit(Ast.Stmt.Continue obj);
 	void visit(Ast.Stmt.Call obj);
 	void visit(Ast.Stmt.ArrayAssign obj);
+	void visit(Ast.Stmt.DerefAssign obj);
 	void visit(Ast.Stmt.Import obj);
 
 }

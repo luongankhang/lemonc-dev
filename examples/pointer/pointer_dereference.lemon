@@ -1,0 +1,15 @@
+// pointer_dereference.lemon: dereferenced pointers are lvalues; reads and
+// writes through a pointer participate in ordinary arithmetic.
+void main() {
+    int x;
+    int* p;
+    int y;
+    int z;
+    x = 9;
+    p = &x;
+    *p = *p + 1;
+    y = *p;
+    z = y * 2;
+    printf("%d", z);
+    printf("%d", x);
+}

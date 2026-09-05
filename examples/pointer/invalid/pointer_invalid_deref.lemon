@@ -1,0 +1,7 @@
+// pointer_invalid_deref.lemon: dereferencing a non-pointer type is rejected.
+void main() {
+    int value;
+    int x;
+    value = 42;
+    x = *value;
+}

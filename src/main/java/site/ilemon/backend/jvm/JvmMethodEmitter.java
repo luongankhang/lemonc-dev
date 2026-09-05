@@ -24,9 +24,21 @@ final class JvmMethodEmitter {
         JvmLocalAllocator allocator = new JvmLocalAllocator(mapper);
         Map<String, JvmLocalAllocator.Local> locals = allocator.allocate(function);
 
+        // Locals whose address is taken (&x) are materialized as single-element
+        // cells so dereferences and direct accesses alias the same storage.
+        java.util.Set<String> cells = new java.util.HashSet<>();
+        for (BasicBlock block : function.blocks()) {
+            for (IrInstruction instruction : block.instructions()) {
+                if (instruction.op() == IrInstruction.Op.ADDRESS_OF
+                        && !instruction.operands().isEmpty()) {
+                    cells.add(instruction.operands().get(0).name());
+                }
+            }
+        }
+
         JvmCodeBuilder code = new JvmCodeBuilder();
         JvmInstructionEmitter instructions = new JvmInstructionEmitter(
-                mapper, pool, code, locals, module, function.name(), isMain, function.returnType());
+                mapper, pool, code, locals, module, function.name(), isMain, function.returnType(), cells);
 
         for (BasicBlock block : function.blocks()) {
             code.label(block.name());

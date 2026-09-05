@@ -1,0 +1,24 @@
+// pointer_null.lemon: null assignment, null comparison, and guarded deref.
+void main() {
+    int value;
+    int* ptr;
+    value = 42;
+    ptr = null;
+    if (ptr == null) {
+        printf("%d", 1);
+    } else {
+        printf("%d", 0);
+    }
+    ptr = &value;
+    if (ptr != null) {
+        printf("%d", *ptr);
+    } else {
+        printf("%d", 0);
+    }
+    ptr = null;
+    if (ptr == null) {
+        printf("%d", 1);
+    } else {
+        printf("%d", 0);
+    }
+}

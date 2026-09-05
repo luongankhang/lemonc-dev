@@ -54,6 +54,16 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     private HashSet<String> currMethodLocalVar;
 
+    /**
+     * Pointer-typed locals of the current method whose value may reference a
+     * local of this very method (seeded by {@code p = &x}). Returning such a
+     * value would hand out a pointer to storage that is about to die.
+     */
+    private final java.util.Set<String> localAddrTaint = new java.util.HashSet<>();
+
+    /** Formal parameters of the current method (address-of is rejected on them). */
+    private final java.util.Set<String> currMethodFormals = new java.util.HashSet<>();
+
     private int loopDepth = 0;
 
     private HashMap<String,Ast.Method.MethodSingle> methodMap;
@@ -150,6 +160,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         this.visit(obj.getLeft());
         Ast.Type.T leftType = this.currType;
         this.visit(obj.getRight());
+        if (rejectPointerArithmetic(obj.getLineNum(), "+", leftType, this.currType, obj.getSpan())) return;
         checkSameOperandTypes(obj.getLineNum(), "+", leftType, this.currType);
     }
 
@@ -215,6 +226,12 @@ public class SemanticVisitor implements ISemanticVisitor {
                 this.currMethodLocalVar.remove(obj.getId().getId());
             this.visit(obj.getId());
             Ast.Type.T targetType = this.currType;
+            // Pointer alias tracking: a pointer local that now (or previously)
+            // held the address of this frame's own storage must never leave the
+            // frame through a return. The taint is monotonic and conservative.
+            if (isPointerType(targetType) && exprMayPointToLocal(obj.getExpr())) {
+                this.localAddrTaint.add(obj.getId().getId());
+            }
             if (isArrayType(this.currType) || isArrayType(exprType)) {
                 typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(targetType), typeName(exprType),
                         expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(),
@@ -282,6 +299,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         this.visit(obj.getLeft());
         Ast.Type.T leftType = this.currType;
         this.visit(obj.getRight());
+        if (rejectPointerArithmetic(obj.getLineNum(), "/", leftType, this.currType, obj.getSpan())) return;
         checkSameOperandTypes(obj.getLineNum(), "/", leftType, this.currType);
     }
 
@@ -290,6 +308,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         this.visit(obj.getLeft());
         Ast.Type.T leftType = this.currType;
         this.visit(obj.getRight());
+        if (rejectPointerArithmetic(obj.getLineNum(), "%", leftType, this.currType, obj.getSpan())) return;
         Ast.Type.T rightType = this.currType;
         if (leftType == null || rightType == null
                 || !isIntegerLike(leftType) || !isIntegerLike(rightType)) {
@@ -642,6 +661,15 @@ public class SemanticVisitor implements ISemanticVisitor {
         scopeManager.enterScope();
         MethodVarTable mTable = new MethodVarTable(diagnosticEngine);
         this.currMethodLocalVar = new HashSet<>();
+        this.localAddrTaint.clear();
+        this.currMethodFormals.clear();
+        if (obj.getFormals() != null) {
+            for (Ast.Declare.T formal : obj.getFormals()) {
+                if (formal instanceof Ast.Declare.DeclareSingle single) {
+                    this.currMethodFormals.add(single.getId());
+                }
+            }
+        }
         for( Ast.Declare.T dec : obj.getLocals()){
             Ast.Declare.DeclareSingle declareSingle = (Ast.Declare.DeclareSingle) dec;
             if (!isArrayType(declareSingle.getType())) {
@@ -653,6 +681,16 @@ public class SemanticVisitor implements ISemanticVisitor {
         this.methodVarTable.put(obj.getId(),mTable);
         this.currMethodName = obj.getId();
         this.typeOfMethodDeclared = obj.getRetType();
+
+        validatePointerDeclarations(obj.getFormals());
+        validatePointerDeclarations(obj.getLocals());
+        if (isPointerType(this.typeOfMethodDeclared) && !hasLegalPointees(this.typeOfMethodDeclared)) {
+            semanticError(DiagnosticCodes.TYPE_POINTER_ASSIGNMENT,
+                    "unsupported pointer type '" + typeName(this.typeOfMethodDeclared)
+                            + "': only value scalars and further pointers can be pointed to",
+                    obj.getLineNum(), obj.getSpan(), "unsupported pointer type",
+                    "pointers to strings or arrays are not supported", null);
+        }
 
         if( obj.getId().equals("main")){
             if( obj.getRetType().getKind() != TypeKind.VOID)
@@ -685,9 +723,8 @@ public class SemanticVisitor implements ISemanticVisitor {
         this.visit(obj.getLeft());
         Ast.Type.T leftType = this.currType;
         this.visit(obj.getRight());
+        if (rejectPointerArithmetic(obj.getLineNum(), "*", leftType, this.currType, obj.getSpan())) return;
         checkSameOperandTypes(obj.getLineNum(), "*", leftType, this.currType);
-
-
     }
 
     @Override
@@ -728,6 +765,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         this.visit(obj.getLeft());
         Ast.Type.T leftType = this.currType;
         this.visit(obj.getRight());
+        if (rejectPointerArithmetic(obj.getLineNum(), "-", leftType, this.currType, obj.getSpan())) return;
         checkSameOperandTypes(obj.getLineNum(), "-", leftType, this.currType);
     }
 
@@ -795,10 +833,122 @@ public class SemanticVisitor implements ISemanticVisitor {
     @Override
     public void visit(Ast.Expr.Not obj) {
         this.visit(obj.getExpr());
-        if( this.currType.getKind() != TypeKind.BOOL)
+        if (this.currType == null || this.currType.getKind() != TypeKind.BOOL)
             typeError(DiagnosticCodes.TYPE_OPERATOR, "bool", typeName(this.currType), expressionName(obj.getExpr()),
                     obj.getLineNum(), obj.getSpan(), "operator '!'", "use a boolean expression");
         this.currType = new Ast.Type.Bool();
+    }
+
+    // ==================================================== pointer expressions
+
+    @Override
+    public void visit(Ast.Type.Pointer obj) {
+        this.currType = obj;
+    }
+
+    @Override
+    public void visit(Ast.Type.Null obj) {
+        this.currType = obj;
+    }
+
+    @Override
+    public void visit(Ast.Expr.Null obj) {
+        // null is a valid pointer literal only; context checks it against a
+        // pointer target type before any use.
+        this.currType = new Ast.Type.Null();
+    }
+
+    @Override
+    public void visit(Ast.Expr.AddressOf obj) {
+        Ast.Expr.T operand = obj.getOperand();
+        Ast.Type.T operandType = null;
+        if (operand instanceof Ast.Expr.Id id) {
+            MethodVarTable table = this.methodVarTable.get(currMethodName);
+            Ast.Type.T localType = table == null ? null : table.get(id.getId());
+            if (localType == null) {
+                // Module bindings, constants, and unknown names are not addressable.
+                if (resolveConst(id.getId()) != null || importedModuleNames.contains(id.getId())
+                        || id.getId().contains("_")) {
+                    semanticError(DiagnosticCodes.TYPE_POINTER_ADDRESS_OF,
+                            "cannot take the address of '" + id.getId() + "': constants and imports are not addressable",
+                            obj.getLineNum(), obj.getSpan(), "invalid address-of",
+                            "only local variables can be referenced", null);
+                } else {
+                    semanticError(DiagnosticCodes.TYPE_POINTER_ADDRESS_OF,
+                            "cannot take the address of '" + id.getId() + "': the variable is not declared in this scope",
+                            obj.getLineNum(), obj.getSpan(), "invalid address-of",
+                            "only local variables can be referenced", null);
+                }
+                this.currType = unknownType();
+                return;
+            }
+            if (currMethodFormals.contains(id.getId())) {
+                semanticError(DiagnosticCodes.TYPE_POINTER_ADDRESS_OF,
+                        "cannot take the address of parameter '" + id.getId()
+                                + "': parameters are value copies without stable addressable storage",
+                        obj.getLineNum(), obj.getSpan(), "invalid address-of",
+                        "only local variables can be referenced", null);
+                this.currType = unknownType();
+                return;
+            }
+            operandType = localType;
+            if (isManagedValueType(operandType)) {
+                semanticError(DiagnosticCodes.TYPE_POINTER_ADDRESS_OF,
+                        "cannot take the address of '" + id.getId() + "': " + typeName(operandType)
+                                + " values are reference-managed and not addressable",
+                        obj.getLineNum(), obj.getSpan(), "invalid address-of",
+                        "address-of is only supported for value scalars and pointers", null);
+                this.currType = unknownType();
+                return;
+            }
+        } else {
+            semanticError(DiagnosticCodes.TYPE_POINTER_ADDRESS_OF,
+                    "cannot take the address of this expression: address-of requires a local variable",
+                    obj.getLineNum(), obj.getSpan(), "invalid address-of",
+                    "temporaries and computed values have no stable storage", null);
+            this.currType = unknownType();
+            return;
+        }
+        this.currType = new Ast.Type.Pointer(operandType);
+    }
+
+    @Override
+    public void visit(Ast.Expr.Deref obj) {
+        this.visit(obj.getOperand());
+        Ast.Type.T pointerType = this.currType;
+        if (!isPointerType(pointerType)) {
+            semanticError(DiagnosticCodes.TYPE_POINTER_DEREF,
+                    "cannot dereference non-pointer type " + typeName(pointerType),
+                    obj.getLineNum(), obj.getSpan(), "invalid dereference",
+                    "the '*' operator requires a pointer operand", null);
+            this.currType = unknownType();
+            return;
+        }
+        this.currType = ((Ast.Type.Pointer) pointerType).getPointee();
+    }
+
+    @Override
+    public void visit(Ast.Stmt.DerefAssign obj) {
+        Ast.Expr.Deref target = obj.getTarget();
+        // Validate the dereference chain (pointer levels down to the pointee).
+        this.visit(target);
+        Ast.Type.T targetType = this.currType;
+        this.visit(obj.getExpr());
+        Ast.Type.T valueType = this.currType;
+        if (isPointerType(valueType) || valueType != null && valueType.getKind() == TypeKind.NULL) {
+            semanticError(DiagnosticCodes.TYPE_POINTER_WRITE,
+                    "assignment through a dereference must store a value scalar, not a pointer",
+                    obj.getLineNum(), obj.getSpan(), "unsupported pointer write",
+                    "writing a pointer through '*ptr = ...' is not supported; assign the pointer variable directly", null);
+            return;
+        }
+        if (targetType == null || !isAssignable(targetType, valueType, obj.getExpr())) {
+            if (targetType != null && !rangeErrorIfNeeded(targetType, valueType, obj.getExpr(),
+                    obj.getLineNum(), obj.getSpan(), "dereference assignment")) {
+                typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(targetType), typeName(valueType),
+                        expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(), "dereference assignment", null);
+            }
+        }
     }
 
     @Override
@@ -821,6 +971,13 @@ public class SemanticVisitor implements ISemanticVisitor {
             error(obj.getLineNum(), "void method cannot return a value");
         }
         this.visit(obj.getExpr());
+        if (isPointerType(typeOfMethodDeclared) && exprMayPointToLocal(obj.getExpr())) {
+            semanticError(DiagnosticCodes.SEM_POINTER_ESCAPE,
+                    "cannot return pointer to local variable: the referenced storage dies when the function returns",
+                    obj.getLineNum(), obj.getSpan(), "dangling pointer",
+                    "do not return the address of a local variable", "return the value or a pointer received as a parameter");
+            return;
+        }
         if (!isAssignable(typeOfMethodDeclared, this.currType, obj.getExpr())) {
             if (!rangeErrorIfNeeded(typeOfMethodDeclared, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                     "return statement")) {
@@ -1078,9 +1235,139 @@ public class SemanticVisitor implements ISemanticVisitor {
         throw new SemanticException(diagnostic);
     }
 
+    // ==================================================== pointer helpers
+
+    private boolean isPointerType(Ast.Type.T type) {
+        return type != null && type.getKind() == TypeKind.POINTER;
+    }
+
+    private boolean isManagedValueType(Ast.Type.T type) {
+        if (type == null) {
+            return false;
+        }
+        return isArrayType(type) || type.getKind() == TypeKind.STRING || type.getKind() == TypeKind.VOID;
+    }
+
+    private boolean isAllowedPointee(Ast.Type.T type) {
+        if (isPointerType(type)) {
+            return true; // multi-level pointers are legal
+        }
+        if (type == null) {
+            return false;
+        }
+        return switch (type.getKind()) {
+            case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL -> true;
+            default -> false;
+        };
+    }
+
+    private boolean hasLegalPointees(Ast.Type.T type) {
+        if (!isPointerType(type)) {
+            return true;
+        }
+        Ast.Type.T pointee = ((Ast.Type.Pointer) type).getPointee();
+        if (isPointerType(pointee)) {
+            return hasLegalPointees(pointee);
+        }
+        return isAllowedPointee(pointee);
+    }
+
+    /** True when both pointers point at the same (recursively compared) type. */
+    private boolean pointerTypesEqual(Ast.Type.T left, Ast.Type.T right) {
+        if (!isPointerType(left) || !isPointerType(right)) {
+            return false;
+        }
+        Ast.Type.T leftPointee = ((Ast.Type.Pointer) left).getPointee();
+        Ast.Type.T rightPointee = ((Ast.Type.Pointer) right).getPointee();
+        if (isPointerType(leftPointee) || isPointerType(rightPointee)) {
+            return pointerTypesEqual(leftPointee, rightPointee);
+        }
+        return leftPointee.getKind() == rightPointee.getKind();
+    }
+
+    /**
+     * Rejects every arithmetic operator applied to pointers (and to {@code null}).
+     * Pointer arithmetic is deliberately not implemented; it must fail loudly
+     * and consistently on both backends instead of being partially supported.
+     */
+    private boolean rejectPointerArithmetic(int lineNum, String operator, Ast.Type.T left,
+                                            Ast.Type.T right, site.ilemon.util.SourceSpan span) {
+        boolean leftPointer = isPointerType(left) || left != null && left.getKind() == TypeKind.NULL;
+        boolean rightPointer = isPointerType(right) || right != null && right.getKind() == TypeKind.NULL;
+        if (!leftPointer && !rightPointer) {
+            return false;
+        }
+        semanticError(DiagnosticCodes.TYPE_POINTER_ARITHMETIC,
+                "invalid pointer arithmetic: operator '" + operator + "' cannot be applied to "
+                        + typeName(left) + " and " + typeName(right),
+                lineNum, span, "unsupported pointer operation",
+                "pointer arithmetic (ptr + n, ptr - n, ...) is not supported by LemonC", null);
+        this.currType = unknownType();
+        return true;
+    }
+
+    /**
+     * Conservative alias/escape predicate: does evaluating this expression
+     * produce a pointer value that may reference the current frame's locals?
+     * (Address-of is a direct source; pointer locals holding such an address
+     * are tracked monotonically in {@link #localAddrTaint}.)
+     */
+    private boolean exprMayPointToLocal(Ast.Expr.T expr) {
+        if (expr instanceof Ast.Expr.AddressOf) {
+            return true;
+        }
+        if (expr instanceof Ast.Expr.Id id) {
+            return this.localAddrTaint.contains(id.getId());
+        }
+        if (expr instanceof Ast.Expr.Deref deref) {
+            return exprMayPointToLocal(deref.getOperand());
+        }
+        if (expr instanceof Ast.Expr.Call call) {
+            if (call.getInputParams() != null) {
+                for (Ast.Expr.T argument : call.getInputParams()) {
+                    if (exprMayPointToLocal(argument)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private void validatePointerDeclarations(java.util.List<Ast.Declare.T> declarations) {
+        if (declarations == null) {
+            return;
+        }
+        for (Ast.Declare.T declaration : declarations) {
+            if (!(declaration instanceof Ast.Declare.DeclareSingle single)) {
+                continue;
+            }
+            if (isPointerType(single.getType()) && !hasLegalPointees(single.getType())) {
+                semanticError(DiagnosticCodes.TYPE_POINTER_ASSIGNMENT,
+                        "unsupported pointer type '" + typeName(single.getType())
+                                + "': only value scalars and further pointers can be pointed to",
+                        single.getLineNum(), single.getSpan(), "unsupported pointer type",
+                        "pointers to strings or arrays are not supported", null);
+            }
+        }
+    }
+
     private boolean isMatch(Ast.Type.T target,Ast.Type.T curr){
         if( target == null || curr == null )
             return false;
+        // Pointer compatibility: identical pointee chains, or null against any
+        // pointer. Everything else is a mismatch (never numeric promotion).
+        if (isPointerType(target) || isPointerType(curr)
+                || target.getKind() == TypeKind.NULL || curr.getKind() == TypeKind.NULL) {
+            if (isPointerType(target) && isPointerType(curr)) {
+                return pointerTypesEqual(target, curr);
+            }
+            // null is compatible with any pointer type, on either side; two
+            // nulls are also mutually compatible.
+            return (isPointerType(target) && curr.getKind() == TypeKind.NULL)
+                    || (target.getKind() == TypeKind.NULL && isPointerType(curr))
+                    || (target.getKind() == TypeKind.NULL && curr.getKind() == TypeKind.NULL);
+        }
         if(target.getKind() == curr.getKind())
             return true;
         // Allow float to implicitly widen to double

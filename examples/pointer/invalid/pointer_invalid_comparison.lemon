@@ -1,0 +1,21 @@
+// pointer_invalid_comparison.lemon: equality between pointers with different
+// pointee types is rejected.
+void main() {
+    int x;
+    int y;
+    int* p;
+    int* q;
+    float f;
+    float* fp;
+    x = 1;
+    y = 2;
+    f = 1.5;
+    p = &x;
+    q = &y;
+    fp = &f;
+    if (p == fp) {
+        printf("%d", 1);
+    } else {
+        printf("%d", 0);
+    }
+}

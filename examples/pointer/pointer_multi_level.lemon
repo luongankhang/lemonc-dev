@@ -1,0 +1,16 @@
+// pointer_multi_level.lemon: pointer-to-pointer declarations, nested
+// dereference reads, and nested dereference writes (**pp = value).
+void main() {
+    int value;
+    int* p;
+    int** pp;
+    int result;
+    value = 7;
+    p = &value;
+    pp = &p;
+    result = **pp;
+    printf("%d", result);
+    **pp = 40;
+    printf("%d", value);
+    printf("%d", *p);
+}

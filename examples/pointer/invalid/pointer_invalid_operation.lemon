@@ -1,0 +1,9 @@
+// pointer_invalid_operation.lemon: pointer arithmetic is not implemented and
+// must be rejected explicitly (never partially supported).
+void main() {
+    int value;
+    int* p;
+    value = 42;
+    p = &value;
+    p = p + 1;
+}

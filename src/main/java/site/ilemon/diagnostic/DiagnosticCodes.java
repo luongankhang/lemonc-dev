@@ -18,6 +18,7 @@ public final class DiagnosticCodes {
     public static final String SEM_INVALID_SCOPE = "E2005";
     public static final String SEM_CONST_IMMUTABLE = "E2006";
     public static final String SEM_CONST_INITIALIZER = "E2007";
+    public static final String SEM_POINTER_ESCAPE = "E2008";
     public static final String SEM_GENERAL = "E2099";
 
     public static final String TYPE_ASSIGNMENT = "E3001";
@@ -29,6 +30,12 @@ public final class DiagnosticCodes {
     public static final String TYPE_INDEX = "E3007";
     public static final String TYPE_BYTE_RANGE = "E3008";
     public static final String TYPE_SHORT_RANGE = "E3009";
+    public static final String TYPE_POINTER_DEREF = "E3010";
+    public static final String TYPE_POINTER_ADDRESS_OF = "E3011";
+    public static final String TYPE_POINTER_COMPARISON = "E3012";
+    public static final String TYPE_POINTER_ASSIGNMENT = "E3013";
+    public static final String TYPE_POINTER_ARITHMETIC = "E3014";
+    public static final String TYPE_POINTER_WRITE = "E3015";
 
     public static final String MODULE_NOT_FOUND = "E4001";
     public static final String GENERIC_ERROR = "E5001";

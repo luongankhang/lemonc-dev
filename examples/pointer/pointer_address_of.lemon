@@ -1,0 +1,13 @@
+// pointer_address_of.lemon: two pointers alias the same local; writes through
+// one pointer are visible through the other and through the variable name.
+void main() {
+    int x;
+    int* a;
+    int* b;
+    x = 5;
+    a = &x;
+    b = &x;
+    *a = 7;
+    printf("%d", x);
+    printf("%d", *b);
+}

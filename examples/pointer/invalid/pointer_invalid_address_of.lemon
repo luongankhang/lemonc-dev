@@ -1,0 +1,6 @@
+// pointer_invalid_address_of.lemon: only local variables are addressable;
+// taking the address of a computed temporary is rejected.
+void main() {
+    int* p;
+    p = &(1 + 2);
+}

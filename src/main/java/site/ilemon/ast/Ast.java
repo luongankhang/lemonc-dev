@@ -374,6 +374,27 @@ public class Ast {
             }
         }
 
+        // Pointer dereference assignment: *ptr = expr;
+        public static class DerefAssign extends T {
+            private Expr.Deref target;
+            public Expr.Deref getTarget() { return this.target; }
+            public void setTarget(Expr.Deref target) { this.target = target; }
+            private Expr.T expr;
+            public Expr.T getExpr() { return this.expr; }
+            public void setExpr(Expr.T expr) { this.expr = expr; }
+
+            public DerefAssign(Expr.Deref target, Expr.T expr, int lineNum) {
+                this.target = target;
+                this.expr = expr;
+                this.setLineNum(lineNum);
+            }
+
+            @Override
+            public void accept(ISemanticVisitor v) {
+                v.visit(this);
+            }
+        }
+
         public static class Import extends T {
             private final ImportDecl declaration;
 
@@ -440,7 +461,8 @@ public class Ast {
          */
         public enum TypeKind {
             INT, FLOAT, DOUBLE, BOOL, CHAR, BYTE, SHORT, LONG, STRING, VOID,
-            INT_ARRAY, FLOAT_ARRAY, DOUBLE_ARRAY, BOOL_ARRAY, STRING_ARRAY, BYTE_ARRAY, SHORT_ARRAY, CHAR_ARRAY, LONG_ARRAY
+            INT_ARRAY, FLOAT_ARRAY, DOUBLE_ARRAY, BOOL_ARRAY, STRING_ARRAY, BYTE_ARRAY, SHORT_ARRAY, CHAR_ARRAY, LONG_ARRAY,
+            POINTER, NULL
         }
 
         public sealed abstract static class T{
@@ -684,6 +706,49 @@ public class Ast {
             public TypeKind getKind() { return TypeKind.STRING_ARRAY; }
             @Override
             public String toString() { return "@string[]"; }
+            @Override
+            public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        /**
+         * Pointer type: {@code int*}, {@code float*}, {@code int**}, ... The
+         * declarator star binds to the pointee like in C ({@code int** =}
+         * pointer-to-pointer-to-int). Only value scalars and further pointers
+         * are valid pointees in the current language subset.
+         */
+        public non-sealed static class Pointer extends T {
+            private final T pointee;
+
+            public Pointer(T pointee) {
+                if (pointee == null) throw new IllegalArgumentException("pointer pointee type is null");
+                this.pointee = pointee;
+            }
+
+            public T getPointee() { return pointee; }
+
+            @Override
+            public TypeKind getKind() { return TypeKind.POINTER; }
+
+            @Override
+            public String toString() {
+                String inner = pointee.toString();
+                String base = inner.startsWith("@") ? inner.substring(1) : inner;
+                return "@" + base + "*";
+            }
+
+            @Override
+            public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        /**
+         * Internal marker for the type of the {@code null} literal during
+         * semantic analysis. Never produced by declarations.
+         */
+        public non-sealed static class Null extends T {
+            @Override
+            public TypeKind getKind() { return TypeKind.NULL; }
+            @Override
+            public String toString() { return "@null"; }
             @Override
             public void accept(ISemanticVisitor v) { v.visit(this); }
         }
@@ -1043,6 +1108,52 @@ public class Ast {
                 this.type = t;
                 this.value = o;
                 this.setLineNum(lineNumber);
+            }
+
+            @Override
+            public void accept(ISemanticVisitor v) {
+                v.visit(this);
+            }
+        }
+
+        /** Address-of expression: {@code &x} produces {@code T*} when x has type T. */
+        public static class AddressOf extends T{
+            private Expr.T operand;
+            public Expr.T getOperand() { return this.operand; }
+            public void setOperand(Expr.T operand) { this.operand = operand; }
+
+            public AddressOf(Expr.T operand, int lineNum) {
+                this.operand = operand;
+                this.setLineNum(lineNum);
+            }
+
+            @Override
+            public void accept(ISemanticVisitor v) {
+                v.visit(this);
+            }
+        }
+
+        /** Dereference expression: {@code *p} yields the pointee of pointer p. */
+        public static class Deref extends T{
+            private Expr.T operand;
+            public Expr.T getOperand() { return this.operand; }
+            public void setOperand(Expr.T operand) { this.operand = operand; }
+
+            public Deref(Expr.T operand, int lineNum) {
+                this.operand = operand;
+                this.setLineNum(lineNum);
+            }
+
+            @Override
+            public void accept(ISemanticVisitor v) {
+                v.visit(this);
+            }
+        }
+
+        /** Null pointer literal: {@code null} (assignable/comparable with any pointer). */
+        public static class Null extends T{
+            public Null(int lineNum) {
+                this.setLineNum(lineNum);
             }
 
             @Override
