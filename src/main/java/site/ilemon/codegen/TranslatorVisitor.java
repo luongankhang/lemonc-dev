@@ -1297,4 +1297,9 @@ public class TranslatorVisitor implements ISemanticVisitor {
             emit(new Ast.Stmt.Aastore());
         }
     }
+
+    @Override
+    public void visit(Stmt.Import obj) {
+        // Imports are compile-time bindings and produce no JVM instructions.
+    }
 }

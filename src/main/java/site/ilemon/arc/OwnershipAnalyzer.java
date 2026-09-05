@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import site.ilemon.semantic.ScopeManager;
 
 /**
  * Control-flow-aware ownership analyzer.
@@ -31,12 +32,12 @@ public final class OwnershipAnalyzer {
             throw new IllegalArgumentException("unsupported main class AST");
         }
         for (Ast.Method.T methodNode : main.getMethods()) {
-            analyzeMethod((Ast.Method.MethodSingle) methodNode, ir);
+            analyzeMethod((Ast.Method.MethodSingle) methodNode, main.getImports(), ir);
         }
         return ir;
     }
 
-    private void analyzeMethod(Ast.Method.MethodSingle method, OwnershipIr ir) {
+    private void analyzeMethod(Ast.Method.MethodSingle method, List<Ast.ImportDecl> imports, OwnershipIr ir) {
         boolean returnManaged = isManaged(method.getRetType());
         OwnershipFunction func = new OwnershipFunction(method.getId(), returnManaged);
 
@@ -83,7 +84,7 @@ public final class OwnershipAnalyzer {
             ir.add(paramRetain);
         }
 
-        MethodContext ctx = new MethodContext(func, ir, methodManagedLocals);
+        MethodContext ctx = new MethodContext(func, ir, methodManagedLocals, imports);
         ctx.currentBlock = entryBlock;
 
         // Traverse statements
@@ -146,6 +147,10 @@ public final class OwnershipAnalyzer {
             MemoryOp exitOp = new MemoryOp(MemoryOp.Kind.CALL_EXIT, call.getName(), line, span);
             ctx.recordOp(enterOp);
             ctx.recordOp(exitOp);
+        } else if (stmt instanceof Ast.Stmt.Import importStmt) {
+            // Compile-time module bindings have no runtime ownership.
+            Ast.ImportDecl declaration = importStmt.getDeclaration();
+            ctx.scopeManager.declareImport(declaration.getName(), java.nio.file.Path.of(declaration.getPath()));
         } else if (stmt instanceof Ast.Stmt.Block block) {
             ctx.pushScope();
             if (block.getStmts() != null) {
@@ -347,12 +352,17 @@ public final class OwnershipAnalyzer {
         private final Set<String> activeManagedLocals;
         private final Deque<Set<String>> scopeStack = new ArrayDeque<>();
         private final Deque<LoopScope> loopStack = new ArrayDeque<>();
+        private final ScopeManager scopeManager = new ScopeManager();
         private OwnershipBlock currentBlock;
 
-        private MethodContext(OwnershipFunction func, OwnershipIr ir, Set<String> activeManagedLocals) {
+        private MethodContext(OwnershipFunction func, OwnershipIr ir, Set<String> activeManagedLocals,
+                              List<Ast.ImportDecl> imports) {
             this.func = func;
             this.ir = ir;
             this.activeManagedLocals = new LinkedHashSet<>(activeManagedLocals);
+            for (Ast.ImportDecl importDecl : imports) {
+                scopeManager.declareImport(importDecl.getName(), java.nio.file.Path.of(importDecl.getPath()));
+            }
             pushScope();
         }
 
@@ -365,10 +375,14 @@ public final class OwnershipAnalyzer {
 
         private void pushScope() {
             scopeStack.push(new HashSet<>());
+            if (scopeStack.size() > 1) scopeManager.enterScope();
         }
 
         private Set<String> popScope() {
-            return scopeStack.isEmpty() ? Set.of() : scopeStack.pop();
+            if (scopeStack.isEmpty()) return Set.of();
+            Set<String> result = scopeStack.pop();
+            if (!scopeStack.isEmpty()) scopeManager.exitScope();
+            return result;
         }
 
         private void pushLoop(OwnershipBlock breakTarget, OwnershipBlock continueTarget) {

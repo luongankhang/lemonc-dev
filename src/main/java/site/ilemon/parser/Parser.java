@@ -503,6 +503,7 @@ public class Parser {
 
 	private boolean isStatementStart() {
 		return look != null && (look.kind == TokenKind.Printf || look.kind == TokenKind.PrintLine
+				|| look.kind == TokenKind.Import
 				|| look.kind == TokenKind.If || look.kind == TokenKind.While || look.kind == TokenKind.For
 				|| look.kind == TokenKind.Lbrace || look.kind == TokenKind.Id
 				|| look.kind == TokenKind.Break || look.kind == TokenKind.Continue
@@ -521,6 +522,11 @@ public class Parser {
 
 	private Ast.Stmt.T parseStmt() throws IOException {
 		Ast.Stmt.T stmt = null;
+		if (look.kind == TokenKind.Import) {
+			ArrayList<Ast.ImportDecl> imports = parseImports();
+			if (imports.size() != 1) error("expected one local module import");
+			return new Ast.Stmt.Import(imports.get(0));
+		}
 		
 		if( look.kind == TokenKind.Printf ){
 			match(new Token(TokenKind.Printf));

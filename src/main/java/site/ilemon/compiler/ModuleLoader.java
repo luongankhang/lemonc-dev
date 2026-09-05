@@ -29,21 +29,58 @@ public final class ModuleLoader {
     }
 
     private void loadImports(Ast.MainClass.MainClassSingle owner, Path ownerPath) throws IOException {
-        Set<String> aliases = new HashSet<>();
+        Map<String, Path> aliases = new HashMap<>();
         for (Ast.ImportDecl importDecl : owner.getImports()) {
-            if (!aliases.add(importDecl.getName())) {
+            loadImport(owner, ownerPath, importDecl, aliases);
+        }
+        for (Ast.Method.T method : new java.util.ArrayList<>(owner.getMethods())) {
+            collectStatementImports(method instanceof Ast.Method.MethodSingle m ? m.getStms() : null, owner, ownerPath, aliases);
+        }
+    }
+
+    private void collectStatementImports(java.util.List<Ast.Stmt.T> statements, Ast.MainClass.MainClassSingle owner,
+                                          Path ownerPath, Map<String, Path> aliases) throws IOException {
+        if (statements == null) return;
+        for (Ast.Stmt.T statement : statements) {
+            if (statement instanceof Ast.Stmt.Import importStmt) {
+                loadImport(owner, ownerPath, importStmt.getDeclaration(), aliases);
+            } else if (statement instanceof Ast.Stmt.Block block) {
+                collectStatementImports(block.getStmts(), owner, ownerPath, aliases);
+            } else if (statement instanceof Ast.Stmt.If branch) {
+                collectStatementImports(java.util.List.of(branch.getThenStmt()), owner, ownerPath, aliases);
+                if (branch.getElseStmt() != null) collectStatementImports(java.util.List.of(branch.getElseStmt()), owner, ownerPath, aliases);
+            } else if (statement instanceof Ast.Stmt.While loop) {
+                collectStatementImports(java.util.List.of(loop.getBody()), owner, ownerPath, aliases);
+            } else if (statement instanceof Ast.Stmt.For loop) {
+                collectStatementImports(java.util.List.of(loop.getBody()), owner, ownerPath, aliases);
+            }
+        }
+    }
+
+    private void loadImport(Ast.MainClass.MainClassSingle owner, Path ownerPath, Ast.ImportDecl importDecl,
+                            Map<String, Path> aliases) throws IOException {
+        Path importedPath = ownerPath.getParent().resolve(importDecl.getPath()).normalize().toAbsolutePath();
+        if (!Files.isRegularFile(importedPath)) {
+            throw moduleError("module not found: " + importDecl.getPath(), importDecl.getSpan());
+        }
+        Path previous = aliases.putIfAbsent(importDecl.getName(), importedPath);
+        if (previous != null) {
+            if (!previous.equals(importedPath)) {
                 throw moduleError("duplicate module import '" + importDecl.getName() + "'", importDecl.getSpan());
             }
-            Path importedPath = ownerPath.getParent().resolve(importDecl.getPath()).normalize().toAbsolutePath();
-            if (!Files.isRegularFile(importedPath)) {
-                throw moduleError("module not found: " + importDecl.getPath(), importDecl.getSpan());
-            }
-            Ast.MainClass.MainClassSingle imported = load(importedPath);
-            for (Ast.Method.T methodNode : imported.getMethods()) {
-                Ast.Method.MethodSingle method = (Ast.Method.MethodSingle) methodNode;
-                if (method.getVisibility() == Ast.Visibility.PUBLIC && !"main".equals(method.getId())) {
-                    method.setId(importDecl.getName() + "_" + method.getId());
-                    owner.getMethods().add(method);
+            return;
+        }
+        Ast.MainClass.MainClassSingle imported = load(importedPath);
+        Set<String> existing = new HashSet<>();
+        for (Ast.Method.T node : owner.getMethods()) existing.add(((Ast.Method.MethodSingle) node).getId());
+        for (Ast.Method.T methodNode : imported.getMethods()) {
+            Ast.Method.MethodSingle method = (Ast.Method.MethodSingle) methodNode;
+            if (method.getVisibility() == Ast.Visibility.PUBLIC && !"main".equals(method.getId())) {
+                String exportedName = importDecl.getName() + "_" + method.getId();
+                if (existing.add(exportedName)) {
+                    Ast.Method.MethodSingle exported = method;
+                    exported.setId(exportedName);
+                    owner.getMethods().add(exported);
                 }
             }
         }

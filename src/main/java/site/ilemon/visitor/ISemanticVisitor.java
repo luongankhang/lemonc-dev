@@ -75,5 +75,6 @@ public interface ISemanticVisitor {
 	void visit(Ast.Stmt.Continue obj);
 	void visit(Ast.Stmt.Call obj);
 	void visit(Ast.Stmt.ArrayAssign obj);
+	void visit(Ast.Stmt.Import obj);
 
 }

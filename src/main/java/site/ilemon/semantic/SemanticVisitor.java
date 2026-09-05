@@ -12,6 +12,7 @@ import site.ilemon.type.TypeRules;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.nio.file.Path;
 
 
 /**
@@ -60,6 +61,7 @@ public class SemanticVisitor implements ISemanticVisitor {
     private Ast.Type.T typeOfMethodDeclared;
 
     private HashSet<String> importedModuleNames = new HashSet<>();
+    private ScopeManager scopeManager = new ScopeManager();
 
     public SemanticVisitor(){
         this(false);
@@ -222,13 +224,28 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Stmt.Block obj) {
+        scopeManager.enterScope();
         for( Ast.Stmt.T stmt : obj.getStmts()){
             this.visit(stmt);
+        }
+        scopeManager.exitScope();
+    }
+
+    @Override
+    public void visit(Ast.Stmt.Import obj) {
+        Ast.ImportDecl declaration = obj.getDeclaration();
+        importedModuleNames.add(declaration.getName());
+        try {
+            scopeManager.declareImport(declaration.getName(), Path.of(declaration.getPath()).toAbsolutePath().normalize());
+        } catch (IllegalArgumentException duplicate) {
+            semanticError(DiagnosticCodes.SEM_DUPLICATE_DECLARATION, duplicate.getMessage(),
+                    obj.getLineNum(), obj.getSpan(), "duplicate import", "use a different module binding name", null);
         }
     }
 
     @Override
     public void visit(Ast.Expr.Call obj) {
+        validateImportBinding(obj.getName(), obj.getLineNum(), obj.getSpan());
         Ast.Type.T returnType = validateMethodCall(obj.getName(), obj.getInputParams(), obj.getLineNum(), obj.getSpan());
         if (returnType.getKind() == TypeKind.VOID) {
             semanticError(DiagnosticCodes.SEM_INVALID_SYMBOL_USAGE, "void method '" + obj.getName()
@@ -424,9 +441,17 @@ public class SemanticVisitor implements ISemanticVisitor {
     @Override
     public void visit(Ast.MainClass.T obj) {
         Ast.MainClass.MainClassSingle mainClassSingle = (Ast.MainClass.MainClassSingle) obj;
+        scopeManager = new ScopeManager();
         importedModuleNames.clear();
         for (Ast.ImportDecl importDecl : mainClassSingle.getImports()) {
             importedModuleNames.add(importDecl.getName());
+            try {
+                scopeManager.declareImport(importDecl.getName(), Path.of(importDecl.getPath()).toAbsolutePath().normalize());
+            } catch (IllegalArgumentException duplicate) {
+                semanticError(DiagnosticCodes.SEM_DUPLICATE_DECLARATION, duplicate.getMessage(),
+                        importDecl.getSpan() == null ? 0 : importDecl.getSpan().getStartLine(), importDecl.getSpan(),
+                        "duplicate import", "use a different module binding name", null);
+            }
         }
         for(int i = 0; i < mainClassSingle.getMethods().size(); i++){
             Ast.Method.MethodSingle method = (Ast.Method.MethodSingle) mainClassSingle.getMethods().get(i);
@@ -464,6 +489,7 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Method.MethodSingle obj) {
+        scopeManager.enterScope();
         MethodVarTable mTable = new MethodVarTable(diagnosticEngine);
         this.currMethodLocalVar = new HashSet<>();
         for( Ast.Declare.T dec : obj.getLocals()){
@@ -490,6 +516,17 @@ public class SemanticVisitor implements ISemanticVisitor {
                 && obj.getRetType().getKind() != TypeKind.VOID
                 && !statementsMustReturn(obj.getStms()) ){
             error(obj.getLineNum(), "non-void method '" + obj.getId() + "' does not return on all paths");
+        }
+        scopeManager.exitScope();
+    }
+
+    private void validateImportBinding(String methodName, int line, site.ilemon.util.SourceSpan span) {
+        int separator = methodName.indexOf('_');
+        if (separator > 0 && scopeManager.resolveImport(methodName.substring(0, separator)) == null
+                && importedModuleNames.contains(methodName.substring(0, separator))) {
+            semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                    "module import '" + methodName.substring(0, separator) + "' is not visible in this scope",
+                    line, span, "import is out of scope", "declare the import in this lexical scope", null);
         }
     }
 
@@ -692,6 +729,7 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Stmt.Call obj) {
+        validateImportBinding(obj.getName(), obj.getLineNum(), obj.getSpan());
         Ast.Type.T returnType = validateMethodCall(obj.getName(), obj.getInputParams(), obj.getLineNum(), obj.getSpan());
         obj.setReturnType(returnType);
         this.currType = returnType;

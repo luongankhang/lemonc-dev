@@ -337,6 +337,20 @@ public class Ast {
                 v.visit(this);
             }
         }
+
+        public static class Import extends T {
+            private final ImportDecl declaration;
+
+            public Import(ImportDecl declaration) {
+                this.declaration = declaration;
+                if (declaration.getSpan() != null) setSpan(declaration.getSpan());
+            }
+
+            public ImportDecl getDeclaration() { return declaration; }
+
+            @Override
+            public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
     }
 
     /**
