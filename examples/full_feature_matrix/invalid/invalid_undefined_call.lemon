@@ -1,0 +1,5 @@
+// Must be rejected: missing() is not declared anywhere.
+void main() {
+    int x;
+    x = missing(1);
+}

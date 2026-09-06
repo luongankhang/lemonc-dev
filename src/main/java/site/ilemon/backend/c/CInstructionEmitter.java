@@ -68,7 +68,16 @@ public final class CInstructionEmitter {
             case DIV -> {
                 if (args.length >= 2) {
                     String rhs = args[1];
-                    yield result + "((" + rhs + ") == 0 ? (lemon_panic_divzero(\"division by zero\"), 0) : (" + args[0] + " / " + rhs + "))" + ";";
+                    IrType divType = instruction.result() != null ? instruction.result().type() : null;
+                    boolean fp = divType != null
+                            && (divType.kind() == IrType.Kind.FLOAT || divType.kind() == IrType.Kind.DOUBLE);
+                    if (fp) {
+                        // IEEE floating point division: 0.0/0.0 is NaN, x/0.0 is
+                        // +/-Infinity; only integer division is a runtime error.
+                        yield result + "(" + args[0] + " / " + rhs + ");";
+                    } else {
+                        yield result + "((" + rhs + ") == 0 ? (lemon_panic_divzero(\"division by zero\"), 0) : (" + args[0] + " / " + rhs + "))" + ";";
+                    }
                 }
                 yield result + (args.length == 0 ? "0" : args[0]) + ";";
             }
@@ -156,159 +165,108 @@ public final class CInstructionEmitter {
         };
     }
 
+    /**
+     * Lowers printf the same way the JVM backend does: literal text segments
+     * are printed as-is and each %d/%f value is printed with the exact output
+     * semantics of that type (ints via %d, longs via %lld, floats/doubles via
+     * the Java-compatible runtime printers). This is what makes stdout of a
+     * C-built program byte-for-byte identical to the JVM-built one.
+     */
     private String emitPrintf(IrInstruction instruction, CTypeEmitter types, String result) {
         List<IrValue> operands = instruction.operands();
         if (operands.isEmpty()) {
             return result + "printf(\"\");";
         }
-        
-        // First operand is the format string - parse and update specifiers to match argument types
+
+        // First operand is the format string (as written in the Lemon source,
+        // still containing C escape sequences such as \n and \t).
         String format = operands.get(0).name();
-        // Remove surrounding quotes if present
         if (format.startsWith("\"") && format.endsWith("\"")) {
             format = format.substring(1, format.length() - 1);
         }
-        
-        // Parse format string and rebuild with correct specifiers for each argument
-        StringBuilder cFormat = new StringBuilder();
-        StringBuilder argsBuilder = new StringBuilder();
-        int argIndex = 1; // Start from 1 (0 is format string)
-        
-        int i = 0;
-        while (i < format.length()) {
+
+        List<String> statements = new java.util.ArrayList<>();
+        StringBuilder literal = new StringBuilder();
+        int valueIndex = 1;
+
+        for (int i = 0; i < format.length(); i++) {
             char c = format.charAt(i);
-            if (c == '%' && i + 1 < format.length()) {
-                char next = format.charAt(i + 1);
-                if (next == '%') {
-                    // Escaped percent sign
-                    cFormat.append("%%");
-                    i += 2;
-                } else {
-                    // Format specifier - consume it and replace with correct one based on argument type
-                    int j = i + 1;
-                    // Skip flags, width, precision
-                    while (j < format.length() && "0-+ #".indexOf(format.charAt(j)) >= 0) j++;
-                    while (j < format.length() && Character.isDigit(format.charAt(j))) j++;
-                    if (j < format.length() && format.charAt(j) == '.') {
-                        j++;
-                        while (j < format.length() && Character.isDigit(format.charAt(j))) j++;
-                    }
-                    // Length modifier (h, hh, l, ll, etc.) - we'll replace
-                    while (j < format.length() && "hlLjtz".indexOf(format.charAt(j)) >= 0) j++;
-                    // Specifier character
-                    char specifier = j < format.length() ? format.charAt(j) : 'd';
-                    String rest = j + 1 < format.length() ? format.substring(j + 1) : "";
-                    
-                    // Get the corresponding argument type
-                    String argName = null;
-                    String castPrefix = "";
-                    if (argIndex < operands.size()) {
-                        IrValue arg = operands.get(argIndex);
-                        argName = arg.name();
-                        IrType argType = arg.type();
-                        if (argType != null) {
-                            switch (argType.kind()) {
-                                case BYTE, SHORT, CHAR, INT, BOOL -> cFormat.append("%d");
-                                case LONG -> {
-                                    cFormat.append("%lld");
-                                    castPrefix = "(long long)";
-                                }
-                                case FLOAT -> cFormat.append("%f");
-                                case DOUBLE -> cFormat.append("%lf");
-                                case STRING -> cFormat.append("%s");
-                                default -> cFormat.append("%d");
-                            }
-                        } else {
-                            cFormat.append("%d");
-                        }
-                        argIndex++;
-                    } else {
-                        // No corresponding argument, keep original specifier
-                        cFormat.append('%').append(specifier);
-                    }
-                    
-                    if (argName != null) {
-                        if (argsBuilder.length() > 0) {
-                            argsBuilder.append(", ");
-                        }
-                        argsBuilder.append(castPrefix).append(argName);
-                    }
-                    
-                    i = j + 1;
-                }
-            } else {
-                cFormat.append(c);
-                i++;
+            if (c != '%') {
+                literal.append(c);
+                continue;
             }
+            flushLiteral(statements, literal);
+            if (i + 1 >= format.length()) {
+                // Trailing '%' cannot be printed portably; mirror JVM behaviour.
+                literal.append('%');
+                break;
+            }
+            char placeholder = format.charAt(++i);
+            if (placeholder == '%') {
+                // Escaped percent sign in the source string: printed as '%'.
+                literal.append('%');
+                continue;
+            }
+            if (valueIndex >= operands.size()) {
+                literal.append('%').append(placeholder);
+                continue;
+            }
+            IrValue value = operands.get(valueIndex);
+            valueIndex++;
+            appendValuePrint(statements, value);
         }
-        
-        // Add remaining arguments that don't have format specifiers
-        while (argIndex < operands.size()) {
-            IrValue arg = operands.get(argIndex);
-            String argName = arg.name();
-            IrType argType = arg.type();
-            String castPrefix = "";
-            String cSpecifier;
-            
-            if (argType != null) {
-                switch (argType.kind()) {
-                    case BYTE, SHORT, CHAR, INT, BOOL -> cSpecifier = "%d";
-                    case LONG -> {
-                        cSpecifier = "%lld";
-                        castPrefix = "(long long)";
-                    }
-                    case FLOAT -> cSpecifier = "%f";
-                    case DOUBLE -> cSpecifier = "%lf";
-                    case STRING -> cSpecifier = "%s";
-                    default -> cSpecifier = "%d";
-                }
-            } else {
-                cSpecifier = "%d";
-            }
-            
-            cFormat.append(" ").append(cSpecifier);
-            if (argsBuilder.length() > 0) {
-                argsBuilder.append(", ");
-            }
-            argsBuilder.append(castPrefix).append(argName);
-            argIndex++;
+        flushLiteral(statements, literal);
+        return String.join("\n    ", statements);
+    }
+
+    private void flushLiteral(List<String> statements, StringBuilder literal) {
+        if (literal.length() == 0) {
+            return;
         }
-        
-        // Escape for C string literal - only escape quotes and backslashes that are NOT part of escape sequences
-        // The format string already has C escape sequences like \n, \t, etc.
-        // We need to escape: " -> \", \ -> \\ (but not when followed by a valid escape char)
+        String text = literal.toString();
+        literal.setLength(0);
+        statements.add("printf(\"" + cLiteral(text) + "\");");
+    }
+
+    private void appendValuePrint(List<String> statements, IrValue value) {
+        String argName = value.name();
+        IrType argType = value.type();
+        if (argType != null) {
+            switch (argType.kind()) {
+                case BYTE, SHORT, CHAR, INT, BOOL -> statements.add("printf(\"%d\", " + argName + ");");
+                case LONG -> statements.add("printf(\"%lld\", (long long)" + argName + ");");
+                case FLOAT -> statements.add("lemon_print_float(" + argName + ");");
+                case DOUBLE -> statements.add("lemon_print_double(" + argName + ");");
+                case STRING -> statements.add("printf(\"%s\", " + argName + ");");
+                default -> statements.add("printf(\"%d\", " + argName + ");");
+            }
+        } else {
+            statements.add("printf(\"%d\", " + argName + ");");
+        }
+    }
+
+    /**
+     * Escapes literal text for a C string literal. The text already carries
+     * C escape sequences (\n, \t, ...) from the Lemon source; those are kept
+     * as-is, while quotes and stray backslashes are escaped.
+     */
+    private String cLiteral(String raw) {
         StringBuilder escaped = new StringBuilder();
-        String formatStr = cFormat.toString();
-        for (int k = 0; k < formatStr.length(); k++) {
-            char ch = formatStr.charAt(k);
+        for (int k = 0; k < raw.length(); k++) {
+            char ch = raw.charAt(k);
             if (ch == '"') {
                 escaped.append("\\\"");
             } else if (ch == '\\') {
-                // Check if this is part of a valid C escape sequence
-                if (k + 1 < formatStr.length()) {
-                    char next = formatStr.charAt(k + 1);
-                    if ("ntrfvab?\"'\\01234567".indexOf(next) >= 0) {
-                        // Valid escape sequence - keep as-is
-                        escaped.append(ch);
-                    } else {
-                        // Not a valid escape - escape the backslash
-                        escaped.append("\\\\");
-                    }
+                if (k + 1 < raw.length() && "ntrfvab?\"'\\01234567".indexOf(raw.charAt(k + 1)) >= 0) {
+                    escaped.append(ch); // valid C escape sequence: keep as-is
                 } else {
-                    // Backslash at end - escape it
                     escaped.append("\\\\");
                 }
             } else {
                 escaped.append(ch);
             }
         }
-        String cFormatStr = escaped.toString();
-        
-        if (argsBuilder.length() > 0) {
-            return result + "printf(\"" + cFormatStr + "\", " + argsBuilder + ");";
-        } else {
-            return result + "printf(\"" + cFormatStr + "\");";
-        }
+        return escaped.toString();
     }
 
     private String binary(IrInstruction.Op op, String[] args) {

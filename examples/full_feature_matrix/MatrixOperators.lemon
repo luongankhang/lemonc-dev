@@ -1,0 +1,68 @@
+// MatrixOperators: + - * / %, unary minus, comparisons, integer division
+// truncation and remainder signs (C and Java agree: truncate toward zero).
+void main() {
+    int a;
+    int b;
+    int r;
+    long l1;
+    long l2;
+    long lr;
+    double d;
+    int big;
+    a = 17;
+    b = 5;
+    printf("sum=%d\n", a + b);
+    printf("diff=%d\n", a - b);
+    printf("prod=%d\n", a * b);
+    printf("quo=%d\n", a / b);
+    printf("rem=%d\n", a % b);
+    r = -a;
+    printf("neg=%d\n", r);
+    r = -7 / 2;
+    printf("trunc1=%d\n", r);
+    r = -7 % 2;
+    printf("rem1=%d\n", r);
+    r = 7 / -2;
+    printf("trunc2=%d\n", r);
+    r = 7 % -2;
+    printf("rem2=%d\n", r);
+    r = -7 % -2;
+    printf("rem3=%d\n", r);
+    // Long arithmetic kept within range (no overflow: overflow of signed
+    // integers is undefined in C, so the matrix never triggers it).
+    l1 = 5000000000;
+    l2 = 3;
+    lr = l1 * l2;
+    printf("longProd=%d\n", lr);
+    l1 = 5000000000;
+    l2 = 3000000000;
+    lr = l1 - l2;
+    printf("longDiff=%d\n", lr);
+    // int addition staying inside the int range.
+    big = 1000000000 + 500000000;
+    printf("intBig=%d\n", big);
+    // Float and double arithmetic.
+    d = 1.5 * 2.0;
+    printf("dmul=%f\n", d);
+    d = 5.0 / 2.0;
+    printf("ddiv=%f\n", d);
+    d = 5.5 - 2.25;
+    printf("dsub=%f\n", d);
+    d = 5.5;
+    d = d - 5.5;
+    printf("dzero=%f\n", d);
+    // Char + char promotes to int.
+    r = 'A' + 'A';
+    printf("charSum=%d\n", r);
+    // Comparisons evaluate to bool used in if.
+    a = 10;
+    b = 20;
+    if (a < b) { printf("lt=1\n"); } else { printf("lt=0\n"); }
+    if (a >= b) { printf("ge=1\n"); } else { printf("ge=0\n"); }
+    if (a != b) { printf("ne=1\n"); } else { printf("ne=0\n"); }
+    if (a == b) { printf("eq=1\n"); } else { printf("eq=0\n"); }
+    // Unary minus on a variable.
+    a = 5;
+    r = -a;
+    printf("negVar=%d\n", r);
+}

@@ -1,0 +1,4 @@
+// Must be rejected: main must not contain return statements.
+void main() {
+    return 1;
+}

@@ -270,7 +270,9 @@ public class GlobalConstTest {
         assertTrue(c, c.contains("static const bool DEBUG = true;"));
         assertTrue(c, c.contains("const double PI = 3.25;"));
 
-        assertEquals("10263.250000", runNative(module));
+        // C backend prints floats/doubles like the JVM (shortest decimal), so
+        // 3.25 prints as "3.25", not C's default %.6f "3.250000".
+        assertEquals("10263.25", runNative(module));
     }
 
     @Test

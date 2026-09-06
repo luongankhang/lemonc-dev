@@ -5,3 +5,4 @@
 #include "src/array.c"
 #include "src/string.c"
 #include "src/runtime.c"
+#include "src/floatfmt.c"

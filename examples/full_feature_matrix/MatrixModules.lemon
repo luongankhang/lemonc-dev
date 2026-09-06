@@ -1,0 +1,26 @@
+// MatrixModules: imports mathlib.lemon; verifies alias-prefixed exports,
+// module-internal helper calls/recursion and pub consts on both backends.
+import mathlib = @import("mathlib.lemon");
+
+void main() {
+    int r;
+    double d;
+    printf("version=%d\n", mathlib.VERSION);
+    r = mathlib.add(20, 22);
+    printf("add=%d\n", r);
+    r = mathlib.mul(6, 7);
+    printf("mul=%d\n", r);
+    r = mathlib.fib(10);
+    printf("fib=%d\n", r);
+    r = mathlib.step(4);
+    printf("step=%d\n", r);
+    r = mathlib.totalUpTo(10);
+    printf("sum=%d\n", r);
+    d = mathlib.scaled(2.0);
+    printf("scaled=%f\n", d);
+    d = mathlib.scaled(0.1);
+    printf("scaled01=%f\n", d);
+    // Nested external calls through the alias.
+    r = mathlib.add(mathlib.mul(3, 4), mathlib.fib(6));
+    printf("nested=%d\n", r);
+}

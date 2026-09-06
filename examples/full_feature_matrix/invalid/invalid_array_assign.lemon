@@ -1,0 +1,6 @@
+// Must be rejected: arrays cannot be assigned as whole values.
+void main() {
+    int a[3];
+    int b[3];
+    a = b;
+}

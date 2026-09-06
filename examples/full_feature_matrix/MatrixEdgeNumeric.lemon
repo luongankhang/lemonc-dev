@@ -1,0 +1,91 @@
+// MatrixEdgeNumeric: numeric edge behavior that must agree between backends:
+// truncating division, remainder signs, long range values, repeated float
+// accumulation, IEEE special values (-0.0, NaN, Infinity) and float equality.
+void main() {
+    int q;
+    int r;
+    long l1;
+    int i;
+    double acc;
+    float facc;
+    double d;
+    float f;
+    int out;
+    q = -7 / 2;
+    r = -7 % 2;
+    printf("q=%d r=%d\n", q, r);
+    q = 7 / -2;
+    r = 7 % -2;
+    printf("q=%d r=%d\n", q, r);
+    l1 = 9223372036854775807;
+    l1 = l1 - 1;
+    printf("longNearMax=%d\n", l1);
+    // Float accumulation of 0.1 ten times.
+    facc = 0.0;
+    for (i = 0; i < 10; i = i + 1) {
+        facc = facc + 0.1;
+    }
+    printf("facc=%f\n", facc);
+    // Double accumulation of 0.1 ten times.
+    acc = 0.0;
+    for (i = 0; i < 10; i = i + 1) {
+        acc = acc + 0.1;
+    }
+    printf("dacc=%f\n", acc);
+    // Double 0.1 + 0.2 is not exactly 0.3.
+    d = 0.1;
+    d = d + 0.2;
+    if (d == 0.3) {
+        out = 1;
+    } else {
+        out = 0;
+    }
+    printf("fpEq=%d\n", out);
+    if (d > 0.3) {
+        out = 1;
+    } else {
+        out = 0;
+    }
+    printf("fpGt=%d\n", out);
+    // NaN compares unequal to everything, including itself.
+    d = 0.0;
+    d = d / d;
+    if (d == d) {
+        out = 1;
+    } else {
+        out = 0;
+    }
+    printf("nanSelfEq=%d\n", out);
+    if (d < 1.0) {
+        out = 1;
+    } else {
+        out = 0;
+    }
+    printf("nanLt=%d\n", out);
+    if (d != d) {
+        out = 1;
+    } else {
+        out = 0;
+    }
+    printf("nanNe=%d\n", out);
+    // Negative zero prints as -0.0.
+    d = 0.0;
+    d = -d;
+    printf("negZero=%f\n", d);
+    // -0.0 == 0.0 is true.
+    if (d == 0.0) {
+        out = 1;
+    } else {
+        out = 0;
+    }
+    printf("negZeroEq=%d\n", out);
+    // Float NaN compare.
+    f = 0.0;
+    f = f / f;
+    if (f != f) {
+        out = 1;
+    } else {
+        out = 0;
+    }
+    printf("fnanNe=%d\n", out);
+}

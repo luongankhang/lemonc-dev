@@ -1,0 +1,44 @@
+// MatrixScalarTypes: byte/short/char/int/long/bool + numeric widening.
+void main() {
+    byte by;
+    short sh;
+    char ch;
+    int iv;
+    long lo;
+    bool bo;
+    double d1;
+    by = 100;
+    printf("byte=%d\n", by);
+    by = -100;
+    printf("byteNeg=%d\n", by);
+    sh = -30000;
+    printf("short=%d\n", sh);
+    ch = 'A';
+    printf("charA=%d\n", ch);
+    iv = 1234567;
+    printf("int=%d\n", iv);
+    lo = 9007199254740993;
+    printf("long=%d\n", lo);
+    // Widening byte -> int -> long -> double preserves the exact value.
+    by = 42;
+    iv = by;
+    lo = iv;
+    d1 = lo;
+    printf("widen=%f\n", d1);
+    // A char participates in integer arithmetic as its code point.
+    iv = 'B' + 1;
+    printf("charArith=%d\n", iv);
+    // Booleans are printed through if/else (printf has no %b).
+    bo = true;
+    if (bo) { printf("boolT=%d\n", 1); } else { printf("boolT=%d\n", 0); }
+    bo = false;
+    if (bo) { printf("boolF=%d\n", 1); } else { printf("boolF=%d\n", 0); }
+    // byte/short are promoted to int before arithmetic.
+    by = 127;
+    sh = 32000;
+    iv = by * sh;
+    printf("promoted=%d\n", iv);
+    // int division truncates before the widening to double.
+    d1 = iv / 1000;
+    printf("truncWiden=%f\n", d1);
+}

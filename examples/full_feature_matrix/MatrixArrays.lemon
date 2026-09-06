@@ -1,0 +1,95 @@
+// MatrixArrays: one- and multi-type arrays, .length, element reads/writes,
+// arrays crossing function boundaries as parameters.
+void fillAndSum(int data[], int n) {
+    int i;
+    int s;
+    s = 0;
+    for (i = 0; i < n; i = i + 1) {
+        s = s + data[i];
+    }
+    printf("fsum=%d\n", s);
+}
+
+int arrayMax(int data[], int n) {
+    int i;
+    int best;
+    best = data[0];
+    for (i = 1; i < n; i = i + 1) {
+        if (data[i] > best) {
+            best = data[i];
+        }
+    }
+    return best;
+}
+
+void main() {
+    int ia[5];
+    byte ba[3];
+    short sa[3];
+    char ca[3];
+    long la[3];
+    float fa[4];
+    double da[4];
+    bool bb[2];
+    int i;
+    int total;
+    int best;
+    for (i = 0; i < 5; i = i + 1) {
+        ia[i] = (i + 1) * 10;
+    }
+    printf("iaLen=%d\n", ia.length);
+    printf("ia0=%d ia4=%d\n", ia[0], ia[4]);
+    fillAndSum(ia, ia.length);
+    best = arrayMax(ia, ia.length);
+    printf("max=%d\n", best);
+    ba[0] = 1;
+    ba[1] = -2;
+    ba[2] = 127;
+    total = ba[0] + ba[1] + ba[2];
+    printf("byteArr=%d\n", total);
+    sa[0] = -1000;
+    sa[1] = 0;
+    sa[2] = 1000;
+    total = sa[0] + sa[1] + sa[2];
+    printf("shortArr=%d\n", total);
+    ca[0] = 'X';
+    ca[1] = 'Y';
+    ca[2] = 'Z';
+    printf("charArr=%d %d %d\n", ca[0], ca[1], ca[2]);
+    printf("charLen=%d\n", ca.length);
+    la[0] = 100000000000;
+    la[1] = 200000000000;
+    la[2] = 300000000000;
+    total = 0;
+    for (i = 0; i < 3; i = i + 1) {
+        total = total + 1;
+    }
+    printf("longArr0=%d\n", la[0]);
+    printf("longSumCnt=%d\n", total);
+    fa[0] = 0.25;
+    fa[1] = 0.5;
+    fa[2] = 0.75;
+    fa[3] = 1.0;
+    for (i = 0; i < 4; i = i + 1) {
+        printf("fa%d=%f\n", i, fa[i]);
+    }
+    da[0] = 1.5;
+    da[1] = 2.5;
+    da[2] = 3.5;
+    da[3] = 4.5;
+    for (i = 0; i < 4; i = i + 1) {
+        printf("da%d=%f\n", i, da[i]);
+    }
+    bb[0] = true;
+    bb[1] = false;
+    if (bb[0]) {
+        printf("boolArr0=1\n");
+    } else {
+        printf("boolArr0=0\n");
+    }
+    if (bb[1]) {
+        printf("boolArr1=1\n");
+    } else {
+        printf("boolArr1=0\n");
+    }
+}

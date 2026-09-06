@@ -8,6 +8,7 @@
 #include "include/lemon_string.h"
 #include "include/lemon_array.h"
 #include "include/lemon_error.h"
+#include "include/lemon_floatfmt.h"
 
 void lemon_dealloc(void *ptr);
 void lemon_bounds_check(const void *array, size_t length, size_t index);

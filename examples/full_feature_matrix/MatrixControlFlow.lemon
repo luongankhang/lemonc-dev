@@ -1,0 +1,79 @@
+// MatrixControlFlow: nested loops, break/continue in while and for, if/else
+// chains, and loop-carried accumulation.
+void main() {
+    int i;
+    int j;
+    int total;
+    int score;
+    total = 0;
+    for (i = 1; i <= 3; i = i + 1) {
+        for (j = 1; j <= 3; j = j + 1) {
+            if (i == 2 && j == 2) {
+                continue;
+            }
+            total = total + 1;
+        }
+    }
+    printf("grid=%d\n", total);
+    total = 0;
+    for (i = 0; i < 10; i = i + 1) {
+        if (i == 2 || i == 4) {
+            continue;
+        }
+        if (i > 6) {
+            break;
+        }
+        total = total + i;
+    }
+    printf("skip=%d\n", total);
+    total = 0;
+    i = 0;
+    while (i < 10) {
+        i = i + 1;
+        if (i == 3) {
+            continue;
+        }
+        if (i == 7) {
+            break;
+        }
+        total = total + 1;
+    }
+    printf("whileTicks=%d\n", total);
+    i = 0;
+    while (i < 6) {
+        i = i + 1;
+        if (i == 2) {
+            continue;
+        }
+        if (i == 5) {
+            break;
+        }
+        printf("w%d;", i);
+    }
+    printf("\n");
+    score = 75;
+    if (score >= 90) {
+        printf("grade=A\n");
+    } else if (score >= 70) {
+        printf("grade=B\n");
+    } else {
+        printf("grade=C\n");
+    }
+    score = 55;
+    if (score >= 90) {
+        printf("grade2=A\n");
+    } else if (score >= 70) {
+        printf("grade2=B\n");
+    } else {
+        printf("grade2=C\n");
+    }
+    total = 0;
+    for (i = 0; i < 3; i = i + 1) {
+        if (i % 2 == 0) {
+            total = total + 1;
+            continue;
+        }
+        total = total + 2;
+    }
+    printf("parity=%d\n", total);
+}

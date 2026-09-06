@@ -1,0 +1,7 @@
+// Must be rejected: double does not narrow to int implicitly.
+void main() {
+    double d;
+    int x;
+    d = 2.5;
+    x = d;
+}

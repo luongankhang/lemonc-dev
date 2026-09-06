@@ -1,0 +1,70 @@
+// MatrixFunctions: recursion, mutual recursion, multiple returns, void
+// helpers, pass-by-value semantics.
+int fib(int n) {
+    if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+int gcd(int a, int b) {
+    if (b == 0) {
+        return a;
+    }
+    return gcd(b, a % b);
+}
+
+int isEven(int n) {
+    if (n == 0) {
+        return 1;
+    }
+    return isOdd(n - 1);
+}
+
+int isOdd(int n) {
+    if (n == 0) {
+        return 0;
+    }
+    return isEven(n - 1);
+}
+
+void shout(int times) {
+    int i;
+    for (i = 0; i < times; i = i + 1) {
+        printf("hi;");
+    }
+}
+
+int tryModify(int x) {
+    x = x + 1000;
+    return x;
+}
+
+int factorial(int n) {
+    int result;
+    int i;
+    result = 1;
+    for (i = 2; i <= n; i = i + 1) {
+        result = result * i;
+    }
+    return result;
+}
+
+void main() {
+    int value;
+    int after;
+    printf("fib10=%d\n", fib(10));
+    printf("fib2=%d\n", fib(2));
+    printf("gcd=%d\n", gcd(48, 36));
+    printf("even10=%d\n", isEven(10));
+    printf("odd10=%d\n", isOdd(10));
+    printf("fact5=%d\n", factorial(5));
+    printf("fact0=%d\n", factorial(0));
+    shout(3);
+    printf("\n");
+    value = 7;
+    after = tryModify(value);
+    printf("call=%d orig=%d\n", after, value);
+    // Nested expression calls.
+    printf("nested=%d\n", fib(fib(5) + 2));
+}

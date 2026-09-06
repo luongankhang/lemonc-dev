@@ -1,0 +1,34 @@
+// MatrixConstants: global const/pub const declarations read from functions
+// and main; constants are compile-time values usable in expressions.
+const int LIMIT = 10;
+pub const int PUBLIC_STEP = 20;
+const double HALF = 0.5;
+const char TAG = 'Q';
+const long BIG = 7000000000;
+const bool ENABLED = true;
+
+int useConsts(int x) {
+    return x * LIMIT + PUBLIC_STEP;
+}
+
+void main() {
+    int r;
+    double d;
+    r = useConsts(3);
+    printf("use=%d\n", r);
+    printf("limit=%d\n", LIMIT);
+    printf("pub=%d\n", PUBLIC_STEP);
+    d = HALF;
+    printf("half=%f\n", d);
+    d = HALF * 6.0;
+    printf("halfMul=%f\n", d);
+    printf("tag=%d\n", TAG);
+    printf("big=%d\n", BIG);
+    if (ENABLED) {
+        printf("enabled=1\n");
+    } else {
+        printf("enabled=0\n");
+    }
+    r = LIMIT + PUBLIC_STEP * 2;
+    printf("expr=%d\n", r);
+}

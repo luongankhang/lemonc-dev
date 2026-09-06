@@ -1,0 +1,45 @@
+// mathlib.lemon: imported by MatrixModules.lemon.
+// Public functions may call each other (recursion + helper calls); those
+// internal calls must be rewritten to the alias-prefixed names on import.
+pub const int VERSION = 3;
+pub const double RATE = 1.5;
+
+int secretBase() {
+    return 99;
+}
+
+pub int add(int a, int b) {
+    return a + b;
+}
+
+pub int mul(int a, int b) {
+    return a * b;
+}
+
+pub int fib(int n) {
+    int r;
+    if (n < 2) {
+        r = n;
+    } else {
+        r = add(fib(n - 1), fib(n - 2));
+    }
+    return r;
+}
+
+pub int step(int x) {
+    return add(mul(x, 10), VERSION);
+}
+
+pub double scaled(double x) {
+    return x * RATE;
+}
+
+pub int totalUpTo(int n) {
+    int i;
+    int t;
+    t = 0;
+    for (i = 1; i <= n; i = i + 1) {
+        t = add(t, i);
+    }
+    return t;
+}

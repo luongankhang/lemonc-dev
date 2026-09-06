@@ -1,0 +1,8 @@
+// Must be rejected: constants are immutable.
+const int FIXED = 5;
+
+void main() {
+    int x;
+    x = FIXED;
+    FIXED = x;
+}

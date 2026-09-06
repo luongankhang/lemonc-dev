@@ -1,0 +1,6 @@
+// Must be rejected: string cannot be assigned to an int.
+void main() {
+    int x;
+    x = 3;
+    x = "hello";
+}

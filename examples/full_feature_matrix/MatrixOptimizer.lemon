@@ -1,0 +1,72 @@
+// MatrixOptimizer: constant folding, boolean folding, algebraic
+// simplification and dead-branch elimination must never change results.
+int guard(int tag) {
+    printf("g%d;", tag);
+    return 0;
+}
+
+void main() {
+    int a;
+    int b;
+    int c;
+    int i;
+    int sum;
+    bool flag;
+    a = (2 + 3) * 4;
+    printf("fold=%d\n", a);
+    b = 10;
+    c = (b * 1) + 0;
+    printf("alg=%d\n", c);
+    c = b * 0 + 7;
+    printf("mul0=%d\n", c);
+    c = b - b + 5;
+    printf("subSelf=%d\n", c);
+    if (true) {
+        printf("thenKeep=1\n");
+    } else {
+        printf("thenKeep=0\n");
+    }
+    if (false) {
+        printf("bad\n");
+    } else {
+        printf("branchFold=1\n");
+    }
+    while (false) {
+        printf("bad\n");
+    }
+    printf("deadLoopOk=1\n");
+    sum = 0;
+    for (i = 0; i < 5; i = i + 1) {
+        sum = sum + i;
+    }
+    printf("loopSum=%d\n", sum);
+    flag = 1 < 2;
+    if (flag) {
+        printf("cmpFold=1\n");
+    } else {
+        printf("cmpFold=0\n");
+    }
+    // Variable arithmetic must not be folded incorrectly.
+    b = 100;
+    c = 50;
+    a = b - c;
+    printf("varArith=%d\n", a);
+    if (b > c && (2 * 2) == 4) {
+        printf("both=1\n");
+    } else {
+        printf("both=0\n");
+    }
+    c = 200;
+    // The RHS of || must not run because b < c is already true.
+    if (b < c || guard(1) == 0) {
+        printf("short=1\n");
+    } else {
+        printf("short=0\n");
+    }
+    // The RHS of && must run because b < c is true.
+    if (b < c && guard(2) == 0) {
+        printf("andShort=1\n");
+    } else {
+        printf("andShort=0\n");
+    }
+}

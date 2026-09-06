@@ -1,0 +1,64 @@
+// MatrixPointers: address-of, dereference reads/writes, pointer parameters,
+// pointer returns, multi-level pointers, null checks and comparisons.
+void swap(int* p, int* q) {
+    int t;
+    t = *p;
+    *p = *q;
+    *q = t;
+}
+
+int bump(int* q) {
+    *q = *q + 5;
+    return *q;
+}
+
+int* pickBigger(int* a, int* b) {
+    if (*a > *b) {
+        return a;
+    }
+    return b;
+}
+
+void main() {
+    int x;
+    int y;
+    int* p;
+    int* q;
+    int* r;
+    int** pp;
+    int val;
+    x = 10;
+    y = 99;
+    printf("before=%d,%d\n", x, y);
+    swap(&x, &y);
+    printf("swapped=%d,%d\n", x, y);
+    p = &x;
+    val = bump(p);
+    printf("bumped=%d,%d\n", val, x);
+    r = pickBigger(&x, &y);
+    printf("bigger=%d\n", *r);
+    pp = &p;
+    **pp = 1234;
+    printf("viaPP=%d\n", x);
+    printf("viaP=%d\n", *p);
+    q = &y;
+    if (p != q) {
+        printf("ptrsDiff=1\n");
+    } else {
+        printf("ptrsDiff=0\n");
+    }
+    q = p;
+    if (p == q) {
+        printf("ptrsSame=1\n");
+    } else {
+        printf("ptrsSame=0\n");
+    }
+    q = null;
+    if (q == null) {
+        printf("isNull=1\n");
+    } else {
+        printf("isNull=0\n");
+    }
+    // Nested call results: pointer returned from a call is dereferenced.
+    printf("pickDeref=%d\n", *pickBigger(p, &y));
+}

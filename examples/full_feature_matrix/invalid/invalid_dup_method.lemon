@@ -1,0 +1,13 @@
+// Must be rejected: duplicate method name.
+int twice(int x) {
+    return x * 2;
+}
+
+int twice(int x) {
+    return x + x;
+}
+
+void main() {
+    int r;
+    r = twice(3);
+}

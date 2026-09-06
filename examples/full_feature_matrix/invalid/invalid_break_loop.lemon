@@ -1,0 +1,6 @@
+// Must be rejected: break is only legal inside a loop.
+void main() {
+    if (true) {
+        break;
+    }
+}

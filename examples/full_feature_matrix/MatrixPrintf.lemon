@@ -1,0 +1,29 @@
+// MatrixPrintf: mixed placeholder printing, tabs/newlines, printLine,
+// long/byte/char int-family args, unicode literal text.
+void main() {
+    byte by;
+    short sh;
+    char ch;
+    int iv;
+    long lo;
+    float f;
+    double d;
+    by = 7;
+    sh = -300;
+    ch = 'Q';
+    iv = 100000;
+    lo = 9876543210;
+    f = 1.5;
+    d = 2.25;
+    printf("i=%d, f=%f, d=%f\n", iv, f, d);
+    printf("b=%d s=%d c=%d l=%d\n", by, sh, ch, lo);
+    printf("mixed=%d|%f|%d|%f\n", iv, d, lo, f);
+    printf("tab\there\n");
+    printf("a");
+    printf("b");
+    printf("\n");
+    printLine();
+    printf("after\n");
+    printf("中文:%d\n", iv);
+    printf("empty=%d\n", iv);
+}

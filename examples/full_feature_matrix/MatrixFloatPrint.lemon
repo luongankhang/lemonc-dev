@@ -1,0 +1,70 @@
+// MatrixFloatPrint: %f printing of float/double values, computed results,
+// positional vs scientific notation, Infinity and NaN.
+void main() {
+    float f;
+    double d;
+    double pi;
+    int i;
+    f = 2.5;
+    printf("f=%f\n", f);
+    d = 2.5;
+    printf("d=%f\n", d);
+    f = 0.1;
+    d = 0.1;
+    printf("f01=%f\n", f);
+    printf("d01=%f\n", d);
+    d = 100.0;
+    printf("dint=%f\n", d);
+    f = 100.0;
+    printf("fint=%f\n", f);
+    d = -0.25;
+    printf("dneg=%f\n", d);
+    d = 0.001;
+    printf("dsmall=%f\n", d);
+    d = 0.0001;
+    printf("dsci=%f\n", d);
+    d = 10000000.0;
+    printf("dsciBig=%f\n", d);
+    d = 9999999.0;
+    printf("dpos=%f\n", d);
+    d = 3.141592653589793;
+    printf("dpi=%f\n", d);
+    pi = 22.0 / 7.0;
+    printf("pi22=%f\n", pi);
+    d = 1.0 / 3.0;
+    printf("third=%f\n", d);
+    f = 1.0;
+    f = f / 3.0;
+    printf("fthird=%f\n", f);
+    d = 0.1;
+    d = d + 0.2;
+    printf("dadd=%f\n", d);
+    // A float widened to double keeps the exact float value, so its decimal
+    // expansion shows the wider representation.
+    f = 10.01;
+    printf("f10=%f\n", f);
+    d = f;
+    printf("fwiden=%f\n", d);
+    d = 123456.789;
+    printf("dmid=%f\n", d);
+    d = 0.5;
+    printf("dhalf=%f\n", d);
+    // Arithmetic-computed boundary values (no exponent literals in Lemon).
+    d = 1.0;
+    for (i = 0; i < 7; i = i + 1) {
+        d = d * 10.0;
+    }
+    printf("d1e7=%f\n", d);
+    d = 0.001;
+    for (i = 0; i < 4; i = i + 1) {
+        d = d / 10.0;
+    }
+    printf("d1e-7=%f\n", d);
+    // IEEE special values produced at runtime.
+    d = 1.0;
+    d = d / 0.0;
+    printf("dinf=%f\n", d);
+    d = 0.0;
+    d = d / d;
+    printf("dnan=%f\n", d);
+}
