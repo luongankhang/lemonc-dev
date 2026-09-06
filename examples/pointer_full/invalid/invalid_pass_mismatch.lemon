@@ -1,0 +1,13 @@
+// Must be rejected: unrelated pointer types do not convert.
+float readFloat(float* p) {
+    return *p;
+}
+
+void main() {
+    int x;
+    int* pi;
+    float f;
+    x = 1;
+    pi = &x;
+    f = readFloat(pi);
+}

@@ -1,0 +1,11 @@
+// Must be rejected: int** and int*** are different pointer types.
+void main() {
+    int x;
+    int* p;
+    int** pp;
+    int*** q;
+    x = 1;
+    p = &x;
+    pp = &p;
+    q = pp;
+}

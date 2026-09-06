@@ -1,0 +1,59 @@
+// pf_null: null is assignable to any pointer level; ==/!= against null work
+// before and after repointing; null never gets dereferenced in this program.
+int isNullPtr(int* p) {
+    if (p == null) {
+        return 1;
+    }
+    return 0;
+}
+
+void main() {
+    int x;
+    int* p;
+    int* q;
+    int** pp;
+    p = null;
+    q = null;
+    if (p == null) {
+        printf("pNull=1\n");
+    } else {
+        printf("pNull=0\n");
+    }
+    if (p == q) {
+        printf("bothNullEq=1\n");
+    } else {
+        printf("bothNullEq=0\n");
+    }
+    pp = null;
+    if (pp == null) {
+        printf("ppNull=1\n");
+    } else {
+        printf("ppNull=0\n");
+    }
+    x = 42;
+    p = &x;
+    if (p != null) {
+        printf("pSet=1\n");
+    } else {
+        printf("pSet=0\n");
+    }
+    if (p == q) {
+        printf("eqAfter=1\n");
+    } else {
+        printf("eqAfter=0\n");
+    }
+    q = p;
+    if (p == q) {
+        printf("aliasEq=1\n");
+    } else {
+        printf("aliasEq=0\n");
+    }
+    printf("viaNullFn=%d\n", isNullPtr(null));
+    printf("viaSetFn=%d\n", isNullPtr(&x));
+    q = null;
+    if (isNullPtr(q) == 1 && p != null) {
+        printf("combo=1\n");
+    } else {
+        printf("combo=0\n");
+    }
+}

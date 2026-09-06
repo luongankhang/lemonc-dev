@@ -1,0 +1,15 @@
+// Must be rejected: '*ptr = ptr2' stores a pointer through a dereference,
+// which LemonC does not support (assign pointer variables directly).
+void set(int** slot, int* p) {
+    *slot = p;
+}
+
+void main() {
+    int x;
+    int* p;
+    int** slot;
+    x = 1;
+    p = &x;
+    slot = null;
+    set(slot, p);
+}

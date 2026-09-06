@@ -1,0 +1,9 @@
+// Must be rejected: address-of requires a local variable, not a computed value.
+void main() {
+    int a;
+    int b;
+    int* p;
+    a = 1;
+    b = 2;
+    p = &(a + b);
+}

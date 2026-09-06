@@ -1,0 +1,17 @@
+// Must be rejected: only ==/!= are defined for pointers.
+void main() {
+    int x;
+    int y;
+    int* p;
+    int* q;
+    int r;
+    x = 1;
+    y = 2;
+    p = &x;
+    q = &y;
+    if (p < q) {
+        r = 1;
+    } else {
+        r = 0;
+    }
+}

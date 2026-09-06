@@ -133,6 +133,43 @@ public class CBackendTest {
         assertTrue(c.contains("lemon_release(arr);"));
     }
 
+    /**
+     * Self-comparisons of scalars/pointers are tautologies that the JVM
+     * backend evaluates at runtime; emitting 'p == p' in C would fail a
+     * -Werror build under -Wtautological-compare, so the C backend folds
+     * them into constants (floats are excluded: NaN makes even a
+     * self-comparison false on both backends).
+     */
+    @Test
+    public void foldsTautologicalSelfComparisons() {
+        IrType intType = IrType.scalar(IrType.Kind.INT);
+        IrType floatType = IrType.scalar(IrType.Kind.FLOAT);
+        IrType boolType = IrType.scalar(IrType.Kind.BOOL);
+        IrValue p = new IrValue("p", IrType.pointer(IrType.scalar(IrType.Kind.INT), 0));
+
+        BasicBlock bb = new BasicBlock("entry")
+                .add(new IrInstruction(IrInstruction.Op.CMP, new IrValue("eq_self", boolType),
+                        List.of(new IrValue("x", intType), new IrValue("x", intType)), "=="))
+                .add(new IrInstruction(IrInstruction.Op.CMP, new IrValue("ne_self", boolType),
+                        List.of(new IrValue("x", intType), new IrValue("x", intType)), "!="))
+                .add(new IrInstruction(IrInstruction.Op.CMP, new IrValue("ptr_self", boolType),
+                        List.of(p, p), "=="))
+                .add(new IrInstruction(IrInstruction.Op.CMP, new IrValue("float_self", boolType),
+                        List.of(new IrValue("f", floatType), new IrValue("f", floatType)), "=="))
+                .add(new IrInstruction(IrInstruction.Op.RETURN, null, List.of(new IrValue("eq_self", boolType)), null));
+
+        IrModule module = new IrModule("self_compare")
+                .addFunction(new IrFunction("test_self_cmp", intType, List.of()).addBlock(bb));
+        String c = new CBackend().generate(module);
+
+        assertTrue("int self == must fold to 1: " + c, c.contains("eq_self = 1;"));
+        assertTrue("int self != must fold to 0: " + c, c.contains("ne_self = 0;"));
+        assertTrue("pointer self == must fold to 1: " + c, c.contains("ptr_self = 1;"));
+        // Float self-comparison keeps NaN semantics and stays unfused.
+        assertTrue("float self == must not be folded: " + c, c.contains("float_self = (f == f);"));
+        assertTrue("no raw self comparison text may remain: " + c, !c.contains("x == x"));
+    }
+
     @Test
     public void lowersBranchAndCondBranch() {
         IrType intType = IrType.scalar(IrType.Kind.INT);

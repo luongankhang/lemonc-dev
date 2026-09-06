@@ -1,0 +1,53 @@
+// pf_params: pointers as parameters and return values; mutations through a
+// parameter alias the caller's storage; pointer params may be returned.
+int readPtr(int* p) {
+    return *p;
+}
+
+void writePtr(int* p, int v) {
+    *p = v;
+}
+
+void swap(int* a, int* b) {
+    int t;
+    t = *a;
+    *a = *b;
+    *b = t;
+}
+
+int* bigger(int* a, int* b) {
+    if (*a > *b) {
+        return a;
+    }
+    return b;
+}
+
+int applyTwice(int* p) {
+    *p = *p + 1;
+    *p = *p + 1;
+    return *p;
+}
+
+void main() {
+    int x;
+    int y;
+    int* p;
+    int* q;
+    int r;
+    x = 10;
+    y = 99;
+    writePtr(&x, 7);
+    printf("x=%d\n", x);
+    r = readPtr(&y);
+    printf("y=%d\n", r);
+    swap(&x, &y);
+    printf("swapped=%d,%d\n", x, y);
+    p = bigger(&x, &y);
+    printf("big=%d\n", *p);
+    q = bigger(p, &x);
+    printf("big2=%d\n", *q);
+    r = applyTwice(&y);
+    printf("twice=%d,%d\n", r, y);
+    swap(&x, &x);
+    printf("selfSwap=%d\n", x);
+}

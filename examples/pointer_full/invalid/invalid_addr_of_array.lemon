@@ -1,0 +1,6 @@
+// Must be rejected: arrays are reference-managed and not addressable.
+void main() {
+    int arr[3];
+    int* p;
+    p = &arr;
+}

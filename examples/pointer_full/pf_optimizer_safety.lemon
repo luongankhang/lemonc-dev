@@ -1,0 +1,56 @@
+// pf_optimizer_safety: constant folding, dead-branch/dead-loop elimination
+// and store handling must never drop or reorder writes performed through
+// pointers, and must not delete pointer side effects in helper functions.
+void bumpCell(int* p) {
+    *p = *p + 1;
+}
+
+void main() {
+    int x;
+    int y;
+    int* p;
+    int* q;
+    int i;
+    x = 0;
+    p = &x;
+    if (true) {
+        *p = 100;
+    } else {
+        *p = 200;
+    }
+    printf("a=%d\n", x);
+    while (false) {
+        *p = 300;
+    }
+    printf("b=%d\n", x);
+    if (false) {
+        *p = 400;
+    } else {
+        *p = 401;
+    }
+    printf("c=%d\n", x);
+    bumpCell(p);
+    printf("d=%d\n", x);
+    y = (2 + 3) * 4;
+    q = &y;
+    *q = *q + 1;
+    printf("e=%d\n", y);
+    x = 0;
+    p = &x;
+    for (i = 0; i < 3; i = i + 1) {
+        *p = *p + 10;
+    }
+    printf("f=%d\n", x);
+    x = 0;
+    p = &x;
+    q = &x;
+    *p = 5;
+    x = x + 1;
+    *q = *q + 2;
+    printf("g=%d\n", x);
+    x = 1;
+    p = &x;
+    x = x * 1 + 0;
+    *p = *p - 0;
+    printf("h=%d\n", x);
+}

@@ -1,0 +1,59 @@
+// pf_compare: == and != on pointers compare storage identity: same cell
+// addresses are equal, distinct locals are not, chains preserve identity.
+void main() {
+    int x;
+    int y;
+    int* p;
+    int* q;
+    int** pp;
+    p = &x;
+    if (p == &x) {
+        printf("sameAddr=1\n");
+    } else {
+        printf("sameAddr=0\n");
+    }
+    if (p != &y) {
+        printf("diffAddr=1\n");
+    } else {
+        printf("diffAddr=0\n");
+    }
+    q = p;
+    if (p == q) {
+        printf("copyEq=1\n");
+    } else {
+        printf("copyEq=0\n");
+    }
+    q = &y;
+    if (p == q) {
+        printf("repointEq=1\n");
+    } else {
+        printf("repointEq=0\n");
+    }
+    pp = &p;
+    if (pp == &p) {
+        printf("ppAddr=1\n");
+    } else {
+        printf("ppAddr=0\n");
+    }
+    if (*pp == p) {
+        printf("derefSame=1\n");
+    } else {
+        printf("derefSame=0\n");
+    }
+    if (p == p) {
+        printf("selfEq=1\n");
+    } else {
+        printf("selfEq=0\n");
+    }
+    if (p != null) {
+        printf("notNull=1\n");
+    } else {
+        printf("notNull=0\n");
+    }
+    p = null;
+    if (null == p) {
+        printf("nullEqLeft=1\n");
+    } else {
+        printf("nullEqLeft=0\n");
+    }
+}

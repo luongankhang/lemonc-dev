@@ -1,0 +1,7 @@
+// Must be rejected: '*' requires a pointer operand.
+void main() {
+    int x;
+    int y;
+    x = 1;
+    y = *x;
+}

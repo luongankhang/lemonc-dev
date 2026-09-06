@@ -1,0 +1,27 @@
+// pf_basic: declare int*; take the address of locals; dereference for both
+// reads and writes; mutations through the pointer must reach the original.
+void main() {
+    int x;
+    int y;
+    int* p;
+    int* q;
+    int r;
+    x = 5;
+    y = 9;
+    p = &x;
+    printf("x0=%d\n", x);
+    r = *p;
+    printf("read=%d\n", r);
+    *p = 100;
+    printf("x1=%d\n", x);
+    printf("star=%d\n", *p);
+    q = &y;
+    r = *q;
+    *q = r + 1;
+    printf("y1=%d\n", y);
+    r = *q + *p;
+    printf("sum=%d\n", r);
+    r = *q;
+    *p = r;
+    printf("copy=%d\n", x);
+}

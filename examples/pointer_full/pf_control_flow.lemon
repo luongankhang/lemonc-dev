@@ -1,0 +1,72 @@
+// pf_control_flow: pointer values steer control flow; loop bodies mutate
+// variables through pointers; a while walk hops between locals by comparing
+// pointer identity, ending at a sentinel.
+void main() {
+    int x;
+    int n1;
+    int n2;
+    int n3;
+    int end;
+    int* cur;
+    int* p;
+    int cnt;
+    int total;
+    int i;
+    x = 0;
+    p = &x;
+    if (p != null) {
+        *p = 1;
+    }
+    printf("afterIf=%d\n", x);
+    for (i = 0; i < 3; i = i + 1) {
+        p = &x;
+        *p = *p + i;
+    }
+    printf("afterFor=%d\n", x);
+    total = 0;
+    i = 0;
+    while (i < 4) {
+        p = &total;
+        *p = *p + (i + 1);
+        i = i + 1;
+    }
+    printf("whileSum=%d\n", total);
+    n1 = 11;
+    n2 = 22;
+    n3 = 33;
+    end = -1;
+    cnt = 0;
+    cur = &n1;
+    while (cur != &end) {
+        cnt = cnt + 1;
+        if (cur == &n1) {
+            cur = &n2;
+        } else if (cur == &n2) {
+            cur = &n3;
+        } else {
+            cur = &end;
+        }
+    }
+    printf("walkCnt=%d\n", cnt);
+    cur = &n1;
+    total = 0;
+    while (cur != &end) {
+        total = total + *cur;
+        if (cur == &n1) {
+            cur = &n2;
+        } else if (cur == &n2) {
+            cur = &n3;
+        } else {
+            cur = &end;
+        }
+    }
+    printf("walkSum=%d\n", total);
+    x = 1;
+    p = &x;
+    i = 0;
+    while (i < 5 && *p < 8) {
+        *p = *p + 3;
+        i = i + 1;
+    }
+    printf("guarded=%d,%d\n", x, i);
+}

@@ -1,0 +1,67 @@
+// pf_chain_calls: the same pointer flows through nested calls and recursion;
+// multi-level pointers cross frames as parameters and are only dereferenced.
+int step(int* p) {
+    *p = *p + 1;
+    return *p;
+}
+
+int multi(int* p, int depth) {
+    if (depth == 0) {
+        return *p;
+    }
+    *p = *p + 1;
+    return multi(p, depth - 1);
+}
+
+int applyTimes(int* p, int times) {
+    int r;
+    int k;
+    r = 0;
+    k = 0;
+    while (k < times) {
+        r = step(p);
+        k = k + 1;
+    }
+    return r;
+}
+
+int readLevel2(int** pp) {
+    return **pp;
+}
+
+int readLevel3(int*** q) {
+    return ***q;
+}
+
+int* identity(int* p) {
+    return p;
+}
+
+void main() {
+    int x;
+    int y;
+    int* p;
+    int** pp;
+    int*** q;
+    int r;
+    x = 0;
+    r = multi(&x, 5);
+    printf("rec=%d,%d\n", r, x);
+    x = 0;
+    r = applyTimes(&x, 4);
+    printf("loopCalls=%d,%d\n", r, x);
+    x = 100;
+    p = &x;
+    pp = &p;
+    q = &pp;
+    r = readLevel3(q);
+    printf("threeFrame=%d\n", r);
+    r = readLevel2(pp);
+    printf("twoFrame=%d\n", r);
+    y = 5;
+    p = identity(&y);
+    *p = 6;
+    printf("identity=%d\n", y);
+    r = step(identity(&y));
+    printf("chained=%d,%d\n", r, y);
+}

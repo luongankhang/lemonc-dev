@@ -1,0 +1,43 @@
+// pf_writes: interleaving direct and pointer writes must preserve program
+// order on both backends; boundary values travel through pointers exactly.
+void main() {
+    int x;
+    int* p;
+    int lo;
+    int hi;
+    int* plo;
+    int* phi;
+    int r;
+    x = 1;
+    p = &x;
+    *p = 5;
+    x = x + 1;
+    *p = *p + 2;
+    printf("order=%d\n", x);
+    x = 100;
+    p = &x;
+    r = *p;
+    *p = 0;
+    printf("clear=%d,%d\n", r, x);
+    lo = -2147483647;
+    plo = &lo;
+    hi = 2147483647;
+    phi = &hi;
+    *plo = *plo + 1;
+    *phi = *phi - 1;
+    printf("bounds=%d,%d\n", lo, hi);
+    x = 10;
+    p = &x;
+    x = x - 5;
+    *p = *p * 3;
+    x = x / 2;
+    printf("mix=%d\n", x);
+    p = &x;
+    *p = 7;
+    *p = 8;
+    printf("seq=%d\n", x);
+    if (x == 8) {
+        *p = 9;
+    }
+    printf("cond=%d\n", x);
+}

@@ -1,0 +1,4 @@
+// Must be rejected: pointers may target value scalars or pointers only.
+void main() {
+    int[]* p;
+}

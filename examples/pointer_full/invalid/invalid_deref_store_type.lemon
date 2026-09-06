@@ -1,0 +1,10 @@
+// Must be rejected: an int* cell cannot hold a double through '*p = d'.
+void main() {
+    int x;
+    double d;
+    int* p;
+    x = 1;
+    d = 2.5;
+    p = &x;
+    *p = d;
+}

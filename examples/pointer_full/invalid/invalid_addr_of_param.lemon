@@ -1,0 +1,11 @@
+// Must be rejected: parameters are value copies without addressable storage.
+int* grab(int x) {
+    return &x;
+}
+
+void main() {
+    int v;
+    int* p;
+    v = 1;
+    p = grab(v);
+}

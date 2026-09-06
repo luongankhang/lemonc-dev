@@ -1,0 +1,27 @@
+// pf_alias: multiple pointers to the same storage; a write through one alias
+// is visible through every other alias and through the original variable.
+void main() {
+    int value;
+    int* a;
+    int* b;
+    int* c;
+    value = 1;
+    a = &value;
+    b = &value;
+    c = a;
+    *a = 41;
+    printf("viaB=%d\n", *b);
+    printf("viaC=%d\n", *c);
+    printf("orig=%d\n", value);
+    *b = 42;
+    printf("viaA=%d\n", *a);
+    value = 43;
+    printf("aliases=%d,%d,%d\n", *a, *b, *c);
+    *c = 44;
+    printf("all=%d,%d,%d,%d\n", *a, *b, *c, value);
+    if (a == b && b == c && a == &value) {
+        printf("sameStorage=1\n");
+    } else {
+        printf("sameStorage=0\n");
+    }
+}

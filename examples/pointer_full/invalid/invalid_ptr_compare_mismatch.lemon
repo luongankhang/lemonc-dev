@@ -1,0 +1,17 @@
+// Must be rejected: int* and float* are unrelated pointer types.
+void main() {
+    int x;
+    float f;
+    int* pi;
+    float* pf;
+    int r;
+    x = 1;
+    f = 1.5;
+    pi = &x;
+    pf = &f;
+    if (pi == pf) {
+        r = 1;
+    } else {
+        r = 0;
+    }
+}

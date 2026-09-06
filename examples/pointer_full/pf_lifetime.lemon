@@ -1,0 +1,46 @@
+// pf_lifetime: pointers to caller locals stay valid across callee frames;
+// repeated & of the same local yields the same storage; a callee may return a
+// pointer that was passed in, and it still aliases the caller's variable.
+int poke(int* p, int v) {
+    *p = v;
+    return v;
+}
+
+int take(int* p) {
+    return *p;
+}
+
+int* pickBigger(int* a, int* b) {
+    if (take(a) > take(b)) {
+        return a;
+    }
+    return b;
+}
+
+void main() {
+    int v;
+    int w;
+    int* pa;
+    int* pb;
+    int r;
+    v = 1;
+    w = 2;
+    pa = &v;
+    pb = &w;
+    r = poke(pa, 30);
+    printf("afterPoke=%d,%d\n", r, v);
+    printf("otherLive=%d\n", take(pb));
+    pb = pickBigger(pa, pb);
+    printf("picked=%d\n", *pb);
+    poke(&v, 55);
+    if (pa == &v) {
+        printf("sameStorage=1\n");
+    } else {
+        printf("sameStorage=0\n");
+    }
+    printf("now=%d,%d\n", take(pa), *pb);
+    pb = &w;
+    r = poke(pb, 100);
+    r = take(pa);
+    printf("bothLive=%d,%d\n", v, w);
+}

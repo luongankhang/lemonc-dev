@@ -1,0 +1,9 @@
+// Must be rejected: LemonC has no pointer arithmetic (ptr + n).
+void main() {
+    int x;
+    int* p;
+    int* q;
+    x = 1;
+    p = &x;
+    q = p + 1;
+}

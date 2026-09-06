@@ -1,0 +1,59 @@
+// pf_types: pointers to every value scalar keep the pointee type exact when
+// read and when written; the original variable always observes the change.
+void main() {
+    byte b;
+    short s;
+    char c;
+    int i;
+    long l;
+    float f;
+    double d;
+    bool flag;
+    byte* pb;
+    short* ps;
+    char* pc;
+    int* pi;
+    long* pl;
+    float* pf;
+    double* pd;
+    bool* pflag;
+    b = 7;
+    pb = &b;
+    *pb = -7;
+    printf("byte=%d\n", b);
+    s = 300;
+    ps = &s;
+    *ps = 30000;
+    printf("short=%d\n", s);
+    c = 'A';
+    pc = &c;
+    *pc = 'Z';
+    printf("char=%d\n", c);
+    i = 1;
+    pi = &i;
+    *pi = 2147483647;
+    printf("int=%d\n", i);
+    l = 1;
+    pl = &l;
+    *pl = 9876543210123;
+    printf("long=%d\n", l);
+    f = 1.0;
+    pf = &f;
+    *pf = 2.5;
+    printf("float=%f\n", f);
+    d = 1.0;
+    pd = &d;
+    *pd = -0.125;
+    printf("double=%f\n", d);
+    flag = false;
+    pflag = &flag;
+    *pflag = true;
+    if (flag) {
+        printf("bool=1\n");
+    } else {
+        printf("bool=0\n");
+    }
+    printf("reads=%d %d %d\n", b, c, *pi);
+    *pi = b + c;
+    printf("mixed=%d\n", i);
+}

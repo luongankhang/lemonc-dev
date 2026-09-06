@@ -106,6 +106,18 @@ public final class CInstructionEmitter {
             }
             case CMP -> {
                 String cmpOp = instruction.target() != null && !instruction.target().isBlank() ? instruction.target() : "==";
+                if (args.length >= 2 && args[0].equals(args[1]) && !cmpIsFloating(instruction)) {
+                    // Self-comparison of a scalar/pointer is a tautology
+                    // (NaN only breaks this for floating types). The JVM
+                    // backend evaluates it; emitting 'x == x' would fail a
+                    // -Werror build under -Wtautological-compare, so emit the
+                    // constant directly: ==/<=/>= always hold, !=/</> never.
+                    String tautology = switch (cmpOp) {
+                        case "==", "<=", ">=" -> "1";
+                        default -> "0";
+                    };
+                    yield result + tautology + ";";
+                }
                 yield result + "(" + (args.length < 2 ? (args.length == 0 ? "0" : args[0]) : args[0] + " " + cmpOp + " " + args[1]) + ");";
             }
             case CONVERT -> {
@@ -267,6 +279,20 @@ public final class CInstructionEmitter {
             }
         }
         return escaped.toString();
+    }
+
+    /** True when a CMP compares floating-point values (NaN makes even a
+     * self-comparison non-tautological). */
+    private boolean cmpIsFloating(IrInstruction instruction) {
+        for (IrValue operand : instruction.operands()) {
+            if (operand.type() != null) {
+                IrType.Kind kind = operand.type().kind();
+                if (kind == IrType.Kind.FLOAT || kind == IrType.Kind.DOUBLE) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private String binary(IrInstruction.Op op, String[] args) {

@@ -1,0 +1,39 @@
+// pf_multi_level: pointer-to-pointer and deeper chains; nested dereference
+// scalar reads/writes; repointing an inner pointer is visible through the
+// outer pointer when the chain is only read or written with scalars.
+void main() {
+    int x;
+    int y;
+    int* p;
+    int* q;
+    int** pp;
+    int*** qqq;
+    int r;
+    x = 7;
+    y = 70;
+    p = &x;
+    pp = &p;
+    qqq = &pp;
+    printf("one=%d\n", *p);
+    printf("two=%d\n", **pp);
+    printf("three=%d\n", ***qqq);
+    **pp = 40;
+    printf("viaP=%d\n", *p);
+    printf("viaX=%d\n", x);
+    ***qqq = 99;
+    printf("deep=%d\n", x);
+    // Repoint the innermost pointer directly; the outer levels observe it.
+    p = &y;
+    printf("repoint=%d\n", **pp);
+    **pp = 75;
+    printf("y2=%d\n", y);
+    printf("inner=%d\n", *p);
+    q = &x;
+    pp = &q;
+    r = **pp;
+    printf("qRead=%d\n", r);
+    **pp = 123;
+    printf("qWrite=%d\n", x);
+    p = &x;
+    printf("final=%d\n", x);
+}
