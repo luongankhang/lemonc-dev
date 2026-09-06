@@ -36,4 +36,95 @@ Thumbs.db
 
 # agent
 nvidiacoder01.md
-build
+
+# OpenAI
+AGENTS.md
+.codex/
+
+# Anthropic
+CLAUDE.md
+.claude/
+
+# Google
+GEMINI.md
+.gemini/
+
+# GitHub
+.github/
+.github/copilot-instructions.md
+
+# Cursor
+.cursorrules
+.cursor/
+
+# Windsurf
+.windsurfrules
+.windsurf/
+
+# Roo Code
+.roo/
+.roo/rules/
+
+# Cline
+.clinerules/
+
+# Kilo Code
+.kilo/
+
+# OpenCode
+opencode.json
+.opencode/
+
+# Aider
+.aider.conf.yml
+.aider/
+
+# Qwen
+.qwen/
+
+# CECLI
+.cecli.conf.yml
+.cecli*
+
+# CodeWhale
+.codewhale
+
+# Goose
+.goosehints
+
+# Amazon Q Developer
+.amazonq/
+
+# Kiro
+.kiro/
+
+# Augment
+.augment/
+
+# Continue
+.continue/
+
+# Zed Agent
+.zed/
+
+# Factory Droid
+.factory/
+DROID.md
+
+# Amp
+.amp/
+
+# Devin
+.devin/
+
+# JetBrains AI
+.aiassistant/
+
+# GitLab Duo
+.gitlab/
+
+# Google Jules
+.jules/
+
+# generic
+AGENTS.md

@@ -71,6 +71,19 @@ public final class ModuleLoader {
             return;
         }
         Ast.MainClass.MainClassSingle imported = load(importedPath);
+
+        // Build a map of original method names to prefixed names for this import.
+        // This is used to rewrite internal calls within the imported module's methods.
+        Map<String, String> callRewriteMap = new HashMap<>();
+        for (Ast.Method.T methodNode : imported.getMethods()) {
+            Ast.Method.MethodSingle method = (Ast.Method.MethodSingle) methodNode;
+            if (method.getVisibility() == Ast.Visibility.PUBLIC && !"main".equals(method.getId())) {
+                String originalName = method.getId();
+                String prefixedName = importDecl.getName() + "_" + originalName;
+                callRewriteMap.put(originalName, prefixedName);
+            }
+        }
+
         Set<String> existing = new HashSet<>();
         for (Ast.Method.T node : owner.getMethods()) existing.add(((Ast.Method.MethodSingle) node).getId());
         for (Ast.Method.T methodNode : imported.getMethods()) {
@@ -80,6 +93,8 @@ public final class ModuleLoader {
                 if (existing.add(exportedName)) {
                     Ast.Method.MethodSingle exported = method;
                     exported.setId(exportedName);
+                    // Rewrite internal calls to use prefixed names (e.g., mul -> math_mul)
+                    new MethodCallRewriter(callRewriteMap).rewrite(exported);
                     // The exported body may reference its declaring module's
                     // constants (including private ones), so keep that table.
                     exported.setModuleConsts(imported.getConstants());

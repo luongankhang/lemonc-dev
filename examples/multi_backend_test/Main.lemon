@@ -1,0 +1,192 @@
+import math = @import("math.lemon");
+
+const int LIMIT = 10;
+
+int square(int n) {
+    return n * n;
+}
+
+int clampToLimit(int value) {
+    int v;
+    v = value;
+    if (v > LIMIT) {
+        v = LIMIT;
+    }
+    return v;
+}
+
+void main() {
+    int a;
+    int b;
+    int sum;
+    int neg;
+    int i;
+    int total;
+    int bothPos;
+    int factVal;
+    int arr[5];
+    int arrLen;
+    int idx;
+
+    int value;
+    int* p1;
+    int* p2;
+
+    int deep;
+    int* dP;
+    int** dPP;
+
+    int* nullPtr;
+
+    int smallPos;
+    char letter;
+    byte smallByte;
+    short smallShort;
+    int j;
+
+    // ----- constants & basic arithmetic -----
+    a = 15;
+    b = 27;
+    sum = a + b;
+    printf("sum=%d\n", sum);
+    neg = -sum;
+    printf("neg=%d\n", neg);
+
+    // ----- helper function call -----
+    sum = square(a);
+    printf("square=%d\n", sum);
+
+    // ----- const + clamp -----
+    sum = clampToLimit(99);
+    printf("clamp=%d\n", sum);
+    sum = clampToLimit(3);
+    printf("clamp2=%d\n", sum);
+
+    // ----- module call (imports + pub) -----
+    sum = math.add(a, b);
+    printf("modAdd=%d\n", sum);
+
+    // ----- short-circuit logic -----
+    bothPos = 0;
+    if (a > 0 && b > 0) {
+        bothPos = 1;
+    } else {
+        bothPos = 0;
+    }
+    printf("bothPos=%d\n", bothPos);
+
+    bothPos = 0;
+    if (a < 0 || b < 0) {
+        bothPos = 1;
+    } else {
+        bothPos = 0;
+    }
+    printf("eitherNeg=%d\n", bothPos);
+
+    // ----- while loop with break and continue -----
+    total = 0;
+    i = 0;
+    while (i < 10) {
+        i = i + 1;
+        if (i == 3) {
+            continue;
+        }
+        if (i == 7) {
+            break;
+        }
+        total = total + i;
+    }
+    // sums 1,2,4,5,6 -> 18
+    printf("loopSum=%d\n", total);
+
+    // ----- for loop with break -----
+    total = 0;
+    for (i = 1; i <= 5; i = i + 1) {
+        if (i == 4) {
+            continue;
+        }
+        total = total + i;
+    }
+    // sums 1,2,3,5 -> 11
+    printf("forSum=%d\n", total);
+
+    // ----- nested loops -----
+    total = 0;
+    for (i = 0; i < 3; i = i + 1) {
+        for (j = 0; j < 3; j = j + 1) {
+            total = total + 1;
+        }
+    }
+    printf("nested=%d\n", total);
+
+    // ----- recursion via module -----
+    factVal = math.fact(5);
+    printf("fact=%d\n", factVal);
+    factVal = math.fact(0);
+    printf("fact0=%d\n", factVal);
+
+    // ----- arrays -----
+    arr[0] = 10;
+    arr[1] = 20;
+    arr[2] = 30;
+    arr[3] = 40;
+    arr[4] = 50;
+    arrLen = arr.length;
+    printf("arrLen=%d\n", arrLen);
+    printf("arr2=%d\n", arr[2]);
+
+    // ----- sumArray from imported module -----
+    total = math.sumArray(arr, arrLen);
+    printf("arrSum=%d\n", total);
+
+    // ----- pointer address-of + dereference -----
+    value = 100;
+    p1 = &value;
+    p2 = &value;
+    *p1 = 200;
+    printf("afterPtr=%d\n", value);
+    printf("throughP2=%d\n", *p2);
+
+    // ----- multi-level pointer -----
+    deep = 7;
+    dP = &deep;
+    dPP = &dP;
+    printf("multiRead=%d\n", **dPP);
+    **dPP = 42;
+    printf("multiWrite=%d\n", deep);
+
+    // ----- pointer null checks (no deref of null at runtime) -----
+    nullPtr = null;
+    if (nullPtr == null) {
+        printf("isNull=%d\n", 1);
+    } else {
+        printf("isNull=%d\n", 0);
+    }
+    nullPtr = &value;
+    if (nullPtr != null) {
+        printf("notNull=%d\n", 1);
+    } else {
+        printf("notNull=%d\n", 0);
+    }
+
+    // ----- narrowing types: print as int (positive values to avoid sign-extension differences) -----
+    smallByte = 7;
+    smallShort = 300;
+    letter = 'A';
+    smallPos = smallByte + smallShort + letter;
+    printf("narrow=%d\n", smallPos);
+
+    // ----- boolean short-circuit via if/else -----
+    if (a > 100 && b > 100) {
+        printf("big=%d\n", 1);
+    } else {
+        printf("big=%d\n", 0);
+    }
+
+    // ----- pointer-as-loop-variable trick: walk array by index -----
+    idx = 0;
+    while (idx < arrLen) {
+        printf("idxVal=%d\n", arr[idx]);
+        idx = idx + 1;
+    }
+}
