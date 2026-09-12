@@ -18,7 +18,8 @@ int32_t main() {
     _t1 = 10;
     _t2 = 20;
     _t3 = math_add(_t1, _t2);
-    printf("%d\n", _t3);
+    printf("%d", _t3);
+    printf("\n");
     return 0;
 }
 

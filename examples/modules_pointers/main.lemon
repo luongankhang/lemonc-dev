@@ -1,0 +1,102 @@
+// main.lemon: Main program demonstrating module imports with pointer features
+// Imports math.lemon and exercises all pointer-based functions
+
+import math = @import("math.lemon");
+
+void main() {
+    int result;
+    int x;
+    int y;
+    int storage;
+    int* ptr;
+    int** pptr;
+    
+    // Initialize all variables
+    result = 0;
+    x = 0;
+    y = 0;
+    storage = 0;
+    ptr = null;
+    pptr = null;
+    
+    printf("=== Basic Module Functions ===\n");
+    printf("add(10, 5)=%d\n", math.add(10, 5));
+    printf("mul(6, 7)=%d\n", math.mul(6, 7));
+    
+    printf("\n=== Pointer Pass-by-Reference ===\n");
+    math.add_ptr(&result, 15, 25);
+    printf("add_ptr(&result, 15, 25) -> result=%d\n", result);
+    
+    math.mul_ptr(&result, 8, 9);
+    printf("mul_ptr(&result, 8, 9) -> result=%d\n", result);
+    
+    printf("\n=== Pointer Swap ===\n");
+    x = 100;
+    y = 200;
+    printf("before swap: x=%d, y=%d\n", x, y);
+    math.swap(&x, &y);
+    printf("after swap: x=%d, y=%d\n", x, y);
+    
+    printf("\n=== Pointer Increment ===\n");
+    x = 42;
+    printf("before increment: x=%d\n", x);
+    math.increment(&x);
+    printf("after increment: x=%d\n", x);
+    
+    printf("\n=== Double Pointer (int**) ===\n");
+    x = 10;
+    ptr = &x;
+    pptr = &ptr;
+    printf("before set_via_double_ptr: x=%d, *ptr=%d, **pptr=%d\n", x, *ptr, **pptr);
+    math.set_via_double_ptr(pptr, 999);
+    printf("after set_via_double_ptr(pptr, 999): x=%d, *ptr=%d, **pptr=%d\n", x, *ptr, **pptr);
+    
+    printf("\n=== Get Value via Double Pointer ===\n");
+    math.get_value(&storage);
+    printf("get_value -> storage=%d\n", storage);
+    
+    printf("\n=== Modify Through Double Pointer ===\n");
+    x = 50;
+    ptr = &x;
+    pptr = &ptr;
+    printf("before modify_through_pp: x=%d\n", x);
+    math.modify_through_pp(pptr, 777);
+    printf("after modify_through_pp(pptr, 777): x=%d\n", x);
+    
+    printf("\n=== Null-Safe Dereference ===\n");
+    ptr = null;
+    result = math.safe_deref(ptr, -1);
+    printf("safe_deref(null, -1)=%d\n", result);
+    x = 123;
+    ptr = &x;
+    result = math.safe_deref(ptr, -1);
+    printf("safe_deref(&x, -1)=%d\n", result);
+    
+    printf("\n=== Pointer Comparison ===\n");
+    x = 10;
+    y = 20;
+    result = math.compare_ptr(&x, &y);
+    printf("compare_ptr(&10, &20)=%d\n", result);
+    result = math.compare_ptr(&y, &x);
+    printf("compare_ptr(&20, &10)=%d\n", result);
+    result = math.compare_ptr(&x, &x);
+    printf("compare_ptr(&10, &10)=%d\n", result);
+    
+    printf("\n=== Pointer Chain Increment ===\n");
+    x = 55;
+    ptr = &x;
+    pptr = &ptr;
+    printf("before increment_via_chain: x=%d\n", x);
+    math.increment_via_chain(pptr);
+    printf("after increment_via_chain: x=%d\n", x);
+    
+    printf("\n=== Null Pointer Test ===\n");
+    ptr = null;
+    result = math.is_null(ptr);
+    printf("is_null(null)=%d\n", result);
+    ptr = &x;
+    result = math.is_null(ptr);
+    printf("is_null(&x)=%d\n", result);
+    
+    printf("\n=== All tests completed ===\n");
+}

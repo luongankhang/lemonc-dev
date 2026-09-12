@@ -1,0 +1,122 @@
+// math.lemon: Module with pointer-based math functions
+// Provides functions that use pointers for pass-by-reference, multi-level pointers, and pointer returns
+
+pub int add(int a, int b) {
+    return a + b;
+}
+
+pub int mul(int a, int b) {
+    return a * b;
+}
+
+// Pointer-based add: result stored through pointer
+pub void add_ptr(int* result, int a, int b) {
+    *result = a + b;
+}
+
+// Pointer-based multiply: result stored through pointer
+pub void mul_ptr(int* result, int a, int b) {
+    *result = a * b;
+}
+
+// Swap two integers through pointers
+pub void swap(int* a, int* b) {
+    int temp;
+    temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+// Increment through pointer
+pub void increment(int* p) {
+    *p = *p + 1;
+}
+
+// Multi-level pointer: set value through double pointer
+pub void set_via_double_ptr(int** pp, int value) {
+    **pp = value;
+}
+
+// Return a value via pointer-to-pointer pattern (using two step: set storage, then return pointer address)
+// Since we can't write pointers through dereference, we use a different approach:
+// The caller provides storage, we set the value, and return success
+pub int get_value(int* storage) {
+    *storage = 42;
+    return 1; // success
+}
+
+// Pointer to pointer parameter: modify what the pointer points to
+pub void modify_through_pp(int** pp, int new_val) {
+    **pp = new_val;
+}
+
+// Null-safe pointer operation
+pub int safe_deref(int* p, int default_val) {
+    if (p == null) {
+        return default_val;
+    }
+    return *p;
+}
+
+// Array sum through pointer
+pub int array_sum(int* arr, int len) {
+    int i;
+    int sum;
+    sum = 0;
+    i = 0;
+    while (i < len) {
+        sum = sum + arr[i];
+        i = i + 1;
+    }
+    return sum;
+}
+
+// Fill array through pointer
+pub void fill_array(int* arr, int len, int value) {
+    int i;
+    i = 0;
+    while (i < len) {
+        arr[i] = value;
+        i = i + 1;
+    }
+}
+
+// Reverse array in place through pointer
+pub void reverse_array(int* arr, int len) {
+    int i;
+    int j;
+    int temp;
+    i = 0;
+    j = len - 1;
+    while (i < j) {
+        temp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = temp;
+        i = i + 1;
+        j = j - 1;
+    }
+}
+
+// Compare two ints through pointers
+pub int compare_ptr(int* a, int* b) {
+    if (*a < *b) {
+        return -1;
+    }
+    if (*a > *b) {
+        return 1;
+    }
+    return 0;
+}
+
+// Pointer chain: increment through double pointer
+pub void increment_via_chain(int** pp) {
+    **pp = **pp + 1;
+}
+
+// Null pointer test
+pub int is_null(int* p) {
+    if (p == null) {
+        return 1;
+    }
+    return 0;
+}

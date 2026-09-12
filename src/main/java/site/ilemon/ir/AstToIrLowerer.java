@@ -1,6 +1,7 @@
 package site.ilemon.ir;
 
 import site.ilemon.ast.Ast;
+import site.ilemon.exception.CompilerException;
 
 import java.util.*;
 
@@ -564,6 +565,19 @@ public final class AstToIrLowerer {
             IrType arrType = ctx.variableTypes.get(arrName);
             IrValue arrVal = new IrValue(arrName, arrType);
             IrValue idxVal = lowerExpr(access.getIndex(), ctx);
+            
+            // Distinguish between array types and pointer types
+            if (arrType != null && arrType.kind() == IrType.Kind.POINTER) {
+                // Pointer dereference: *(ptr + idx)
+                IrType elemType = arrType.elementType() != null ? arrType.elementType() : IrType.scalar(IrType.Kind.INT);
+                IrValue res = ctx.newTemp(elemType);
+                // For pointer + index, we need to compute the address first
+                // But in our current IR, we can use LOAD with 2 operands for pointer+offset
+                ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, res, List.of(arrVal, idxVal), null));
+                return res;
+            }
+            
+            // Regular array access with bounds checking
             ctx.emit(new IrInstruction(IrInstruction.Op.BOUNDS_CHECK, null, List.of(arrVal, idxVal), null));
             IrType elemType = arrType != null && arrType.elementType() != null ? arrType.elementType() : IrType.scalar(IrType.Kind.INT);
             IrValue res = ctx.newTemp(elemType);
@@ -574,6 +588,12 @@ public final class AstToIrLowerer {
             IrType arrType = ctx.variableTypes.get(arrName);
             IrValue arrVal = new IrValue(arrName, arrType);
             IrValue res = ctx.newTemp(IrType.scalar(IrType.Kind.INT));
+            
+            // ArrayLength on pointer types is not supported - pointers don't have length
+            if (arrType != null && arrType.kind() == IrType.Kind.POINTER) {
+                throw new CompilerException("cannot get length of pointer type: " + arrName);
+            }
+            
             ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, res, List.of(arrVal), "length"));
             return res;
         } else if (expr instanceof Ast.Expr.Call call) {

@@ -1745,7 +1745,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
     }
 
-    // Get array element type
+    // Get array element type (also supports pointer dereference)
     private Ast.Type.T getElementType(Ast.Type.T arrayType) {
         if (arrayType instanceof Ast.Type.IntArray) {
             return new Ast.Type.Int();
@@ -1765,6 +1765,9 @@ public class SemanticVisitor implements ISemanticVisitor {
             return new Ast.Type.Bool();
         } else if (arrayType instanceof Ast.Type.StringArray) {
             return new Ast.Type.Str();
+        } else if (arrayType instanceof Ast.Type.Pointer) {
+            // Pointer dereference: return the pointee type
+            return ((Ast.Type.Pointer) arrayType).getPointee();
         }
         return null;
     }
