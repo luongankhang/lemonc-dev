@@ -34,22 +34,26 @@ output.asm
 .DS_Store
 Thumbs.db
 
-# agent
+# ==============================
+# AI Coding Agents
+# ==============================
+
+# NVIDIA / NVIDIA Code
 nvidiacoder01.md
 
-# OpenAI
+# OpenAI / Codex
 AGENTS.md
 .codex/
 
-# Anthropic
+# Anthropic / Claude Code
 CLAUDE.md
 .claude/
 
-# Google
+# Google / Gemini
 GEMINI.md
 .gemini/
 
-# GitHub
+# GitHub Copilot
 .github/
 .github/copilot-instructions.md
 
@@ -79,7 +83,7 @@ opencode.json
 .aider.conf.yml
 .aider/
 
-# Qwen
+# Qwen Code
 .qwen/
 
 # CECLI
@@ -117,7 +121,7 @@ DROID.md
 # Devin
 .devin/
 
-# JetBrains AI
+# JetBrains AI Assistant
 .aiassistant/
 
 # GitLab Duo
@@ -126,5 +130,5 @@ DROID.md
 # Google Jules
 .jules/
 
-# generic
-AGENTS.md
+# dev
+.devmesh

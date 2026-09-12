@@ -1,0 +1,87 @@
+// ExpenseTracker - A simple personal expense tracker
+// Store several expenses with category/name and amount.
+// Calculate total and average expenses.
+// Find the largest expense.
+// Count expenses above a given amount.
+// Print a clear summary.
+
+void main() {
+    // ALL VARIABLE DECLARATIONS AT TOP
+    int amounts[10];
+    int i;
+    int n;
+    int largestIdx;
+    int aboveCount;
+    int j;
+    int k;
+    int threshold;
+    int total;
+    int average;
+    
+    // ASSIGNMENTS
+    n = 10;
+    threshold = 50;
+    
+    amounts[0] = 45;
+    amounts[1] = 89;
+    amounts[2] = 12;
+    amounts[3] = 120;
+    amounts[4] = 35;
+    amounts[5] = 67;
+    amounts[6] = 15;
+    amounts[7] = 32;
+    amounts[8] = 18;
+    amounts[9] = 120;
+    
+    // Print header
+    printf("=== Expense Tracker Summary ===\n");
+    printf("\n");
+    printf("Expenses:\n");
+    
+    // Print each expense
+    i = 0;
+    while (i < n) {
+        printf("  Expense %d: $%d\n", i + 1, amounts[i]);
+        i = i + 1;
+    }
+    
+    // Calculate total
+    total = 0;
+    i = 0;
+    while (i < n) {
+        total = total + amounts[i];
+        i = i + 1;
+    }
+    
+    // Calculate average
+    average = total / n;
+    
+    // Find largest expense
+    largestIdx = 0;
+    j = 1;
+    while (j < n) {
+        if (amounts[j] > amounts[largestIdx]) {
+            largestIdx = j;
+        }
+        j = j + 1;
+    }
+    
+    // Count expenses above threshold
+    aboveCount = 0;
+    k = 0;
+    while (k < n) {
+        if (amounts[k] > threshold) {
+            aboveCount = aboveCount + 1;
+        }
+        k = k + 1;
+    }
+    
+    // Print summary
+    printf("\n");
+    printf("Total expenses: $%d\n", total);
+    printf("Average expense: $%d\n", average);
+    printf("Largest expense: $%d\n", amounts[largestIdx]);
+    printf("Expenses above $%d: %d\n", threshold, aboveCount);
+    printf("\n");
+    printf("=== End of Summary ===\n");
+}

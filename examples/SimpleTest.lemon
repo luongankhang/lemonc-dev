@@ -1,0 +1,13 @@
+void main() {
+    float farr[3];
+    int i;
+    farr[0] = 1.1;
+    farr[1] = 2.2;
+    farr[2] = 3.3;
+    
+    i = 0;
+    while (i < 3) {
+        printf("%f ", farr[i]);
+        i = i + 1;
+    }
+}
