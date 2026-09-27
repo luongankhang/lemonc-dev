@@ -347,9 +347,15 @@ public class Parser {
 			ArrayList<Ast.Declare.T> inputParams = parseInputParams();
 		match(")");
 		match("{");
-		ArrayList<Ast.Declare.T> localParams = parseVarDeclares();
+		ArrayList<Ast.Declare.T> localParams = new ArrayList<>();
+		while (isVarDeclarationWithoutInitializer()) {
+			localParams.add(parseDeclare());
+		}
 		ArrayList<Ast.Stmt.T> stmts = parseStmts();
 		match("}");
+		for (Ast.Declare.T d : collectLocalDeclarations(stmts)) {
+			localParams.add(d);
+		}
 		Ast.Stmt.T stmt = stmts.isEmpty() ? null : stmts.get(stmts.size()-1);
 		Ast.Method.MethodSingle method = new Ast.Method.MethodSingle(t,methodName,inputParams,localParams,stmts,stmt,lineNumber);
 		method.setSpan(tokenSpan(nameToken));
@@ -360,7 +366,36 @@ public class Parser {
 			method.setRetExp(null);
 			return method;
 		}
+	}
 
+	private ArrayList<Ast.Declare.T> collectLocalDeclarations(ArrayList<Ast.Stmt.T> stmts) {
+		ArrayList<Ast.Declare.T> locals = new ArrayList<>();
+		if (stmts == null) return locals;
+		for (Ast.Stmt.T s : stmts) {
+			collectLocalDeclarations(s, locals);
+		}
+		return locals;
+	}
+
+	private void collectLocalDeclarations(Ast.Stmt.T stmt, ArrayList<Ast.Declare.T> locals) {
+		if (stmt == null) return;
+		if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
+			locals.add(varDecl.getDeclaration());
+		} else if (stmt instanceof Ast.Stmt.Block block) {
+			if (block.getStmts() != null) {
+				for (Ast.Stmt.T s : block.getStmts()) {
+					collectLocalDeclarations(s, locals);
+				}
+			}
+		} else if (stmt instanceof Ast.Stmt.If ifStmt) {
+			collectLocalDeclarations(ifStmt.getThenStmt(), locals);
+			collectLocalDeclarations(ifStmt.getElseStmt(), locals);
+		} else if (stmt instanceof Ast.Stmt.While whileStmt) {
+			collectLocalDeclarations(whileStmt.getBody(), locals);
+		} else if (stmt instanceof Ast.Stmt.For forStmt) {
+			collectLocalDeclarations(forStmt.getInit(), locals);
+			collectLocalDeclarations(forStmt.getBody(), locals);
+		}
 	}
 
 	// <varDeclares> -> <varDeclare>*
@@ -371,6 +406,31 @@ public class Parser {
 		}
 		return rs;
 
+	}
+
+	private boolean isVarDeclarationWithoutInitializer() {
+		if (!isTypeToken(look.kind)) {
+			return false;
+		}
+		Token ahead = lexer.lookahead(1);
+		if (ahead == null) {
+			return false;
+		}
+		int offset = 1;
+		if (ahead.kind == TokenKind.Mul) {
+			offset = 2;
+			Token candidate = lexer.lookahead(offset);
+			while (candidate != null && candidate.kind == TokenKind.Mul) {
+				candidate = lexer.lookahead(++offset);
+			}
+			if (candidate == null || candidate.kind != TokenKind.Id) {
+				return false;
+			}
+		} else if (ahead.kind != TokenKind.Id) {
+			return false;
+		}
+		Token afterId = lexer.lookahead(offset + 1);
+		return afterId != null && afterId.kind != TokenKind.Assign;
 	}
 
 	private boolean isVarDeclarationStart() {
@@ -432,6 +492,15 @@ public class Parser {
 				declaration.setSpan(tokenSpan(idToken));
 				return declaration;
 			}
+			// type id = expr;
+			else if( look.kind == TokenKind.Assign) {
+				match("=");
+				Ast.Expr.T initExp = parseExpr();
+				Ast.Declare.DeclareSingle d = new Ast.Declare.DeclareSingle(type, id, initExp, lineNumber);
+				d.setSpan(tokenSpan(idToken));
+				match(";");
+				return d;
+			}
 			// type id;
 			else if( look.kind == TokenKind.Semicolon) {
 				Ast.Declare.DeclareSingle d = new Ast.Declare.DeclareSingle(type,id,lineNumber);
@@ -440,7 +509,7 @@ public class Parser {
 				return d;
 			}
 			else {
-				error(String.format("invalid variable declaration for '%s'; expected ';' or an array declarator", id), ";");
+				error(String.format("invalid variable declaration for '%s'; expected ';', '=', or an array declarator", id), ";");
 				return null;
 			}
 
@@ -600,7 +669,8 @@ public class Parser {
 				|| look.kind == TokenKind.Lbrace || look.kind == TokenKind.Id
 				|| look.kind == TokenKind.Break || look.kind == TokenKind.Continue
 				|| look.kind == TokenKind.Return
-				|| look.kind == TokenKind.Mul);
+				|| look.kind == TokenKind.Mul
+				|| isVarDeclarationStart());
 	}
 
 	private void synchronizeToStatementBoundary() {
@@ -618,6 +688,11 @@ public class Parser {
 		if (isConstStart()) {
 			constScopeViolation = true;
 			error("const declarations are only allowed at global scope");
+		}
+		if (isVarDeclarationStart()) {
+			int lineNumber = look.lineNumber;
+			Ast.Declare.T decl = parseDeclare();
+			return new Ast.Stmt.VarDecl(decl, lineNumber);
 		}
 		if (look.kind == TokenKind.Import) {
 			ArrayList<Ast.ImportDecl> imports = parseImports();
@@ -679,9 +754,16 @@ public class Parser {
 			match(new Token(TokenKind.Lparen));
 			Ast.Stmt.T init = null;
 			if (look.kind != TokenKind.Semicolon) {
-				init = parseSimpleStmtWithoutTerminator();
+				if (isVarDeclarationStart()) {
+					Ast.Declare.T decl = parseDeclare();
+					init = new Ast.Stmt.VarDecl(decl, lineNumber);
+				} else {
+					init = parseSimpleStmtWithoutTerminator();
+					match(new Token(TokenKind.Semicolon));
+				}
+			} else {
+				match(new Token(TokenKind.Semicolon));
 			}
-			match(new Token(TokenKind.Semicolon));
 			Ast.Expr.T condition = look.kind == TokenKind.Semicolon
 					? new Ast.Expr.True(lineNumber)
 					: parseExpr();

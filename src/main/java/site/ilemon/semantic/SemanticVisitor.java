@@ -10,8 +10,12 @@ import site.ilemon.visitor.ISemanticVisitor;
 import site.ilemon.type.TypeRules;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Set;
 import java.nio.file.Path;
 
 
@@ -256,8 +260,15 @@ public class SemanticVisitor implements ISemanticVisitor {
     @Override
     public void visit(Ast.Stmt.Block obj) {
         scopeManager.enterScope();
+        MethodVarTable mTable = this.methodVarTable.get(currMethodName);
+        if (mTable != null) mTable.enterScope();
         for( Ast.Stmt.T stmt : obj.getStmts()){
             this.visit(stmt);
+        }
+        if (mTable != null) {
+            Set<String> leavingVars = mTable.currentScopeNames();
+            this.currMethodLocalVar.removeAll(leavingVars);
+            mTable.exitScope();
         }
         scopeManager.exitScope();
     }
@@ -670,17 +681,28 @@ public class SemanticVisitor implements ISemanticVisitor {
             for (Ast.Declare.T formal : obj.getFormals()) {
                 if (formal instanceof Ast.Declare.DeclareSingle single) {
                     this.currMethodFormals.add(single.getId());
+                    mTable.putFormal(single);
                 }
             }
         }
-        for( Ast.Declare.T dec : obj.getLocals()){
-            Ast.Declare.DeclareSingle declareSingle = (Ast.Declare.DeclareSingle) dec;
-            if (!isArrayType(declareSingle.getType())) {
-                this.currMethodLocalVar.add(declareSingle.getId());
+
+        // Uninitialized declarations parsed at method entry (or legacy AST locals)
+        // are registered in mTable up-front. Declarations that are VarDecl statements
+        // will be registered when the statement is visited.
+        Set<Ast.Declare.T> varDeclNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+        collectVarDeclNodes(obj.getStms(), varDeclNodes);
+        if (obj.getLocals() != null) {
+            for (Ast.Declare.T dec : obj.getLocals()) {
+                if (!varDeclNodes.contains(dec)) {
+                    Ast.Declare.DeclareSingle declareSingle = (Ast.Declare.DeclareSingle) dec;
+                    if (!isArrayType(declareSingle.getType())) {
+                        this.currMethodLocalVar.add(declareSingle.getId());
+                    }
+                    mTable.declare(declareSingle);
+                }
             }
         }
 
-        mTable.put(obj.getFormals(),obj.getLocals());
         this.methodVarTable.put(obj.getId(),mTable);
         this.currMethodName = obj.getId();
         this.typeOfMethodDeclared = obj.getRetType();
@@ -1027,6 +1049,8 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Stmt.For obj) {
+        MethodVarTable mTable = this.methodVarTable.get(currMethodName);
+        if (mTable != null) mTable.enterScope();
         if (obj.getInit() != null) {
             this.visit(obj.getInit());
         }
@@ -1043,6 +1067,11 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         loopDepth--;
         this.currMethodLocalVar = before;
+        if (mTable != null) {
+            Set<String> leavingVars = mTable.currentScopeNames();
+            this.currMethodLocalVar.removeAll(leavingVars);
+            mTable.exitScope();
+        }
     }
 
     @Override
@@ -1782,4 +1811,75 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         return null;
     }
+
+    @Override
+    public void visit(Ast.Stmt.VarDecl obj) {
+        Ast.Declare.T declaration = obj.getDeclaration();
+        if (declaration == null) return;
+        if (!(declaration instanceof Ast.Declare.DeclareSingle declareSingle)) {
+            return;
+        }
+
+        MethodVarTable mTable = this.methodVarTable.get(currMethodName);
+        if (mTable == null) {
+            internalError(obj.getLineNum(), "internal error: variable table for method '" + currMethodName + "' was not found");
+            return;
+        }
+
+        Ast.Type.T declType = declareSingle.getType();
+        validatePointerDeclarations(List.of(declareSingle));
+
+        Ast.Expr.T initExp = declareSingle.getInitExp();
+        if (initExp != null) {
+            this.visit(initExp);
+            Ast.Type.T initType = (initExp instanceof Ast.Expr.Call call)
+                    ? call.getReturnType()
+                    : this.currType;
+
+            if (!isAssignable(declType, initType, initExp)) {
+                if (!rangeErrorIfNeeded(declType, initType, initExp, declareSingle.getLineNum(),
+                        declareSingle.getSpan(), "variable initializer for '" + declareSingle.getId() + "'")
+                        && !shortRangeErrorIfNeeded(declType, initType, initExp, declareSingle.getLineNum(),
+                        declareSingle.getSpan(), "variable initializer for '" + declareSingle.getId() + "'")) {
+                    typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(declType), typeName(initType),
+                            expressionName(initExp), declareSingle.getLineNum(), declareSingle.getSpan(),
+                            "variable initializer for '" + declareSingle.getId() + "'", null);
+                }
+            }
+            if (isPointerType(declType) && exprMayPointToLocal(initExp)) {
+                this.localAddrTaint.add(declareSingle.getId());
+            }
+            mTable.declare(declareSingle);
+        } else {
+            mTable.declare(declareSingle);
+            if (!isArrayType(declType)) {
+                this.currMethodLocalVar.add(declareSingle.getId());
+            }
+        }
+    }
+
+    private void collectVarDeclNodes(List<Ast.Stmt.T> stmts, Set<Ast.Declare.T> decls) {
+        if (stmts == null) return;
+        for (Ast.Stmt.T s : stmts) {
+            collectVarDeclNodes(s, decls);
+        }
+    }
+
+    private void collectVarDeclNodes(Ast.Stmt.T stmt, Set<Ast.Declare.T> decls) {
+        if (stmt == null) return;
+        if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
+            decls.add(varDecl.getDeclaration());
+        } else if (stmt instanceof Ast.Stmt.Block block) {
+            collectVarDeclNodes(block.getStmts(), decls);
+        } else if (stmt instanceof Ast.Stmt.If ifStmt) {
+            collectVarDeclNodes(ifStmt.getThenStmt(), decls);
+            collectVarDeclNodes(ifStmt.getElseStmt(), decls);
+        } else if (stmt instanceof Ast.Stmt.While whileStmt) {
+            collectVarDeclNodes(whileStmt.getBody(), decls);
+        } else if (stmt instanceof Ast.Stmt.For forStmt) {
+            collectVarDeclNodes(forStmt.getInit(), decls);
+            collectVarDeclNodes(forStmt.getBody(), decls);
+        }
+    }
 }
+

@@ -412,6 +412,25 @@ public class Ast {
             @Override
             public void accept(ISemanticVisitor v) { v.visit(this); }
         }
+
+        public static class VarDecl extends T {
+            private Ast.Declare.T declaration;
+            public Ast.Declare.T getDeclaration() { return this.declaration; }
+            public void setDeclaration(Ast.Declare.T declaration) { this.declaration = declaration; }
+
+            public VarDecl(Ast.Declare.T declaration, int lineNum) {
+                this.declaration = declaration;
+                this.setLineNum(lineNum);
+                if (declaration != null && declaration.getSpan() != null) {
+                    this.setSpan(declaration.getSpan());
+                }
+            }
+
+            @Override
+            public void accept(ISemanticVisitor v) {
+                v.visit(this);
+            }
+        }
     }
 
     /**
@@ -437,16 +456,23 @@ public class Ast {
             private String id;
             public String getId() { return this.id; }
             public void setId(String id) { this.id = id; }
+            private Expr.T initExp;
+            public Expr.T getInitExp() { return this.initExp; }
+            public void setInitExp(Expr.T initExp) { this.initExp = initExp; }
 
-            public DeclareSingle(Type.T type, String id,int lineNum) {
+            public DeclareSingle(Type.T type, String id, int lineNum) {
+                this(type, id, null, lineNum);
+            }
+
+            public DeclareSingle(Type.T type, String id, Expr.T initExp, int lineNum) {
                 this.type = type;
                 this.id = id;
+                this.initExp = initExp;
                 this.setLineNum(lineNum);
             }
 
             public DeclareSingle(Type.T type, String id) {
-                this.type = type;
-                this.id = id;
+                this(type, id, null, 0);
             }
 
             @Override

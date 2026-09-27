@@ -149,6 +149,15 @@ public final class AstPrinter {
             line(depth, "Break");
         } else if (stmt instanceof Ast.Stmt.Continue) {
             line(depth, "Continue");
+        } else if (stmt instanceof Ast.Stmt.VarDecl node) {
+            if (node.getDeclaration() instanceof Ast.Declare.DeclareSingle decl) {
+                line(depth, "VarDecl " + type(decl.getType()) + " " + decl.getId());
+                if (decl.getInitExp() != null) {
+                    expr(decl.getInitExp(), depth + 1);
+                }
+            } else {
+                line(depth, "VarDecl " + nodeName(node.getDeclaration()));
+            }
         } else {
             line(depth, nodeName(stmt));
         }

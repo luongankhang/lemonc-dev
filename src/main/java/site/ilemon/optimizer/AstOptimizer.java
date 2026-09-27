@@ -119,6 +119,17 @@ public class AstOptimizer {
             optimized.setReturnType(call.getReturnType());
             return optimized;
         }
+        if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
+            Ast.Declare.T decl = varDecl.getDeclaration();
+            if (decl instanceof Ast.Declare.DeclareSingle single && single.getInitExp() != null) {
+                Ast.Expr.T optInit = optimizeExpr(single.getInitExp());
+                Ast.Declare.DeclareSingle optDecl = new Ast.Declare.DeclareSingle(
+                        single.getType(), single.getId(), optInit, single.getLineNum());
+                optDecl.setSpan(single.getSpan());
+                return new Ast.Stmt.VarDecl(optDecl, varDecl.getLineNum());
+            }
+            return varDecl;
+        }
         return stmt;
     }
 

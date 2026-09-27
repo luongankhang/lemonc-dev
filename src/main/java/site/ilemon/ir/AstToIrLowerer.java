@@ -118,10 +118,12 @@ public final class AstToIrLowerer {
                 irFunc, blocks, entry, variableTypes, managedLocals, isMain, returnType, methodConsts
         );
 
-        // In entry block: allocate arrays and initialize locals
+        // In entry block: allocate arrays and initialize locals that do not have VarDecl statements
+        Set<Ast.Declare.T> varDeclNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+        collectVarDeclNodes(method.getStms(), varDeclNodes);
         if (method.getLocals() != null) {
             for (Ast.Declare.T local : method.getLocals()) {
-                if (local instanceof Ast.Declare.DeclareSingle d) {
+                if (!varDeclNodes.contains(local) && local instanceof Ast.Declare.DeclareSingle d) {
                     IrType t = variableTypes.get(d.getId());
                     if (isManaged(t)) {
                         int size = getArraySize(d.getType());
@@ -208,6 +210,56 @@ public final class AstToIrLowerer {
 
     private void lowerStmt(Ast.Stmt.T stmt, MethodLoweringContext ctx) {
         if (stmt == null || ctx.isTerminated(ctx.currentBlock)) {
+            return;
+        }
+
+        if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
+            Ast.Declare.T declaration = varDecl.getDeclaration();
+            if (declaration instanceof Ast.Declare.DeclareSingle d) {
+                String targetId = d.getId();
+                IrType targetType = ctx.variableTypes.get(targetId);
+                if (targetType == null) {
+                    targetType = toIrType(d.getType());
+                    ctx.variableTypes.put(targetId, targetType);
+                    if (isManaged(targetType)) {
+                        ctx.managedLocals.add(targetId);
+                    }
+                }
+                if (d.getInitExp() != null) {
+                    IrValue rhsVal;
+                    if (targetType.kind() == IrType.Kind.DOUBLE
+                            && d.getInitExp() instanceof Ast.Expr.Number number
+                            && number.getType() instanceof Ast.Type.Float) {
+                        rhsVal = ctx.newTemp(IrType.scalar(IrType.Kind.DOUBLE));
+                        ctx.emit(new IrInstruction(IrInstruction.Op.CONST, rhsVal,
+                                List.of(new IrValue(String.valueOf(number.getValue()),
+                                        IrType.scalar(IrType.Kind.DOUBLE))), null));
+                    } else {
+                        rhsVal = lowerExpr(d.getInitExp(), ctx);
+                    }
+                    if (isManaged(targetType)) {
+                        if (isManaged(rhsVal.type())) {
+                            ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(rhsVal), "lemon_retain"));
+                        }
+                        ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
+                    } else {
+                        if (rhsVal.type().kind() != targetType.kind()) {
+                            IrValue converted = ctx.newTemp(targetType);
+                            ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(rhsVal), null));
+                            rhsVal = converted;
+                        }
+                        ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
+                    }
+                } else {
+                    if (isManaged(targetType)) {
+                        int size = getArraySize(d.getType());
+                        IrValue lenVal = new IrValue(String.valueOf(size), IrType.scalar(IrType.Kind.INT));
+                        ctx.emit(new IrInstruction(IrInstruction.Op.ALLOC, new IrValue(targetId, targetType), List.of(lenVal), null));
+                    } else {
+                        ctx.emit(new IrInstruction(IrInstruction.Op.CONST, new IrValue(targetId, targetType), List.of(new IrValue("0", targetType)), null));
+                    }
+                }
+            }
             return;
         }
 
@@ -903,4 +955,29 @@ public final class AstToIrLowerer {
             return b.instructions().get(b.instructions().size() - 1).isTerminator();
         }
     }
+
+    private void collectVarDeclNodes(List<Ast.Stmt.T> stmts, Set<Ast.Declare.T> decls) {
+        if (stmts == null) return;
+        for (Ast.Stmt.T s : stmts) {
+            collectVarDeclNodes(s, decls);
+        }
+    }
+
+    private void collectVarDeclNodes(Ast.Stmt.T stmt, Set<Ast.Declare.T> decls) {
+        if (stmt == null) return;
+        if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
+            decls.add(varDecl.getDeclaration());
+        } else if (stmt instanceof Ast.Stmt.Block block) {
+            collectVarDeclNodes(block.getStmts(), decls);
+        } else if (stmt instanceof Ast.Stmt.If ifStmt) {
+            collectVarDeclNodes(ifStmt.getThenStmt(), decls);
+            collectVarDeclNodes(ifStmt.getElseStmt(), decls);
+        } else if (stmt instanceof Ast.Stmt.While whileStmt) {
+            collectVarDeclNodes(whileStmt.getBody(), decls);
+        } else if (stmt instanceof Ast.Stmt.For forStmt) {
+            collectVarDeclNodes(forStmt.getInit(), decls);
+            collectVarDeclNodes(forStmt.getBody(), decls);
+        }
+    }
 }
+

@@ -254,4 +254,11 @@ public final class MethodCallRewriter implements ISemanticVisitor {
     public void visit(Ast.MainClass.T obj) { }
     @Override
     public void visit(Ast.Method.MethodSingle obj) { }
+
+    @Override
+    public void visit(Ast.Stmt.VarDecl obj) {
+        if (obj.getDeclaration() instanceof Ast.Declare.DeclareSingle decl && decl.getInitExp() != null) {
+            visit(decl.getInitExp());
+        }
+    }
 }

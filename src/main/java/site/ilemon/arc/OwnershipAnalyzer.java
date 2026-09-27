@@ -130,6 +130,25 @@ public final class OwnershipAnalyzer {
                 MemoryOp retainOp = new MemoryOp(MemoryOp.Kind.RETAIN, targetId, line, span);
                 ctx.recordOp(retainOp);
             }
+        } else if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
+            Ast.Declare.T declaration = varDecl.getDeclaration();
+            if (declaration instanceof Ast.Declare.DeclareSingle d && d.getInitExp() != null) {
+                String targetId = d.getId();
+                boolean targetIsManaged = ctx.func.isManaged(targetId);
+                String sourceId = extractIdentifier(d.getInitExp());
+                boolean sourceIsManaged = sourceId != null && ctx.func.isManaged(sourceId);
+                if (targetIsManaged && sourceIsManaged) {
+                    MemoryOp retainOp = new MemoryOp(MemoryOp.Kind.RETAIN, sourceId, line, span);
+                    MemoryOp releaseOp = new MemoryOp(MemoryOp.Kind.RELEASE, targetId, line, span);
+                    MemoryOp storeOp = new MemoryOp(MemoryOp.Kind.STORE, targetId + " = " + sourceId, line, span);
+                    ctx.recordOp(retainOp);
+                    ctx.recordOp(releaseOp);
+                    ctx.recordOp(storeOp);
+                } else if (targetIsManaged) {
+                    MemoryOp retainOp = new MemoryOp(MemoryOp.Kind.RETAIN, targetId, line, span);
+                    ctx.recordOp(retainOp);
+                }
+            }
         } else if (stmt instanceof Ast.Stmt.ArrayAssign arrayAssign) {
             String arrayName = arrayAssign.getArrayName();
             MemoryOp checkOp = new MemoryOp(MemoryOp.Kind.BOUNDS_CHECK, arrayName, line, span);

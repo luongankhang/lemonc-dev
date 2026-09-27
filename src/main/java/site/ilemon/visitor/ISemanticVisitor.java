@@ -82,5 +82,6 @@ public interface ISemanticVisitor {
 	void visit(Ast.Stmt.ArrayAssign obj);
 	void visit(Ast.Stmt.DerefAssign obj);
 	void visit(Ast.Stmt.Import obj);
+	void visit(Ast.Stmt.VarDecl obj);
 
 }
