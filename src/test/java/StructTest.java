@@ -95,9 +95,9 @@ public class StructTest {
     }
 
     @Test
-    public void rejectsArrayField() {
-        assertTrue(rejected("struct Bad { int xs[3]; }; void main() { }")
-                || rejected("struct Bad { int xs[3]; }; void main() { struct Bad b; }"));
+    public void supportsArrayField() {
+        assertFalse(rejected("struct Bad { int xs[3]; }; void main() { }"));
+        assertFalse(rejected("struct Bad { int xs[3]; }; void main() { struct Bad b; }"));
     }
 
     // ------------------------------------------------------ full pipelines

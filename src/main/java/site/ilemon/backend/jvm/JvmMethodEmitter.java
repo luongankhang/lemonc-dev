@@ -28,7 +28,7 @@ final class JvmMethodEmitter {
 
         mapper.setStructOwner(module.name());
         JvmLocalAllocator allocator = new JvmLocalAllocator(mapper);
-        Map<String, JvmLocalAllocator.Local> locals = allocator.allocate(function);
+        Map<String, JvmLocalAllocator.Local> locals = allocator.allocate(function, module);
         if (isMain) {
             // The JVM entry point receives String[] args in slot 0; shift every
             // local up one slot so reference locals never collide with it.

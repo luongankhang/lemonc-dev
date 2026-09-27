@@ -95,6 +95,14 @@ public final class MethodCallRewriter implements ISemanticVisitor {
         // Rewrite nothing in the chain base; field names are struct-internal.
     }
     @Override
+    public void visit(Ast.Expr.InitializerList obj) {
+        if (obj.getElements() != null) {
+            for (Ast.Expr.T el : obj.getElements()) {
+                el.accept(this);
+            }
+        }
+    }
+    @Override
     public void visit(Ast.Expr obj) { }
     @Override
     public void visit(Ast.Expr.T obj) {

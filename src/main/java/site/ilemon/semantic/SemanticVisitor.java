@@ -432,10 +432,13 @@ public class SemanticVisitor implements ISemanticVisitor {
         Ast.Type.T type = constant.getType();
         if (type == null || isArrayType(type) || type.getKind() == TypeKind.VOID) {
             semanticError(DiagnosticCodes.SEM_CONST_INITIALIZER,
-                    "constant '" + constant.getId() + "' must have a scalar type",
+                    "constant '" + constant.getId() + "' must have a scalar type (or struct type)",
                     constant.getLineNum(), constant.getSpan(), "invalid constant type",
                     "constants cannot be arrays or void", null);
             return;
+        }
+        if (type.getKind() == TypeKind.STRUCT) {
+            validateStructTypeReference(type, constant.getLineNum(), constant.getSpan(), "constant type");
         }
         Ast.Expr.T initializer = constant.getInitializer();
         if (!isLiteralInitializer(initializer)) {
@@ -471,6 +474,14 @@ public class SemanticVisitor implements ISemanticVisitor {
                 || initializer instanceof Ast.Expr.Str) {
             return true;
         }
+        if (initializer instanceof Ast.Expr.InitializerList initList) {
+            for (Ast.Expr.T elem : initList.getElements()) {
+                if (!isLiteralInitializer(elem)) {
+                    return false;
+                }
+            }
+            return true;
+        }
         if (initializer instanceof Ast.Expr.Sub sub
                 && sub.getLeft() instanceof Ast.Expr.Number zero
                 && "0".equals(String.valueOf(zero.getValue()))) {
@@ -492,6 +503,15 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         if (initializer instanceof Ast.Expr.Number number) {
             return String.valueOf(number.getValue());
+        }
+        if (initializer instanceof Ast.Expr.InitializerList initList) {
+            StringBuilder sb = new StringBuilder("{");
+            for (int i = 0; i < initList.getElements().size(); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(resolveLiteralValue(initList.getElements().get(i)));
+            }
+            sb.append("}");
+            return sb.toString();
         }
         if (initializer instanceof Ast.Expr.Sub sub) {
             String right = resolveLiteralValue(sub.getRight());
@@ -646,6 +666,11 @@ public class SemanticVisitor implements ISemanticVisitor {
                 methodNameRetTypeMap.put(method.getId(),method.getRetType());
             }
         }
+        // Struct declarations: register, check duplicates, and validate fields.
+        // Done before constants and method bodies so constants and method signatures can reference structs.
+        for (Ast.StructDecl structDecl : mainClassSingle.getStructs()) {
+            visitStructDecl(structDecl);
+        }
         // Global constants: register, check duplicates, and validate initializers.
         globalConsts.clear();
         validatedConsts.clear();
@@ -672,11 +697,6 @@ public class SemanticVisitor implements ISemanticVisitor {
             }
         }
         validateMainMethod();
-        // Struct declarations: register, check duplicates, and validate fields.
-        // Done before method bodies so method signatures can reference structs.
-        for (Ast.StructDecl structDecl : mainClassSingle.getStructs()) {
-            visitStructDecl(structDecl);
-        }
         for(int i = 0; i < mainClassSingle.getMethods().size(); i++){
             Ast.Method.MethodSingle method = (Ast.Method.MethodSingle) mainClassSingle.getMethods().get(i);
             this.visit(method);
@@ -722,18 +742,18 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
     }
 
-    /** A struct field may be a scalar, bool, another struct, or struct* — never array/string. */
+    /** A struct field may be a scalar, bool, array, string, another struct, or pointer — never void. */
     private void validateStructFieldType(Ast.StructDecl owner, Ast.Declare.DeclareSingle field) {
         Ast.Type.T type = field.getType();
         if (type == null) {
             error(field.getLineNum(), "field '" + field.getId() + "' has no type");
             return;
         }
-        if (isArrayType(type) || type.getKind() == TypeKind.STRING || type.getKind() == TypeKind.VOID) {
+        if (type.getKind() == TypeKind.VOID) {
             semanticError(DiagnosticCodes.SEM_GENERAL,
                     "invalid field type for '" + owner.getName() + "." + field.getId() + "': " + typeName(type),
                     field.getLineNum(), field.getSpan(), "unsupported field type",
-                    "struct fields must be value scalars, bool, other structs, or struct pointers", null);
+                    "struct fields cannot be void", null);
             return;
         }
         if (type.getKind() == TypeKind.STRUCT
@@ -758,7 +778,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
     }
 
-    /** Pointees allowed inside struct pointer fields (no arrays/strings). */
+    /** Pointees allowed inside struct pointer fields. */
     private boolean isLegalStructPointee(Ast.Type.T pointee) {
         if (pointee == null) {
             return false;
@@ -770,8 +790,8 @@ public class SemanticVisitor implements ISemanticVisitor {
             return resolveStruct(((Ast.Type.Struct) pointee).getName()) != null;
         }
         return switch (pointee.getKind()) {
-            case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL -> true;
-            default -> false;
+            case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL, STRING -> true;
+            default -> isArrayType(pointee);
         };
     }
 
@@ -1102,6 +1122,10 @@ public class SemanticVisitor implements ISemanticVisitor {
                 typeError(DiagnosticCodes.TYPE_FORMAT, "float or double", typeName(this.currType), expressionName(expr),
                         expr.getLineNum(), expr.getSpan(), "printf %f argument", null);
             }
+            if (placeholder == 's' && (this.currType == null || this.currType.getKind() != TypeKind.STRING)) {
+                typeError(DiagnosticCodes.TYPE_FORMAT, "string", typeName(this.currType), expressionName(expr),
+                        expr.getLineNum(), expr.getSpan(), "printf %s argument", null);
+            }
         }
     }
 
@@ -1239,6 +1263,21 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Stmt.FieldAssign obj) {
+        Ast.Expr.T root = obj.getTarget().getReceiver();
+        while (root instanceof Ast.Expr.Field f) {
+            root = f.getReceiver();
+        }
+        if (root instanceof Ast.Expr.Id rootId) {
+            MethodVarTable assignTable = this.methodVarTable.get(currMethodName);
+            boolean isLocal = assignTable != null && assignTable.get(rootId.getId()) != null;
+            if (!isLocal && resolveConst(rootId.getId()) != null) {
+                semanticError(DiagnosticCodes.SEM_CONST_IMMUTABLE,
+                        "cannot assign to field of constant '" + rootId.getId() + "': constants are immutable",
+                        obj.getLineNum(), obj.getSpan(), "immutable constant",
+                        "fields of constants cannot be modified", null);
+                return;
+            }
+        }
         // Writing through the chain initializes the base struct the same way a
         // whole-assignment would; clear the may-be-unassigned flag first so
         // the receiver visit does not report a premature use.
@@ -1553,7 +1592,7 @@ public class SemanticVisitor implements ISemanticVisitor {
                 error(lineNum, "format string contains % without a placeholder");
             }
             char placeholder = format.charAt(++i);
-            if (placeholder == 'd' || placeholder == 'f') {
+            if (placeholder == 'd' || placeholder == 'f' || placeholder == 's') {
                 placeholders.add(placeholder);
             } else {
                 error(lineNum, "printf does not support placeholder %" + placeholder);
@@ -1859,7 +1898,35 @@ public class SemanticVisitor implements ISemanticVisitor {
         return false;
     }
 
+    @Override
+    public void visit(Ast.Expr.InitializerList obj) {
+        if (obj == null) return;
+        for (Ast.Expr.T elem : obj.getElements()) {
+            this.visit(elem);
+        }
+        this.currType = obj.getType();
+    }
+
     private boolean isAssignable(Ast.Type.T target, Ast.Type.T actual, Ast.Expr.T expression) {
+        if (expression instanceof Ast.Expr.InitializerList initList && target != null && target.getKind() == TypeKind.STRUCT) {
+            Ast.StructDecl decl = resolveStruct(((Ast.Type.Struct) target).getName());
+            if (decl == null || decl.getFields().size() != initList.getElements().size()) {
+                return false;
+            }
+            for (int i = 0; i < decl.getFields().size(); i++) {
+                if (!(decl.getFields().get(i) instanceof Ast.Declare.DeclareSingle field)) {
+                    return false;
+                }
+                Ast.Expr.T elem = initList.getElements().get(i);
+                this.visit(elem);
+                Ast.Type.T elemType = (elem instanceof Ast.Expr.Call call) ? call.getReturnType() : this.currType;
+                if (!isAssignable(field.getType(), elemType, elem)) {
+                    return false;
+                }
+            }
+            initList.setType(target);
+            return true;
+        }
         if (target != null && target.getKind() == TypeKind.BYTE
                 && actual != null && actual.getKind() == TypeKind.INT) {
             Long value = byteLiteralValue(expression);
@@ -2083,32 +2150,33 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Expr.ArrayAccess obj) {
-        // Check whether the array has been declared
-        MethodVarTable mTable = this.methodVarTable.get(currMethodName);
-        if (mTable == null) {
-            internalError(obj.getLineNum(), "internal error: variable table for method '" + currMethodName + "' was not found");
-        }
-        if (mTable == null) {
-            this.currType = unknownType();
-            return;
-        }
-        Ast.Type.T arrayType = mTable.get(obj.getArrayName());
-        if (arrayType == null) {
-            semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE, "undefined array: " + obj.getArrayName(),
-                    obj.getLineNum(), obj.getSpan(), "unknown array",
-                    "the name is not declared in the current method scope", null);
-        }
-        if (arrayType == null) {
-            this.currType = unknownType();
-            return;
+        Ast.Type.T arrayType;
+        if (obj.getFieldTarget() != null) {
+            this.visit(obj.getFieldTarget());
+            arrayType = this.currType;
+        } else {
+            MethodVarTable mTable = this.methodVarTable.get(currMethodName);
+            if (mTable == null) {
+                internalError(obj.getLineNum(), "internal error: variable table for method '" + currMethodName + "' was not found");
+                this.currType = unknownType();
+                return;
+            }
+            arrayType = mTable.get(obj.getArrayName());
+            if (arrayType == null) {
+                semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE, "undefined array: " + obj.getArrayName(),
+                        obj.getLineNum(), obj.getSpan(), "unknown array",
+                        "the name is not declared in the current method scope", null);
+                this.currType = unknownType();
+                return;
+            }
         }
         Ast.Type.T elementType = getElementType(arrayType);
         if (elementType == null) {
-            error(obj.getLineNum(), String.format("variable '%s' is not an array; actual type is %s",
-                    obj.getArrayName(), typeName(arrayType)));
-        }
-        // Index type must be int
-        if (elementType == null) {
+            String name = obj.getFieldTarget() != null
+                    ? String.join(".", obj.getFieldTarget().getPath())
+                    : obj.getArrayName();
+            error(obj.getLineNum(), String.format("field/variable '%s' is not an array; actual type is %s",
+                    name, typeName(arrayType)));
             this.currType = unknownType();
             return;
         }
@@ -2117,7 +2185,6 @@ public class SemanticVisitor implements ISemanticVisitor {
             typeError(DiagnosticCodes.TYPE_INDEX, "int", typeName(this.currType), expressionName(obj.getIndex()),
                     obj.getIndex().getLineNum(), obj.getIndex().getSpan(), "array index", null);
         }
-        // Set element type
         obj.setElementType(elementType);
         this.currType = obj.getElementType();
     }
@@ -2151,37 +2218,58 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Stmt.ArrayAssign obj) {
-        // Check whether the array has been declared
-        MethodVarTable mTable = this.methodVarTable.get(currMethodName);
-        if (mTable == null) {
-            internalError(obj.getLineNum(), "internal error: variable table for method '" + currMethodName + "' was not found");
-            this.currType = unknownType();
-            return;
+        Ast.Type.T arrayType;
+        if (obj.getFieldTarget() != null) {
+            Ast.Expr.T root = obj.getFieldTarget().getReceiver();
+            while (root instanceof Ast.Expr.Field f) {
+                root = f.getReceiver();
+            }
+            if (root instanceof Ast.Expr.Id rootId) {
+                MethodVarTable assignTable = this.methodVarTable.get(currMethodName);
+                boolean isLocal = assignTable != null && assignTable.get(rootId.getId()) != null;
+                if (!isLocal && resolveConst(rootId.getId()) != null) {
+                    semanticError(DiagnosticCodes.SEM_CONST_IMMUTABLE,
+                            "cannot assign to field of constant '" + rootId.getId() + "': constants are immutable",
+                            obj.getLineNum(), obj.getSpan(), "immutable constant",
+                            "fields of constants cannot be modified", null);
+                    return;
+                }
+                this.currMethodLocalVar.remove(rootId.getId());
+            }
+            this.visit(obj.getFieldTarget());
+            arrayType = this.currType;
+        } else {
+            MethodVarTable mTable = this.methodVarTable.get(currMethodName);
+            if (mTable == null) {
+                internalError(obj.getLineNum(), "internal error: variable table for method '" + currMethodName + "' was not found");
+                this.currType = unknownType();
+                return;
+            }
+            arrayType = mTable.get(obj.getArrayName());
+            if (arrayType == null) {
+                semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE, "undefined array: " + obj.getArrayName(),
+                        obj.getLineNum(), obj.getSpan(), "unknown array",
+                        "the name is not declared in the current method scope", null);
+                this.currType = unknownType();
+                return;
+            }
         }
-        Ast.Type.T arrayType = mTable.get(obj.getArrayName());
-        if (arrayType == null) {
-            semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE, "undefined array: " + obj.getArrayName(),
-                    obj.getLineNum(), obj.getSpan(), "unknown array",
-                    "the name is not declared in the current method scope", null);
-            this.currType = unknownType();
-            return;
-        }
-        // Set element type
         Ast.Type.T elementType = getElementType(arrayType);
         if (elementType == null) {
-            error(obj.getLineNum(), String.format("variable '%s' is not an array; actual type is %s",
-                    obj.getArrayName(), typeName(arrayType)));
+            String name = obj.getFieldTarget() != null
+                    ? String.join(".", obj.getFieldTarget().getPath())
+                    : obj.getArrayName();
+            error(obj.getLineNum(), String.format("field/variable '%s' is not an array; actual type is %s",
+                    name, typeName(arrayType)));
             this.currType = unknownType();
             return;
         }
         obj.setElementType(elementType);
-        // Check index type
         this.visit(obj.getIndex());
         if (this.currType.getKind() != TypeKind.INT) {
             typeError(DiagnosticCodes.TYPE_INDEX, "int", typeName(this.currType), expressionName(obj.getIndex()),
                     obj.getIndex().getLineNum(), obj.getIndex().getSpan(), "array index", null);
         }
-        // Check assignment type
         this.visit(obj.getExpr());
         if (!isAssignable(elementType, this.currType, obj.getExpr())) {
             if (!rangeErrorIfNeeded(elementType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),

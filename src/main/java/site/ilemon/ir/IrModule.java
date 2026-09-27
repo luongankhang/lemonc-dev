@@ -29,10 +29,14 @@ public final class IrModule {
         }
     }
 
-    public record IrStructField(String name, IrType type) {
+    public record IrStructField(String name, IrType type, int arraySize) {
         public IrStructField {
             if (name == null || name.isBlank()) throw new IllegalArgumentException("field name is empty");
             if (type == null) throw new IllegalArgumentException("field type is null");
+        }
+
+        public IrStructField(String name, IrType type) {
+            this(name, type, 0);
         }
     }
 

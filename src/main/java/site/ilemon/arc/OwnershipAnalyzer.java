@@ -6,9 +6,11 @@ import site.ilemon.util.SourceSpan;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import site.ilemon.semantic.ScopeManager;
 
@@ -20,6 +22,7 @@ import site.ilemon.semantic.ScopeManager;
 public final class OwnershipAnalyzer {
 
     private int labelCounter = 0;
+    private final Map<String, Ast.StructDecl> structTable = new HashMap<>();
 
     private record LoopScope(OwnershipBlock breakTarget, OwnershipBlock continueTarget, Set<String> scopeLocals) {}
 
@@ -31,6 +34,20 @@ public final class OwnershipAnalyzer {
         if (!(root.getMainClass() instanceof Ast.MainClass.MainClassSingle main)) {
             throw new IllegalArgumentException("unsupported main class AST");
         }
+        structTable.clear();
+        if (main.getStructs() != null) {
+            for (Ast.StructDecl s : main.getStructs()) {
+                structTable.put(s.getName(), s);
+            }
+        }
+        if (main.getModuleStructs() != null) {
+            for (var entry : main.getModuleStructs().entrySet()) {
+                for (Ast.StructDecl s : entry.getValue()) {
+                    structTable.put(entry.getKey() + "." + s.getName(), s);
+                    structTable.putIfAbsent(s.getName(), s);
+                }
+            }
+        }
         for (Ast.Method.T methodNode : main.getMethods()) {
             analyzeMethod((Ast.Method.MethodSingle) methodNode, main.getImports(), ir);
         }
@@ -38,15 +55,25 @@ public final class OwnershipAnalyzer {
     }
 
     private void analyzeMethod(Ast.Method.MethodSingle method, List<Ast.ImportDecl> imports, OwnershipIr ir) {
-        boolean returnManaged = isManaged(method.getRetType());
+        Map<String, Ast.Type.T> initialVarTypes = new HashMap<>();
+        boolean returnManaged = isManaged(method.getRetType()) || !getManagedPaths(method.getRetType()).isEmpty();
         OwnershipFunction func = new OwnershipFunction(method.getId(), returnManaged);
 
         // Track parameters
         if (method.getFormals() != null) {
             for (Ast.Declare.T formal : method.getFormals()) {
                 if (formal instanceof Ast.Declare.DeclareSingle d) {
-                    boolean managed = isManaged(d.getType());
-                    func.addParameter(d.getId(), managed);
+                    initialVarTypes.put(d.getId(), d.getType());
+                    List<String> paths = getManagedPaths(d.getType());
+                    if (paths.contains("")) {
+                        func.addParameter(d.getId(), true);
+                    } else if (!paths.isEmpty()) {
+                        for (String p : paths) {
+                            func.addParameter(d.getId() + "." + p, true);
+                        }
+                    } else {
+                        func.addParameter(d.getId(), false);
+                    }
                 }
             }
         }
@@ -55,9 +82,14 @@ public final class OwnershipAnalyzer {
         Set<String> methodManagedLocals = new LinkedHashSet<>();
         if (method.getLocals() != null) {
             for (Ast.Declare.T declaration : method.getLocals()) {
-                if (declaration instanceof Ast.Declare.DeclareSingle d && isManaged(d.getType())) {
-                    methodManagedLocals.add(d.getId());
-                    func.addManagedLocal(d.getId(), d.getType() != null ? d.getType().toString() : "@array");
+                if (declaration instanceof Ast.Declare.DeclareSingle d) {
+                    initialVarTypes.put(d.getId(), d.getType());
+                    List<String> paths = getManagedPaths(d.getType());
+                    for (String p : paths) {
+                        String varKey = p.isEmpty() ? d.getId() : d.getId() + "." + p;
+                        methodManagedLocals.add(varKey);
+                        func.addManagedLocal(varKey, "@array");
+                    }
                 }
             }
         }
@@ -68,11 +100,15 @@ public final class OwnershipAnalyzer {
         // Entry block: Allocations for method locals
         if (method.getLocals() != null) {
             for (Ast.Declare.T declaration : method.getLocals()) {
-                if (declaration instanceof Ast.Declare.DeclareSingle d && isManaged(d.getType())) {
-                    MemoryOp allocOp = new MemoryOp(MemoryOp.Kind.ALLOC, d.getId() + ":" + d.getType(),
-                            d.getLineNum(), d.getSpan());
-                    entryBlock.addOp(allocOp);
-                    ir.add(allocOp);
+                if (declaration instanceof Ast.Declare.DeclareSingle d) {
+                    List<String> paths = getManagedPaths(d.getType());
+                    for (String p : paths) {
+                        String varKey = p.isEmpty() ? d.getId() : d.getId() + "." + p;
+                        MemoryOp allocOp = new MemoryOp(MemoryOp.Kind.ALLOC, varKey + ":@array",
+                                d.getLineNum(), d.getSpan());
+                        entryBlock.addOp(allocOp);
+                        ir.add(allocOp);
+                    }
                 }
             }
         }
@@ -84,7 +120,7 @@ public final class OwnershipAnalyzer {
             ir.add(paramRetain);
         }
 
-        MethodContext ctx = new MethodContext(func, ir, methodManagedLocals, imports);
+        MethodContext ctx = new MethodContext(func, ir, methodManagedLocals, imports, initialVarTypes);
         ctx.currentBlock = entryBlock;
 
         // Traverse statements
@@ -112,45 +148,66 @@ public final class OwnershipAnalyzer {
 
         if (stmt instanceof Ast.Stmt.Assign assign) {
             String targetId = assign.getId() != null ? assign.getId().getId() : "";
-            boolean targetIsManaged = ctx.func.isManaged(targetId);
+            Ast.Type.T targetType = ctx.getVarType(targetId);
+            List<String> targetPaths = getManagedPaths(targetType);
 
             String sourceId = extractIdentifier(assign.getExpr());
-            boolean sourceIsManaged = sourceId != null && ctx.func.isManaged(sourceId);
+            Ast.Type.T sourceType = sourceId != null ? ctx.getVarType(sourceId) : null;
+            List<String> sourcePaths = getManagedPaths(sourceType);
 
-            if (targetIsManaged && sourceIsManaged) {
-                // x = y: Retain source first (self-assignment safe), release old target, store
-                MemoryOp retainOp = new MemoryOp(MemoryOp.Kind.RETAIN, sourceId, line, span);
-                MemoryOp releaseOp = new MemoryOp(MemoryOp.Kind.RELEASE, targetId, line, span);
-                MemoryOp storeOp = new MemoryOp(MemoryOp.Kind.STORE, targetId + " = " + sourceId, line, span);
-                ctx.recordOp(retainOp);
-                ctx.recordOp(releaseOp);
-                ctx.recordOp(storeOp);
-            } else if (targetIsManaged) {
-                // x = expr: Overwriting managed variable with non-variable expression
-                MemoryOp retainOp = new MemoryOp(MemoryOp.Kind.RETAIN, targetId, line, span);
-                ctx.recordOp(retainOp);
+            if (!targetPaths.isEmpty()) {
+                for (int i = 0; i < targetPaths.size(); i++) {
+                    String tPath = targetPaths.get(i);
+                    String tKey = tPath.isEmpty() ? targetId : targetId + "." + tPath;
+                    String sKey = (sourceId != null && i < sourcePaths.size())
+                            ? (sourcePaths.get(i).isEmpty() ? sourceId : sourceId + "." + sourcePaths.get(i))
+                            : null;
+                    if (sKey != null && ctx.func.isManaged(sKey)) {
+                        MemoryOp retainOp = new MemoryOp(MemoryOp.Kind.RETAIN, sKey, line, span);
+                        MemoryOp releaseOp = new MemoryOp(MemoryOp.Kind.RELEASE, tKey, line, span);
+                        MemoryOp storeOp = new MemoryOp(MemoryOp.Kind.STORE, tKey + " = " + sKey, line, span);
+                        ctx.recordOp(retainOp);
+                        ctx.recordOp(releaseOp);
+                        ctx.recordOp(storeOp);
+                    }
+                }
             }
         } else if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
             Ast.Declare.T declaration = varDecl.getDeclaration();
-            if (declaration instanceof Ast.Declare.DeclareSingle d && d.getInitExp() != null) {
-                String targetId = d.getId();
-                boolean targetIsManaged = ctx.func.isManaged(targetId);
-                String sourceId = extractIdentifier(d.getInitExp());
-                boolean sourceIsManaged = sourceId != null && ctx.func.isManaged(sourceId);
-                if (targetIsManaged && sourceIsManaged) {
-                    MemoryOp retainOp = new MemoryOp(MemoryOp.Kind.RETAIN, sourceId, line, span);
-                    MemoryOp releaseOp = new MemoryOp(MemoryOp.Kind.RELEASE, targetId, line, span);
-                    MemoryOp storeOp = new MemoryOp(MemoryOp.Kind.STORE, targetId + " = " + sourceId, line, span);
-                    ctx.recordOp(retainOp);
-                    ctx.recordOp(releaseOp);
-                    ctx.recordOp(storeOp);
-                } else if (targetIsManaged) {
-                    MemoryOp retainOp = new MemoryOp(MemoryOp.Kind.RETAIN, targetId, line, span);
-                    ctx.recordOp(retainOp);
+            if (declaration instanceof Ast.Declare.DeclareSingle d) {
+                ctx.declareVar(d.getId(), d.getType());
+                if (d.getInitExp() != null) {
+                    String targetId = d.getId();
+                    Ast.Type.T targetType = d.getType();
+                    List<String> targetPaths = getManagedPaths(targetType);
+
+                    String sourceId = extractIdentifier(d.getInitExp());
+                    Ast.Type.T sourceType = sourceId != null ? ctx.getVarType(sourceId) : null;
+                    List<String> sourcePaths = getManagedPaths(sourceType);
+
+                    if (!targetPaths.isEmpty()) {
+                        for (int i = 0; i < targetPaths.size(); i++) {
+                            String tPath = targetPaths.get(i);
+                            String tKey = tPath.isEmpty() ? targetId : targetId + "." + tPath;
+                            String sKey = (sourceId != null && i < sourcePaths.size())
+                                    ? (sourcePaths.get(i).isEmpty() ? sourceId : sourceId + "." + sourcePaths.get(i))
+                                    : null;
+                            if (sKey != null && ctx.func.isManaged(sKey)) {
+                                MemoryOp retainOp = new MemoryOp(MemoryOp.Kind.RETAIN, sKey, line, span);
+                                MemoryOp releaseOp = new MemoryOp(MemoryOp.Kind.RELEASE, tKey, line, span);
+                                MemoryOp storeOp = new MemoryOp(MemoryOp.Kind.STORE, tKey + " = " + sKey, line, span);
+                                ctx.recordOp(retainOp);
+                                ctx.recordOp(releaseOp);
+                                ctx.recordOp(storeOp);
+                            }
+                        }
+                    }
                 }
             }
         } else if (stmt instanceof Ast.Stmt.ArrayAssign arrayAssign) {
-            String arrayName = arrayAssign.getArrayName();
+            String arrayName = arrayAssign.getFieldTarget() != null
+                    ? (extractIdentifier(arrayAssign.getFieldTarget().getReceiver()) + "." + String.join(".", arrayAssign.getFieldTarget().getPath()))
+                    : arrayAssign.getArrayName();
             MemoryOp checkOp = new MemoryOp(MemoryOp.Kind.BOUNDS_CHECK, arrayName, line, span);
             ctx.recordOp(checkOp);
 
@@ -327,17 +384,31 @@ public final class OwnershipAnalyzer {
             ctx.currentBlock = unreachable;
         } else if (stmt instanceof Ast.Stmt.Return ret) {
             String retVal = ret.getExpr() != null ? extractIdentifier(ret.getExpr()) : null;
-            if (retVal != null && ctx.func.isManaged(retVal)) {
-                MemoryOp transferOp = new MemoryOp(MemoryOp.Kind.TRANSFER, retVal, line, span);
-                ctx.recordOp(transferOp);
+            Ast.Type.T retType = retVal != null ? ctx.getVarType(retVal) : null;
+            List<String> retPaths = getManagedPaths(retType);
+            Set<String> transferred = new HashSet<>();
+            if (retVal != null) {
+                for (String p : retPaths) {
+                    String key = p.isEmpty() ? retVal : retVal + "." + p;
+                    if (ctx.func.isManaged(key)) {
+                        MemoryOp transferOp = new MemoryOp(MemoryOp.Kind.TRANSFER, key, line, span);
+                        ctx.recordOp(transferOp);
+                        transferred.add(key);
+                    }
+                }
+                if (retPaths.isEmpty() && ctx.func.isManaged(retVal)) {
+                    MemoryOp transferOp = new MemoryOp(MemoryOp.Kind.TRANSFER, retVal, line, span);
+                    ctx.recordOp(transferOp);
+                    transferred.add(retVal);
+                }
             }
             MemoryOp returnOp = new MemoryOp(MemoryOp.Kind.RETURN, retVal != null ? retVal : "value", line, span);
             ctx.recordOp(returnOp);
 
             // Early return releases all local references before leaving
             for (String local : ctx.activeManagedLocals) {
-                // If this is the returned variable, ownership was transferred; others are released
-                if (!local.equals(retVal)) {
+                // If this is the returned variable or its field, ownership was transferred; others are released
+                if (!transferred.contains(local)) {
                     MemoryOp releaseOp = new MemoryOp(MemoryOp.Kind.RELEASE, local, line, span);
                     ctx.recordOp(releaseOp);
                 }
@@ -369,9 +440,63 @@ public final class OwnershipAnalyzer {
         return type != null && type.getKind() != null && type.getKind().name().endsWith("_ARRAY");
     }
 
+    private List<String> getManagedPaths(Ast.Type.T type) {
+        if (type == null) return List.of();
+        if (isManaged(type)) {
+            return List.of("");
+        }
+        if (type instanceof Ast.Type.Struct st) {
+            return getStructManagedPaths(st.getSimpleName(), new HashSet<>());
+        }
+        return List.of();
+    }
+
+    private List<String> getStructManagedPaths(String structName, Set<String> visited) {
+        if (!visited.add(structName)) return List.of();
+        Ast.StructDecl decl = structTable.get(structName);
+        if (decl == null || decl.getFields() == null) return List.of();
+        List<String> result = new ArrayList<>();
+        for (Ast.Declare.T field : decl.getFields()) {
+            if (field instanceof Ast.Declare.DeclareSingle d) {
+                if (isManaged(d.getType())) {
+                    result.add(d.getId());
+                } else if (d.getType() instanceof Ast.Type.Struct nested) {
+                    for (String sub : getStructManagedPaths(nested.getSimpleName(), visited)) {
+                        result.add(d.getId() + "." + sub);
+                    }
+                }
+            }
+        }
+        visited.remove(structName);
+        return result;
+    }
+
+    private Ast.Type.T resolveFieldType(Ast.Type.T type, String path) {
+        if (type == null || path == null || path.isEmpty()) return type;
+        if (type instanceof Ast.Type.Struct st) {
+            Ast.StructDecl decl = structTable.get(st.getSimpleName());
+            if (decl == null || decl.getFields() == null) return null;
+            int dot = path.indexOf('.');
+            String head = dot > 0 ? path.substring(0, dot) : path;
+            String tail = dot > 0 ? path.substring(dot + 1) : null;
+            for (Ast.Declare.T field : decl.getFields()) {
+                if (field instanceof Ast.Declare.DeclareSingle d && head.equals(d.getId())) {
+                    return tail != null ? resolveFieldType(d.getType(), tail) : d.getType();
+                }
+            }
+        }
+        return null;
+    }
+
     private String extractIdentifier(Ast.Expr.T expr) {
         if (expr instanceof Ast.Expr.Id id) {
             return id.getId();
+        }
+        if (expr instanceof Ast.Expr.Field field) {
+            String base = extractIdentifier(field.getReceiver());
+            if (base != null && field.getPath() != null) {
+                return base + "." + String.join(".", field.getPath());
+            }
         }
         return null;
     }
@@ -399,24 +524,45 @@ public final class OwnershipAnalyzer {
         return false;
     }
 
-    private static final class MethodContext {
+    private final class MethodContext {
         private final OwnershipFunction func;
         private final OwnershipIr ir;
         private final Set<String> activeManagedLocals;
         private final Deque<Set<String>> scopeStack = new ArrayDeque<>();
         private final Deque<LoopScope> loopStack = new ArrayDeque<>();
         private final ScopeManager scopeManager = new ScopeManager();
+        private final Map<String, Ast.Type.T> varTypes = new HashMap<>();
         private OwnershipBlock currentBlock;
 
         private MethodContext(OwnershipFunction func, OwnershipIr ir, Set<String> activeManagedLocals,
-                              List<Ast.ImportDecl> imports) {
+                              List<Ast.ImportDecl> imports, Map<String, Ast.Type.T> initialVarTypes) {
             this.func = func;
             this.ir = ir;
             this.activeManagedLocals = new LinkedHashSet<>(activeManagedLocals);
+            this.varTypes.putAll(initialVarTypes);
             for (Ast.ImportDecl importDecl : imports) {
                 scopeManager.declareImport(importDecl.getName(), java.nio.file.Path.of(importDecl.getPath()));
             }
             pushScope();
+        }
+
+        private Ast.Type.T getVarType(String name) {
+            if (name == null) return null;
+            if (varTypes.containsKey(name)) return varTypes.get(name);
+            int dot = name.indexOf('.');
+            if (dot > 0) {
+                String base = name.substring(0, dot);
+                String sub = name.substring(dot + 1);
+                Ast.Type.T baseType = varTypes.get(base);
+                return resolveFieldType(baseType, sub);
+            }
+            return null;
+        }
+
+        private void declareVar(String name, Ast.Type.T type) {
+            if (name != null && type != null) {
+                varTypes.put(name, type);
+            }
         }
 
         private void recordOp(MemoryOp op) {

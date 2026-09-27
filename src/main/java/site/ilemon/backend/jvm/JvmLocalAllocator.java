@@ -34,6 +34,10 @@ final class JvmLocalAllocator {
     }
 
     Map<String, Local> allocate(IrFunction function) {
+        return allocate(function, null);
+    }
+
+    Map<String, Local> allocate(IrFunction function, site.ilemon.ir.IrModule module) {
         LinkedHashMap<String, Local> locals = new LinkedHashMap<>();
         int nextSlot = 0;
 
@@ -59,6 +63,7 @@ final class JvmLocalAllocator {
                 }
                 for (IrValue operand : instruction.operands()) {
                     if (!isConstantLiteral(operand.name())
+                            && (module == null || !module.constants().containsKey(operand.name()))
                             && mapper.slots(operand.type()) > 0
                             && !locals.containsKey(operand.name())) {
                         locals.put(operand.name(), new Local(operand, nextSlot, operand.type()));

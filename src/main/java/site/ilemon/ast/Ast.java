@@ -360,6 +360,9 @@ public class Ast {
             private String arrayName;
             public String getArrayName() { return this.arrayName; }
             public void setArrayName(String arrayName) { this.arrayName = arrayName; }
+            private Expr.Field fieldTarget;
+            public Expr.Field getFieldTarget() { return this.fieldTarget; }
+            public void setFieldTarget(Expr.Field fieldTarget) { this.fieldTarget = fieldTarget; }
             private Expr.T index;
             public Expr.T getIndex() { return this.index; }
             public void setIndex(Expr.T index) { this.index = index; }
@@ -372,6 +375,14 @@ public class Ast {
 
             public ArrayAssign(String arrayName, Expr.T index, Expr.T expr, int lineNum) {
                 this.arrayName = arrayName;
+                this.index = index;
+                this.expr = expr;
+                this.setLineNum(lineNum);
+            }
+
+            public ArrayAssign(Expr.Field fieldTarget, Expr.T index, Expr.T expr, int lineNum) {
+                this.fieldTarget = fieldTarget;
+                this.arrayName = "";
                 this.index = index;
                 this.expr = expr;
                 this.setLineNum(lineNum);
@@ -1395,6 +1406,9 @@ public class Ast {
             private String arrayName;
             public String getArrayName() { return this.arrayName; }
             public void setArrayName(String arrayName) { this.arrayName = arrayName; }
+            private Expr.Field fieldTarget;
+            public Expr.Field getFieldTarget() { return this.fieldTarget; }
+            public void setFieldTarget(Expr.Field fieldTarget) { this.fieldTarget = fieldTarget; }
             private Expr.T index;
             public Expr.T getIndex() { return this.index; }
             public void setIndex(Expr.T index) { this.index = index; }
@@ -1404,6 +1418,13 @@ public class Ast {
 
             public ArrayAccess(String arrayName, Expr.T index, int lineNum) {
                 this.arrayName = arrayName;
+                this.index = index;
+                this.setLineNum(lineNum);
+            }
+
+            public ArrayAccess(Expr.Field fieldTarget, Expr.T index, int lineNum) {
+                this.fieldTarget = fieldTarget;
+                this.arrayName = "";
                 this.index = index;
                 this.setLineNum(lineNum);
             }
@@ -1460,6 +1481,26 @@ public class Ast {
                 this.receiver = receiver;
                 this.path = path;
                 this.pointerBase = pointerBase;
+                this.setLineNum(lineNum);
+            }
+
+            @Override
+            public void accept(ISemanticVisitor v) {
+                v.visit(this);
+            }
+        }
+
+        // Initializer list expression: { expr, expr, ... } (e.g. for struct literals)
+        public static class InitializerList extends T {
+            private ArrayList<Expr.T> elements;
+            public ArrayList<Expr.T> getElements() { return this.elements; }
+            public void setElements(ArrayList<Expr.T> elements) { this.elements = elements; }
+            private Type.T type;
+            public Type.T getType() { return this.type; }
+            public void setType(Type.T type) { this.type = type; }
+
+            public InitializerList(ArrayList<Expr.T> elements, int lineNum) {
+                this.elements = elements;
                 this.setLineNum(lineNum);
             }
 

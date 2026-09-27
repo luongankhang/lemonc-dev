@@ -305,7 +305,37 @@ final class JvmInstructionEmitter {
                 String value = unescapeString(stripQuotes(raw));
                 code.ldc(pool.stringRef(value), 1);
             }
+            case STRUCT -> {
+                pushStructConstant(raw, type);
+            }
             default -> throw new CompilerException("cannot materialize constant of type " + type.kind());
+        }
+    }
+
+    private void pushStructConstant(String raw, IrType type) {
+        String val = raw;
+        IrModule.IrConstant constant = moduleConstants.get(raw);
+        if (constant != null) {
+            val = constant.value();
+        }
+        String structClass = structClassName(type);
+        code.cpRef(NEW, pool.classRef(structClass));
+        code.simple(DUP);
+        code.invoke(INVOKESPECIAL, pool.methodRef(structClass, "<init>", "()V"), 1, 0);
+        if (val != null && val.startsWith("{") && val.endsWith("}")) {
+            String inside = val.substring(1, val.length() - 1).trim();
+            if (!inside.isEmpty()) {
+                String[] parts = inside.split(",", -1);
+                IrModule.IrStruct structDef = module.struct(type.name());
+                if (structDef != null) {
+                    for (int i = 0; i < parts.length && i < structDef.fields().size(); i++) {
+                        IrModule.IrStructField field = structDef.fields().get(i);
+                        code.simple(DUP);
+                        pushConstant(parts[i].trim(), field.type());
+                        code.fieldAccess(PUTFIELD, pool.fieldRef(structClass, field.name(), fieldDescriptor(field.type())), mapper.slots(field.type()));
+                    }
+                }
+            }
         }
     }
 
@@ -732,6 +762,11 @@ final class JvmInstructionEmitter {
     private void emitStructCopy(IrInstruction instruction) {
         IrValue src = instruction.operands().get(0);
         IrType type = instruction.result().type();
+        if (src.name().startsWith("_t") && src.type().kind() != IrType.Kind.POINTER) {
+            loadValue(src);
+            storeStructIntoLocal(instruction.result());
+            return;
+        }
         // The copy constructor consumes (fresh, src) from the stack. Stash the
         // source in the scratch slot first — a swap across an uninitialized
         // object is rejected by the verifier.
@@ -750,7 +785,7 @@ final class JvmInstructionEmitter {
         code.simple(DUP);                     // [obj, obj]
         code.load(ALOAD, scratch);            // [obj, obj, src]
         code.invoke(INVOKESPECIAL, pool.methodRef(structClassName(type), "<init>",
-                "(" + fieldDescriptor(type) + ")V"), 1, 0);
+                "(" + fieldDescriptor(type) + ")V"), 2, 0);
         // [obj]: for &-taken targets write through the cell so aliases see it;
         // otherwise plain local store.
         storeStructIntoLocal(instruction.result());
@@ -809,7 +844,7 @@ final class JvmInstructionEmitter {
         IrType type = instruction.result().type();
         code.cpRef(NEW, pool.classRef(structClassName(type)));
         code.simple(DUP);
-        code.invoke(INVOKESPECIAL, pool.methodRef(structClassName(type), "<init>", "()V"), 0, 0);
+        code.invoke(INVOKESPECIAL, pool.methodRef(structClassName(type), "<init>", "()V"), 1, 0);
         storeStructIntoLocal(instruction.result());
     }
 
@@ -969,7 +1004,7 @@ final class JvmInstructionEmitter {
                 throw new CompilerException("printf format string ends with '%'");
             }
             char placeholder = format.charAt(++i);
-            if (placeholder != 'd' && placeholder != 'f') {
+            if (placeholder != 'd' && placeholder != 'f' && placeholder != 's') {
                 throw new CompilerException("printf does not support placeholder %" + placeholder);
             }
             if (valueIndex >= args.size()) {
@@ -1002,6 +1037,7 @@ final class JvmInstructionEmitter {
             case FLOAT -> emitPrintTail("(F)V", 1);
             case LONG -> emitPrintTail("(J)V", 2);
             case DOUBLE -> emitPrintTail("(D)V", 2);
+            case STRING -> emitPrintTail("(Ljava/lang/String;)V", 1);
             default -> throw new CompilerException(
                     "printf cannot print JVM type " + value.type().kind());
         }
@@ -1061,6 +1097,10 @@ final class JvmInstructionEmitter {
     // -------------------------------------------------------- load / store
 
     private void loadValue(IrValue value) {
+        if (moduleConstants.containsKey(value.name())) {
+            pushConstant(value.name(), value.type());
+            return;
+        }
         JvmLocalAllocator.Local local = locals.get(value.name());
         if (local != null) {
             if (cells.contains(value.name())) {

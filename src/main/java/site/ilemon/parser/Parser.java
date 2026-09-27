@@ -923,15 +923,26 @@ public class Parser {
 					path.add(look.lexeme);
 					move();
 				}
-				match(new Token(TokenKind.Assign));
-				Ast.Expr.T value = parseExpr();
-				match(new Token(TokenKind.Semicolon));
 				Ast.Expr.Id base = new Ast.Expr.Id(baseName, lineNum);
 				base.setSpan(tokenSpan(fieldToken));
 				Ast.Expr.Field target = new Ast.Expr.Field(base, path, pointerBase, lineNum);
 				target.setSpan(tokenSpan(fieldToken));
-				stmt = new Ast.Stmt.FieldAssign(target, value, lineNum);
-				stmt.setSpan(tokenSpan(fieldToken));
+				if (look.kind == TokenKind.Lbracket) {
+					move(); // consume '['
+					Ast.Expr.T index = parseExpr();
+					match("]");
+					match(new Token(TokenKind.Assign));
+					Ast.Expr.T value = parseExpr();
+					match(new Token(TokenKind.Semicolon));
+					stmt = new Ast.Stmt.ArrayAssign(target, index, value, lineNum);
+					stmt.setSpan(tokenSpan(fieldToken));
+				} else {
+					match(new Token(TokenKind.Assign));
+					Ast.Expr.T value = parseExpr();
+					match(new Token(TokenKind.Semicolon));
+					stmt = new Ast.Stmt.FieldAssign(target, value, lineNum);
+					stmt.setSpan(tokenSpan(fieldToken));
+				}
 			}
 			// Array assignment: arr[i] = expr;
 			else if( ahead.kind == TokenKind.Lbracket ){
@@ -1279,8 +1290,18 @@ public class Parser {
 					}
 					Ast.Expr.Id base = new Ast.Expr.Id(baseName, lineNum);
 					base.setSpan(tokenSpan(temp));
-					expr = new Ast.Expr.Field(base, path, false, lineNum);
-					expr.setSpan(tokenSpan(temp));
+					Ast.Expr.Field fieldObj = new Ast.Expr.Field(base, path, false, lineNum);
+					fieldObj.setSpan(tokenSpan(temp));
+					if (look.kind == TokenKind.Lbracket) {
+						move(); // consume '['
+						Ast.Expr.T index = parseExpr();
+						match("]");
+						Ast.Expr.ArrayAccess access = new Ast.Expr.ArrayAccess(fieldObj, index, lineNum);
+						access.setSpan(tokenSpan(temp));
+						expr = access;
+					} else {
+						expr = fieldObj;
+					}
 				}
 			}
 			else if( ahead.kind == TokenKind.Arrow ){
@@ -1300,8 +1321,18 @@ public class Parser {
 				}
 				Ast.Expr.Id base = new Ast.Expr.Id(baseName, lineNum);
 				base.setSpan(tokenSpan(temp));
-				expr = new Ast.Expr.Field(base, path, true, lineNum);
-				expr.setSpan(tokenSpan(temp));
+				Ast.Expr.Field fieldObj = new Ast.Expr.Field(base, path, true, lineNum);
+				fieldObj.setSpan(tokenSpan(temp));
+				if (look.kind == TokenKind.Lbracket) {
+					move(); // consume '['
+					Ast.Expr.T index = parseExpr();
+					match("]");
+					Ast.Expr.ArrayAccess access = new Ast.Expr.ArrayAccess(fieldObj, index, lineNum);
+					access.setSpan(tokenSpan(temp));
+					expr = access;
+				} else {
+					expr = fieldObj;
+				}
 			}
 			else{
 				expr = new Ast.Expr.Id(look.lexeme, temp.lineNumber);
@@ -1330,6 +1361,24 @@ public class Parser {
 		else if(look.kind==TokenKind.False ){
 			expr = new Ast.Expr.False(look.lineNumber);
 			move();
+			return expr;
+		}
+		else if (look.kind == TokenKind.Lbrace) {
+			int lineNumber = look.lineNumber;
+			Token lbrace = look;
+			move();
+			ArrayList<Ast.Expr.T> elements = new ArrayList<>();
+			if (look.kind != TokenKind.Rbrace) {
+				elements.add(parseExpr());
+				while (look.kind == TokenKind.Comma) {
+					move();
+					elements.add(parseExpr());
+				}
+			}
+			match("}");
+			Ast.Expr.InitializerList initList = new Ast.Expr.InitializerList(elements, lineNumber);
+			initList.setSpan(tokenSpan(lbrace));
+			expr = initList;
 			return expr;
 		}
 		else{

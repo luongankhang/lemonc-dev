@@ -72,9 +72,16 @@ public class AstOptimizer {
             return new Ast.Stmt.Assign(assign.getId(), optimizeExpr(assign.getExpr()), assign.getLineNum());
         }
         if (stmt instanceof Ast.Stmt.ArrayAssign arrayAssign) {
-            Ast.Stmt.ArrayAssign optimized = new Ast.Stmt.ArrayAssign(arrayAssign.getArrayName(),
-                    optimizeExpr(arrayAssign.getIndex()), optimizeExpr(arrayAssign.getExpr()),
-                    arrayAssign.getLineNum());
+            Ast.Stmt.ArrayAssign optimized;
+            if (arrayAssign.getFieldTarget() != null) {
+                optimized = new Ast.Stmt.ArrayAssign(arrayAssign.getFieldTarget(),
+                        optimizeExpr(arrayAssign.getIndex()), optimizeExpr(arrayAssign.getExpr()),
+                        arrayAssign.getLineNum());
+            } else {
+                optimized = new Ast.Stmt.ArrayAssign(arrayAssign.getArrayName(),
+                        optimizeExpr(arrayAssign.getIndex()), optimizeExpr(arrayAssign.getExpr()),
+                        arrayAssign.getLineNum());
+            }
             optimized.setElementType(arrayAssign.getElementType());
             return optimized;
         }
@@ -249,11 +256,22 @@ public class AstOptimizer {
                     call.getLineNum(), call.getReturnType());
             return optimized;
         }
-        if (expr instanceof Ast.Expr.ArrayAccess) {
-            Ast.Expr.ArrayAccess access = (Ast.Expr.ArrayAccess) expr;
-            Ast.Expr.ArrayAccess optimized = new Ast.Expr.ArrayAccess(access.getArrayName(),
-                    optimizeExpr(access.getIndex()), access.getLineNum());
+        if (expr instanceof Ast.Expr.ArrayAccess access) {
+            Ast.Expr.ArrayAccess optimized;
+            if (access.getFieldTarget() != null) {
+                optimized = new Ast.Expr.ArrayAccess(access.getFieldTarget(),
+                        optimizeExpr(access.getIndex()), access.getLineNum());
+            } else {
+                optimized = new Ast.Expr.ArrayAccess(access.getArrayName(),
+                        optimizeExpr(access.getIndex()), access.getLineNum());
+            }
             optimized.setElementType(access.getElementType());
+            return optimized;
+        }
+        if (expr instanceof Ast.Expr.InitializerList list) {
+            Ast.Expr.InitializerList optimized = new Ast.Expr.InitializerList(
+                    optimizeExprList(list.getElements()), list.getLineNum());
+            optimized.setType(list.getType());
             return optimized;
         }
         return expr;

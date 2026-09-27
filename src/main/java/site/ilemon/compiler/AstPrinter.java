@@ -195,6 +195,13 @@ public final class AstPrinter {
             expr(node.getIndex(), depth + 1);
         } else if (expr instanceof Ast.Expr.ArrayLength) {
             line(depth, "ArrayLength " + ((Ast.Expr.ArrayLength) expr).getArrayName());
+        } else if (expr instanceof Ast.Expr.InitializerList list) {
+            line(depth, "InitializerList");
+            if (list.getElements() != null) {
+                for (Ast.Expr.T el : list.getElements()) {
+                    expr(el, depth + 1);
+                }
+            }
         } else {
             line(depth, nodeName(expr));
         }

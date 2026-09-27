@@ -38,6 +38,7 @@ public interface ISemanticVisitor {
 	void visit(Ast.Expr.Deref obj);
 	void visit(Ast.Expr.Null obj);
 	void visit(Ast.Expr.Field obj);
+	default void visit(Ast.Expr.InitializerList obj) {}
 
 	void visit(Ast.Type.T obj);
 	void visit(Ast.Type.Bool obj);

@@ -1,0 +1,10 @@
+struct Config {
+    int maxConnections;
+    int timeout;
+};
+
+const struct Config DEFAULT_CFG = { 100, 30 };
+
+void main() {
+    DEFAULT_CFG.maxConnections = 200;
+}

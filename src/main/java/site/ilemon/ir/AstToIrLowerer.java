@@ -39,6 +39,13 @@ public final class AstToIrLowerer {
                 module.addStruct(toIrStruct(structDecl));
             }
         }
+        if (main.getModuleStructs() != null) {
+            for (var list : main.getModuleStructs().values()) {
+                for (Ast.StructDecl structDecl : list) {
+                    module.addStruct(toIrStruct(structDecl));
+                }
+            }
+        }
         programConsts = main.getConstants() == null ? List.of() : main.getConstants();
         for (Ast.ConstDecl constant : programConsts) {
             registerConstant(module, constant);
@@ -97,7 +104,7 @@ public final class AstToIrLowerer {
                     IrType t = toIrType(d.getType());
                     params.add(new IrValue(d.getId(), t));
                     variableTypes.put(d.getId(), t);
-                    if (isManaged(t)) {
+                    if (isManaged(t) || !getManagedPaths(t).isEmpty()) {
                         managedLocals.add(d.getId());
                     }
                 }
@@ -109,7 +116,7 @@ public final class AstToIrLowerer {
                 if (local instanceof Ast.Declare.DeclareSingle d) {
                     IrType t = toIrType(d.getType());
                     variableTypes.put(d.getId(), t);
-                    if (isManaged(t)) {
+                    if (isManaged(t) || !getManagedPaths(t).isEmpty()) {
                         managedLocals.add(d.getId());
                     }
                 }
@@ -134,7 +141,7 @@ public final class AstToIrLowerer {
                 if (!varDeclNodes.contains(local) && local instanceof Ast.Declare.DeclareSingle d) {
                     IrType t = variableTypes.get(d.getId());
                     if (t != null && t.kind() == IrType.Kind.STRUCT) {
-                        ctx.emit(new IrInstruction(IrInstruction.Op.STRUCT_ZERO, new IrValue(d.getId(), t), List.of(), null));
+                        emitStructInit(d.getId(), t, ctx);
                     } else if (isManaged(t)) {
                         int size = getArraySize(d.getType());
                         IrValue lenVal = new IrValue(String.valueOf(size), IrType.scalar(IrType.Kind.INT));
@@ -148,9 +155,7 @@ public final class AstToIrLowerer {
 
         // In entry block: retain incoming managed parameters
         for (IrValue p : params) {
-            if (isManaged(p.type())) {
-                ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(p), "lemon_retain"));
-            }
+            emitRetain(p, ctx);
         }
 
         // Lower method statements
@@ -163,7 +168,7 @@ public final class AstToIrLowerer {
         // If the last block is not terminated, emit cleanup and default return
         if (!ctx.isTerminated(ctx.currentBlock)) {
             for (String managed : managedLocals) {
-                ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(new IrValue(managed, variableTypes.get(managed))), "lemon_release"));
+                emitRelease(managed, variableTypes.get(managed), ctx);
             }
             if (isMain) {
                 IrValue zero = new IrValue("0", IrType.scalar(IrType.Kind.INT));
@@ -187,13 +192,32 @@ public final class AstToIrLowerer {
         return irFunc;
     }
 
+    private void emitStructInit(String targetId, IrType structType, MethodLoweringContext ctx) {
+        ctx.emit(new IrInstruction(IrInstruction.Op.STRUCT_ZERO, new IrValue(targetId, structType), List.of(), null));
+        IrModule.IrStruct structDef = module.struct(structType.name());
+        if (structDef != null) {
+            for (IrModule.IrStructField sf : structDef.fields()) {
+                if (sf.type().kind() == IrType.Kind.ARRAY && sf.arraySize() > 0) {
+                    IrValue lenVal = new IrValue(String.valueOf(sf.arraySize()), IrType.scalar(IrType.Kind.INT));
+                    IrValue arrVal = ctx.newTemp(sf.type());
+                    ctx.emit(new IrInstruction(IrInstruction.Op.ALLOC, arrVal, List.of(lenVal), null));
+                    ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_STORE, null, List.of(new IrValue(targetId, structType), arrVal), sf.name()));
+                } else if (sf.type().kind() == IrType.Kind.STRUCT) {
+                    IrValue nestedVal = ctx.newTemp(sf.type());
+                    emitStructInit(nestedVal.name(), sf.type(), ctx);
+                    ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_STORE, null, List.of(new IrValue(targetId, structType), nestedVal), sf.name()));
+                }
+            }
+        }
+    }
+
     /** Converts a declared struct into a backend-neutral layout. */
     private IrModule.IrStruct toIrStruct(Ast.StructDecl structDecl) {
         List<IrModule.IrStructField> fields = new ArrayList<>();
         if (structDecl.getFields() != null) {
             for (Ast.Declare.T field : structDecl.getFields()) {
                 if (field instanceof Ast.Declare.DeclareSingle single) {
-                    fields.add(new IrModule.IrStructField(single.getId(), toIrType(single.getType())));
+                    fields.add(new IrModule.IrStructField(single.getId(), toIrType(single.getType()), getArraySize(single.getType())));
                 }
             }
         }
@@ -245,7 +269,7 @@ public final class AstToIrLowerer {
                 if (targetType == null) {
                     targetType = toIrType(d.getType());
                     ctx.variableTypes.put(targetId, targetType);
-                    if (isManaged(targetType)) {
+                    if (isManaged(targetType) || !getManagedPaths(targetType).isEmpty()) {
                         ctx.managedLocals.add(targetId);
                     }
                 }
@@ -267,6 +291,10 @@ public final class AstToIrLowerer {
                         }
                         ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
                     } else if (targetType.kind() == IrType.Kind.STRUCT) {
+                        List<String> paths = getManagedPaths(targetType);
+                        if (!paths.isEmpty() && !rhsVal.name().startsWith("_t")) {
+                            emitRetain(rhsVal, ctx);
+                        }
                         // By-value struct init: copy into the fresh local.
                         ctx.emit(new IrInstruction(IrInstruction.Op.STRUCT_COPY,
                                 new IrValue(targetId, targetType), List.of(rhsVal), null));
@@ -280,8 +308,7 @@ public final class AstToIrLowerer {
                     }
                 } else {
                     if (targetType.kind() == IrType.Kind.STRUCT) {
-                        // Struct locals zero-initialize every field.
-                        ctx.emit(new IrInstruction(IrInstruction.Op.STRUCT_ZERO, new IrValue(targetId, targetType), List.of(), null));
+                        emitStructInit(targetId, targetType, ctx);
                     } else if (isManaged(targetType)) {
                         int size = getArraySize(d.getType());
                         IrValue lenVal = new IrValue(String.valueOf(size), IrType.scalar(IrType.Kind.INT));
@@ -315,6 +342,13 @@ public final class AstToIrLowerer {
                 rhsVal = lowerExpr(assign.getExpr(), ctx);
             }
             if (targetType.kind() == IrType.Kind.STRUCT) {
+                List<String> paths = getManagedPaths(targetType);
+                if (!paths.isEmpty()) {
+                    if (!rhsVal.name().startsWith("_t")) {
+                        emitRetain(rhsVal, ctx);
+                    }
+                    emitRelease(targetId, targetType, ctx);
+                }
                 // Struct assignment copies field-by-field (by-value semantics).
                 ctx.emit(new IrInstruction(IrInstruction.Op.STRUCT_COPY,
                         new IrValue(targetId, targetType), List.of(rhsVal), null));
@@ -338,9 +372,16 @@ public final class AstToIrLowerer {
         } else if (stmt instanceof Ast.Stmt.DerefAssign derefAssign) {
             lowerDerefAssign(derefAssign, ctx);
         } else if (stmt instanceof Ast.Stmt.ArrayAssign arrayAssign) {
-            String arrName = arrayAssign.getArrayName();
-            IrType arrType = ctx.variableTypes.get(arrName);
-            IrValue arrVal = new IrValue(arrName, arrType);
+            IrValue arrVal;
+            IrType arrType;
+            if (arrayAssign.getFieldTarget() != null) {
+                arrVal = lowerFieldLoad(arrayAssign.getFieldTarget(), ctx);
+                arrType = arrVal.type();
+            } else {
+                String arrName = arrayAssign.getArrayName();
+                arrType = ctx.variableTypes.get(arrName);
+                arrVal = new IrValue(arrName, arrType);
+            }
 
             IrValue idxVal = lowerExpr(arrayAssign.getIndex(), ctx);
             IrValue val = lowerExpr(arrayAssign.getExpr(), ctx);
@@ -476,13 +517,13 @@ public final class AstToIrLowerer {
                 }
                 for (String managed : ctx.managedLocals) {
                     if (!managed.equals(retVal.name())) {
-                        ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(new IrValue(managed, ctx.variableTypes.get(managed))), "lemon_release"));
+                        emitRelease(managed, ctx.variableTypes.get(managed), ctx);
                     }
                 }
                 ctx.emit(new IrInstruction(IrInstruction.Op.RETURN, null, List.of(retVal), null));
             } else {
                 for (String managed : ctx.managedLocals) {
-                    ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(new IrValue(managed, ctx.variableTypes.get(managed))), "lemon_release"));
+                    emitRelease(managed, ctx.variableTypes.get(managed), ctx);
                 }
                 if (ctx.isMain) {
                     IrValue zero = new IrValue("0", IrType.scalar(IrType.Kind.INT));
@@ -540,6 +581,12 @@ public final class AstToIrLowerer {
             throw new CompilerException("field access requires a named struct receiver");
         }
         IrType rootType = ctx.variableTypes.get(id.getId());
+        if (rootType == null) {
+            Ast.ConstDecl constant = findConst(id.getId(), ctx);
+            if (constant != null) {
+                rootType = toIrType(constant.getType());
+            }
+        }
         if (rootType == null) rootType = IrType.scalar(IrType.Kind.INT);
         boolean throughPointer = field.isPointerBase() && isPointerKind(rootType);
         IrType resultType = fieldPathType(rootType, field.getPath(), throughPointer);
@@ -597,6 +644,26 @@ public final class AstToIrLowerer {
             IrValue converted = ctx.newTemp(fieldType);
             ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(stored), null));
             stored = converted;
+        }
+        if (isManaged(fieldType)) {
+            IrValue oldField = ctx.newTemp(fieldType);
+            ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_LOAD, oldField,
+                    List.of(new IrValue(id.getId(), rootType)), String.join(".", target.getPath())));
+            emitRetain(stored, ctx);
+            ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(oldField), "lemon_release"));
+        } else if (fieldType.kind() == IrType.Kind.STRUCT && !getManagedPaths(fieldType).isEmpty()) {
+            if (!stored.name().startsWith("_t")) {
+                emitRetain(stored, ctx);
+            }
+            List<String> subPaths = getManagedPaths(fieldType);
+            for (String sp : subPaths) {
+                String fullPath = String.join(".", target.getPath()) + "." + sp;
+                IrType spType = resolveFieldType(fieldType, sp);
+                IrValue oldSub = ctx.newTemp(spType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_LOAD, oldSub,
+                        List.of(new IrValue(id.getId(), rootType)), fullPath));
+                ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(oldSub), "lemon_release"));
+            }
         }
         ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_STORE, null,
                 List.of(new IrValue(id.getId(), rootType), stored),
@@ -732,10 +799,30 @@ public final class AstToIrLowerer {
             return res;
         } else if (expr instanceof Ast.Expr.Field field) {
             return lowerFieldLoad(field, ctx);
+        } else if (expr instanceof Ast.Expr.InitializerList initList) {
+            IrType type = toIrType(initList.getType());
+            IrValue temp = ctx.newTemp(type);
+            ctx.emit(new IrInstruction(IrInstruction.Op.STRUCT_ZERO, temp, List.of(), null));
+            IrModule.IrStruct structDef = module.struct(type.name());
+            if (structDef != null) {
+                for (int i = 0; i < initList.getElements().size() && i < structDef.fields().size(); i++) {
+                    IrModule.IrStructField f = structDef.fields().get(i);
+                    IrValue val = lowerExpr(initList.getElements().get(i), ctx);
+                    ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_STORE, null, List.of(temp, val), f.name()));
+                }
+            }
+            return temp;
         } else if (expr instanceof Ast.Expr.ArrayAccess access) {
-            String arrName = access.getArrayName();
-            IrType arrType = ctx.variableTypes.get(arrName);
-            IrValue arrVal = new IrValue(arrName, arrType);
+            IrValue arrVal;
+            IrType arrType;
+            if (access.getFieldTarget() != null) {
+                arrVal = lowerFieldLoad(access.getFieldTarget(), ctx);
+                arrType = arrVal.type();
+            } else {
+                String arrName = access.getArrayName();
+                arrType = ctx.variableTypes.get(arrName);
+                arrVal = new IrValue(arrName, arrType);
+            }
             IrValue idxVal = lowerExpr(access.getIndex(), ctx);
             
             // Distinguish between array types and pointer types
@@ -1003,6 +1090,74 @@ public final class AstToIrLowerer {
 
     public static boolean isManaged(IrType type) {
         return type != null && type.kind() == IrType.Kind.ARRAY;
+    }
+
+    private List<String> getManagedPaths(IrType type) {
+        if (type == null) return List.of();
+        if (isManaged(type)) return List.of("");
+        if (type.kind() == IrType.Kind.STRUCT && module != null) {
+            return getStructManagedPaths(type.name(), new HashSet<>());
+        }
+        return List.of();
+    }
+
+    private List<String> getStructManagedPaths(String structName, Set<String> visited) {
+        if (!visited.add(structName)) return List.of();
+        IrModule.IrStruct structDef = module.struct(structName);
+        if (structDef == null) return List.of();
+        List<String> paths = new ArrayList<>();
+        for (IrModule.IrStructField field : structDef.fields()) {
+            if (field.type().kind() == IrType.Kind.ARRAY) {
+                paths.add(field.name());
+            } else if (field.type().kind() == IrType.Kind.STRUCT) {
+                List<String> subPaths = getStructManagedPaths(field.type().name(), visited);
+                for (String sp : subPaths) {
+                    paths.add(field.name() + "." + sp);
+                }
+            }
+        }
+        visited.remove(structName);
+        return paths;
+    }
+
+    private IrType resolveFieldType(IrType rootType, String path) {
+        if (path.isEmpty()) return rootType;
+        String[] parts = path.split("\\.", -1);
+        IrType current = rootType;
+        for (String part : parts) {
+            current = structFieldType(current, part);
+        }
+        return current;
+    }
+
+    private void emitRetain(IrValue val, MethodLoweringContext ctx) {
+        if (val == null || val.type() == null) return;
+        if (isManaged(val.type())) {
+            ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(val), "lemon_retain"));
+        } else if (val.type().kind() == IrType.Kind.STRUCT) {
+            List<String> paths = getManagedPaths(val.type());
+            for (String path : paths) {
+                IrType fType = resolveFieldType(val.type(), path);
+                IrValue fieldVal = ctx.newTemp(fType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_LOAD, fieldVal, List.of(val), path));
+                ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(fieldVal), "lemon_retain"));
+            }
+        }
+    }
+
+    private void emitRelease(String varName, IrType varType, MethodLoweringContext ctx) {
+        if (varName == null || varType == null) return;
+        if (isManaged(varType)) {
+            ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(new IrValue(varName, varType)), "lemon_release"));
+        } else if (varType.kind() == IrType.Kind.STRUCT) {
+            List<String> paths = getManagedPaths(varType);
+            for (String path : paths) {
+                IrType fType = resolveFieldType(varType, path);
+                IrValue fieldVal = ctx.newTemp(fType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_LOAD, fieldVal, List.of(new IrValue(varName, varType)), path));
+                ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(fieldVal), "lemon_release"));
+            }
+        }
     }
 
     private static String escapeCString(String s) {
