@@ -93,15 +93,38 @@ final class JvmLocalAllocator {
         char first = name.charAt(0);
         if (Character.isDigit(first)
                 || (first == '-' && name.length() > 1 && Character.isDigit(name.charAt(1)))) {
-            String stripped = stripNumericSuffix(name);
+            return isNumericLiteral(name);
+        }
+        return false;
+    }
+
+    /** Fast numeric check: integral values via {@code parseInt}, floats via parseDouble. */
+    private static boolean isNumericLiteral(String value) {
+        String stripped = stripNumericSuffix(value);
+        // Fast path: pure integer (the overwhelmingly common case) avoids the
+        // exception-driven parseDouble fallback.
+        int start = stripped.charAt(0) == '-' ? 1 : 0;
+        boolean integral = stripped.indexOf('.') < 0 && stripped.indexOf('e') < 0 && stripped.indexOf('E') < 0;
+        if (integral) {
             try {
-                Double.parseDouble(stripped);
+                Integer.parseInt(stripped);
+                return true;
+            } catch (NumberFormatException e) {
+                // fall through: long/overflow values still parse as numbers
+            }
+            try {
+                Long.parseLong(stripped);
                 return true;
             } catch (NumberFormatException e) {
                 return false;
             }
         }
-        return false;
+        try {
+            Double.parseDouble(stripped);
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     private static String stripNumericSuffix(String value) {

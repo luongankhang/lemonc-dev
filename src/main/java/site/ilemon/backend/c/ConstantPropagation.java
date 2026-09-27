@@ -21,14 +21,14 @@ public final class ConstantPropagation {
         Map<String, IrValue> constantValues = new HashMap<>();
         
         // Process blocks in order (simple forward pass)
-        for (BasicBlock block : function.blocks()) {
+        for (BasicBlock block : function.blocksView()) {
             optimizeBlock(block, constantValues);
         }
     }
 
     private void optimizeBlock(BasicBlock block, Map<String, IrValue> constantValues) {
-        List<IrInstruction> instructions = new ArrayList<>(block.instructions());
-        List<IrInstruction> optimized = new ArrayList<>();
+        List<IrInstruction> instructions = block.instructionsView();
+        List<IrInstruction> optimized = new ArrayList<>(instructions.size());
         
         for (IrInstruction inst : instructions) {
             // Try to substitute operands with known constants

@@ -5,7 +5,6 @@ import site.ilemon.ir.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 public final class CFunctionEmitter {
     private final CTypeEmitter types = new CTypeEmitter();
@@ -36,10 +35,13 @@ public final class CFunctionEmitter {
         Set<String> usedVars = computeUsedVariables(function);
 
         // Hoist all instruction results as local variable declarations
-        Set<String> paramNames = function.parameters().stream().map(IrValue::name).collect(Collectors.toSet());
+        Set<String> paramNames = new java.util.HashSet<>();
+        for (IrValue p : function.parameters()) {
+            paramNames.add(p.name());
+        }
         Map<String, IrType> locals = new LinkedHashMap<>();
-        for (BasicBlock block : function.blocks()) {
-            for (IrInstruction inst : block.instructions()) {
+        for (BasicBlock block : function.blocksView()) {
+            for (IrInstruction inst : block.instructionsView()) {
                 if (inst.result() != null) {
                     String rname = inst.result().name();
                     if (!paramNames.contains(rname)) {
@@ -67,8 +69,8 @@ public final class CFunctionEmitter {
 
         // Collect used labels to avoid -Wunused-label errors with -Wall -Wextra -Werror
         Set<String> usedLabels = new java.util.HashSet<>();
-        for (BasicBlock block : function.blocks()) {
-            for (IrInstruction inst : block.instructions()) {
+        for (BasicBlock block : function.blocksView()) {
+            for (IrInstruction inst : block.instructionsView()) {
                 if ((inst.op() == IrInstruction.Op.BRANCH || inst.op() == IrInstruction.Op.COND_BRANCH)
                         && inst.target() != null && !inst.target().isBlank()) {
                     usedLabels.add(inst.target());
@@ -77,11 +79,11 @@ public final class CFunctionEmitter {
         }
 
         boolean lastIsReturn = false;
-        for (BasicBlock block : function.blocks()) {
+        for (BasicBlock block : function.blocksView()) {
             if (usedLabels.contains(block.name())) {
                 out.append(safe(block.name())).append(":;\n");
             }
-            for (IrInstruction instruction : block.instructions()) {
+            for (IrInstruction instruction : block.instructionsView()) {
                 if (isMain && instruction.op() == IrInstruction.Op.RETURN && instruction.operands().isEmpty()) {
                     out.append("    return 0;\n");
                     lastIsReturn = true;
@@ -106,8 +108,8 @@ public final class CFunctionEmitter {
 
     private Set<String> computeUsedVariables(IrFunction function) {
         Set<String> used = new java.util.HashSet<>();
-        for (BasicBlock block : function.blocks()) {
-            for (IrInstruction inst : block.instructions()) {
+        for (BasicBlock block : function.blocksView()) {
+            for (IrInstruction inst : block.instructionsView()) {
                 // All operands are used (read)
                 for (IrValue op : inst.operands()) {
                     used.add(op.name());

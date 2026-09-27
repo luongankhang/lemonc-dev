@@ -1,6 +1,7 @@
 package site.ilemon.ir;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /** Structural verifier for backend-independent LemonIR. */
@@ -18,27 +19,23 @@ public final class IrVerifier {
     public static void verify(IrFunction function) {
         if (function == null) throw invalid("function is null");
         if (function.returnType() == null) throw invalid("function has no return type: " + function.name());
-        Set<String> blocks = new HashSet<>();
-        for (BasicBlock block : function.blocks()) {
+        List<BasicBlock> blockList = function.blocksView();
+        Set<String> blocks = new HashSet<>(blockList.size() * 2);
+        for (BasicBlock block : blockList) {
             if (!blocks.add(block.name())) throw invalid("duplicate block: " + block.name());
+        }
+        for (BasicBlock block : blockList) {
+            List<IrInstruction> instructions = block.instructionsView();
             boolean terminated = false;
-            for (IrInstruction instruction : block.instructions()) {
+            for (IrInstruction instruction : instructions) {
                 if (terminated) throw invalid("instruction follows terminator in block: " + block.name());
                 if (instruction.result() != null && instruction.op() == IrInstruction.Op.STORE) throw invalid("store cannot produce a result");
                 terminated = instruction.isTerminator();
-                if (instruction.isTerminator() && instruction.target() != null && !instruction.target().isBlank()) {
-                    if (!blocks.contains(instruction.target())) {
-                        // Keep the check lazy so block names are known after the set is built.
-                    }
-                }
             }
             if (!terminated) throw invalid("unterminated block: " + block.name());
-        }
-
-        for (BasicBlock block : function.blocks()) {
-            for (IrInstruction instruction : block.instructions()) {
+            for (IrInstruction instruction : instructions) {
                 if (instruction.isTerminator() && instruction.target() != null && !instruction.target().isBlank()) {
-                    if (!function.blocks().stream().anyMatch(candidate -> candidate.name().equals(instruction.target()))) {
+                    if (!blocks.contains(instruction.target())) {
                         throw invalid("branch target '" + instruction.target() + "' in block '" + block.name() + "' is undefined");
                     }
                 }

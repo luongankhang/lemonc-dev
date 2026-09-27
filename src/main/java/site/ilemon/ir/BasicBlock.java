@@ -9,6 +9,13 @@ public final class BasicBlock {
     public BasicBlock(String name) { if (name == null || name.isBlank()) throw new IllegalArgumentException("block name is empty"); this.name = name; }
     public String name() { return name; }
     public List<IrInstruction> instructions() { return List.copyOf(instructions); }
+
+    /** Live view of the instruction list; callers must not mutate it.
+     * Avoids the per-call defensive copy on hot compiler paths. */
+    public List<IrInstruction> instructionsView() { return instructions; }
+
+    /** Number of instructions in this block without copying the list. */
+    public int instructionCount() { return instructions.size(); }
     public BasicBlock add(IrInstruction instruction) { if (instruction == null) throw new IllegalArgumentException("instruction is null"); if (!instructions.isEmpty() && instructions.get(instructions.size() - 1).isTerminator()) throw new IllegalStateException("cannot append after terminator"); instructions.add(instruction); return this; }
     public void setInstructions(List<IrInstruction> newInstructions) {
         instructions.clear();

@@ -27,6 +27,13 @@ public final class IrModule {
     public String name() { return name; }
     public List<IrFunction> functions() { return List.copyOf(functions); }
     public Map<String, IrConstant> constants() { return Map.copyOf(constants); }
+
+    /** Live view of the constants table; callers must not mutate it.
+     * Avoids a full map copy on every lookup in the backend hot loops. */
+    public Map<String, IrConstant> constantsView() { return constants; }
+
+    /** True when the module declares no constants. */
+    public boolean hasNoConstants() { return constants.isEmpty(); }
     public IrModule addConstant(IrConstant constant) {
         if (constant == null) throw new IllegalArgumentException("constant is null");
         constants.putIfAbsent(constant.name(), constant);

@@ -21,7 +21,7 @@ public final class CInstructionEmitter {
 
     public String emit(IrInstruction instruction, CTypeEmitter types) {
         String result = instruction.result() == null ? "" : instruction.result().name() + " = ";
-        String[] args = instruction.operands().stream().map(IrValue::name).toArray(String[]::new);
+        String[] args = operandNames(instruction);
         return switch (instruction.op()) {
             case CONST -> {
                 String val = args.length == 0 ? "0" : args[0];
@@ -179,6 +179,16 @@ public final class CInstructionEmitter {
                 }
             }
         };
+    }
+
+    /** Operand names as a plain array (no stream machinery per instruction). */
+    private static String[] operandNames(IrInstruction instruction) {
+        List<IrValue> operands = instruction.operands();
+        String[] names = new String[operands.size()];
+        for (int i = 0; i < names.length; i++) {
+            names[i] = operands.get(i).name();
+        }
+        return names;
     }
 
     /**

@@ -12,6 +12,7 @@ import site.ilemon.ir.IrValue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,15 +67,17 @@ public final class JvmBackend implements Backend {
         }
         IrVerifier.verify(module);
         JvmClassWriter writer = new JvmClassWriter();
-        Map<String, JvmInstructionEmitter.MethodSignature> signatures = new HashMap<>();
-        for (var function : module.functions()) {
+        List<site.ilemon.ir.IrFunction> functions = module.functions();
+        Map<String, JvmInstructionEmitter.MethodSignature> signatures = new HashMap<>(functions.size() * 2);
+        for (var function : functions) {
             signatures.put(function.name(), new JvmInstructionEmitter.MethodSignature(
                     function.parameters().stream().map(IrValue::type).toList(),
                     function.returnType()));
         }
-        List<JvmMethod> methods = module.functions().stream()
-                .map(function -> new JvmMethodEmitter().emit(function, module, writer, signatures, arcDebug))
-                .toList();
+        List<JvmMethod> methods = new ArrayList<>(functions.size());
+        for (var function : functions) {
+            methods.add(new JvmMethodEmitter().emit(function, module, writer, signatures, arcDebug));
+        }
         return writer.writeClass(module, methods);
     }
 }

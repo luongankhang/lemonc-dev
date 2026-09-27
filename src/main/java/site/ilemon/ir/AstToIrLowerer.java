@@ -166,9 +166,10 @@ public final class AstToIrLowerer {
             }
         }
 
-        // Add all non-empty, terminated blocks to the function
+        // Add all non-empty, terminated blocks to the function. Block shells
+        // that were never started stay empty and are dropped here.
         for (BasicBlock block : blocks) {
-            if (!block.instructions().isEmpty() && ctx.isTerminated(block)) {
+            if (!block.instructionsView().isEmpty() && ctx.isTerminated(block)) {
                 irFunc.addBlock(block);
             }
         }
@@ -945,14 +946,17 @@ public final class AstToIrLowerer {
         }
 
         void emit(IrInstruction inst) {
-            if (!isTerminated(currentBlock)) {
+            List<IrInstruction> ins = currentBlock.instructionsView();
+            if (ins.isEmpty() || !ins.get(ins.size() - 1).isTerminator()) {
                 currentBlock.add(inst);
             }
         }
 
         boolean isTerminated(BasicBlock b) {
-            if (b == null || b.instructions().isEmpty()) return false;
-            return b.instructions().get(b.instructions().size() - 1).isTerminator();
+            if (b == null) return false;
+            List<IrInstruction> ins = b.instructionsView();
+            if (ins.isEmpty()) return false;
+            return ins.get(ins.size() - 1).isTerminator();
         }
     }
 

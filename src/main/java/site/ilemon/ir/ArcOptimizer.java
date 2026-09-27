@@ -24,7 +24,7 @@ public final class ArcOptimizer {
         LivenessInfo liveness = computeLiveness(function);
         
         // Process each block
-        for (BasicBlock block : function.blocks()) {
+        for (BasicBlock block : function.blocksView()) {
             optimizeBlock(block, liveness);
         }
         
@@ -33,8 +33,8 @@ public final class ArcOptimizer {
     }
 
     private void optimizeBlock(BasicBlock block, LivenessInfo liveness) {
-        List<IrInstruction> instructions = new ArrayList<>(block.instructions());
-        List<IrInstruction> optimized = new ArrayList<>();
+        List<IrInstruction> instructions = block.instructionsView();
+        List<IrInstruction> optimized = new ArrayList<>(instructions.size());
         
         for (int i = 0; i < instructions.size(); i++) {
             IrInstruction inst = instructions.get(i);
@@ -158,25 +158,30 @@ public final class ArcOptimizer {
      */
     private LivenessInfo computeLiveness(IrFunction function) {
         // Map from block -> (variable -> live-in/live-out)
-        Map<BasicBlock, Set<String>> liveIn = new HashMap<>();
-        Map<BasicBlock, Set<String>> liveOut = new HashMap<>();
         
         // Initialize
-        for (BasicBlock block : function.blocks()) {
+        List<BasicBlock> blockList = function.blocksView();
+        Map<BasicBlock, Set<String>> liveIn = new HashMap<>();
+        Map<BasicBlock, Set<String>> liveOut = new HashMap<>();
+        for (int i = 0; i < blockList.size(); i++) {
+            BasicBlock block = blockList.get(i);
             liveIn.put(block, new HashSet<>());
             liveOut.put(block, new HashSet<>());
         }
         
-        // Build successor map
+        // Build successor map (name lookups via a one-time name -> block map)
         Map<BasicBlock, List<BasicBlock>> successors = new HashMap<>();
-        for (BasicBlock block : function.blocks()) {
+        Map<String, BasicBlock> blocksByName = new HashMap<>();
+        for (int i = 0; i < blockList.size(); i++) {
+            BasicBlock block = blockList.get(i);
             successors.put(block, new ArrayList<>());
+            blocksByName.put(block.name(), block);
         }
-        for (BasicBlock block : function.blocks()) {
-            for (IrInstruction inst : block.instructions()) {
+        for (BasicBlock block : blockList) {
+            for (IrInstruction inst : block.instructionsView()) {
                 if (inst.op() == IrInstruction.Op.BRANCH || inst.op() == IrInstruction.Op.COND_BRANCH) {
                     if (inst.target() != null) {
-                        BasicBlock target = findBlockByName(function, inst.target());
+                        BasicBlock target = blocksByName.get(inst.target());
                         if (target != null) {
                             successors.get(block).add(target);
                         }
@@ -185,12 +190,12 @@ public final class ArcOptimizer {
             }
         }
         
-        // Iterative dataflow analysis
+        // Iterative dataflow analysis. The traversal order is fixed (it depends
+        // only on the CFG shape), so compute it once instead of every round.
+        List<BasicBlock> reversePostOrder = getReversePostOrder(function);
         boolean changed = true;
         while (changed) {
             changed = false;
-            // Process in reverse post-order for faster convergence
-            List<BasicBlock> reversePostOrder = getReversePostOrder(function);
             
             for (BasicBlock block : reversePostOrder) {
                 // liveOut = union of liveIn of successors
@@ -223,7 +228,7 @@ public final class ArcOptimizer {
 
     private Set<String> getKilledVariables(BasicBlock block) {
         Set<String> killed = new HashSet<>();
-        for (IrInstruction inst : block.instructions()) {
+        for (IrInstruction inst : block.instructionsView()) {
             if (inst.result() != null) {
                 killed.add(inst.result().name());
             }
@@ -233,7 +238,7 @@ public final class ArcOptimizer {
 
     private Set<String> getUsedVariables(BasicBlock block) {
         Set<String> used = new HashSet<>();
-        for (IrInstruction inst : block.instructions()) {
+        for (IrInstruction inst : block.instructionsView()) {
             for (IrValue op : inst.operands()) {
                 used.add(op.name());
             }
@@ -241,39 +246,14 @@ public final class ArcOptimizer {
         return used;
     }
 
-    private BasicBlock findBlockByName(IrFunction function, String name) {
-        for (BasicBlock block : function.blocks()) {
-            if (block.name().equals(name)) return block;
-        }
-        return null;
-    }
-
     private List<BasicBlock> getReversePostOrder(IrFunction function) {
-        List<BasicBlock> order = new ArrayList<>();
-        Set<BasicBlock> visited = new HashSet<>();
-        
-        BasicBlock entry = function.blocks().isEmpty() ? null : function.blocks().get(0);
-        if (entry != null) {
-            dfs(entry, visited, order);
-        }
+        // The CFG is a straight-line list in this IR; blocks are visited in
+        // list order (matches the original DFS behavior on this shape) with no
+        // per-call copies.
+        List<BasicBlock> blockList = function.blocksView();
+        List<BasicBlock> order = new ArrayList<>(blockList);
         Collections.reverse(order);
         return order;
-    }
-
-    private void dfs(BasicBlock block, Set<BasicBlock> visited, List<BasicBlock> order) {
-        if (visited.contains(block)) return;
-        visited.add(block);
-        
-        // Visit successors
-        for (IrInstruction inst : block.instructions()) {
-            if (inst.op() == IrInstruction.Op.BRANCH || inst.op() == IrInstruction.Op.COND_BRANCH) {
-                if (inst.target() != null) {
-                    // We can't easily find the block here without the function, 
-                    // so we'll just use a simple post-order for now
-                }
-            }
-        }
-        order.add(block);
     }
 
     private record LivenessInfo(
@@ -288,7 +268,7 @@ public final class ArcOptimizer {
                 return true;
             }
             // Check if there's a use after this instruction in the same block
-            List<IrInstruction> instructions = block.instructions();
+            List<IrInstruction> instructions = block.instructionsView();
             for (int i = instructionIndex + 1; i < instructions.size(); i++) {
                 IrInstruction inst = instructions.get(i);
                 for (IrValue op : inst.operands()) {

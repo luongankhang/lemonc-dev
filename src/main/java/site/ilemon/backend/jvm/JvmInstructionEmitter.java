@@ -30,6 +30,13 @@ final class JvmInstructionEmitter {
 
     // Opcodes used by this backend.
     private static final int ACONST_NULL = 0x01;
+    private static final int ICONST_M1 = 0x02;
+    private static final int ICONST_0 = 0x03;
+    private static final int ICONST_1 = 0x04;
+    private static final int ICONST_2 = 0x05;
+    private static final int ICONST_3 = 0x06;
+    private static final int ICONST_4 = 0x07;
+    private static final int ICONST_5 = 0x08;
     private static final int DUP = 0x59;
     private static final int IALOAD = 0x2E;
     private static final int LALOAD = 0x2F;
@@ -94,6 +101,10 @@ final class JvmInstructionEmitter {
     private static final int DCMPG = 0x98;
     private static final int IFEQ = 0x99;
     private static final int IFNE = 0x9A;
+    private static final int IFLT = 0x9B;
+    private static final int IFGE = 0x9C;
+    private static final int IFGT = 0x9D;
+    private static final int IFLE = 0x9E;
     private static final int IF_ACMPEQ = 0xA5;
     private static final int IF_ACMPNE = 0xA6;
     private static final int IFNULL = 0xC6;
@@ -143,6 +154,16 @@ final class JvmInstructionEmitter {
     private final String className;
     private final boolean isMain;
     private final IrType returnType;
+    /** Cached live view of the module constant table (never mutated after lowering). */
+    private final Map<String, IrModule.IrConstant> moduleConstants;
+    /** Cached call-site descriptors, keyed by function name. */
+    private final Map<String, String> callDescriptors;
+    /** Cached {argSlots, returnSlots} per callee, parallel to callDescriptors. */
+    private final Map<String, int[]> callShapes;
+
+    // Names of global constants resolved lazily per module; cached because
+    // CONST emission is the hottest path in codegen.
+    private static final int CONST_CACHE_MISS = -1;
 
     /** Names of locals whose address is taken; they live in single-element cells. */
     private final java.util.Set<String> cells;
@@ -174,6 +195,13 @@ final class JvmInstructionEmitter {
         this.returnType = returnType;
         this.cells = cells == null ? java.util.Set.of() : cells;
         this.arcDebug = arcDebug;
+        this.moduleConstants = module.hasNoConstants() ? Map.of() : module.constantsView();
+        this.callDescriptors = signatures == null || signatures.isEmpty()
+                ? Map.of()
+                : new HashMap<>(signatures.size() * 2);
+        this.callShapes = signatures == null || signatures.isEmpty()
+                ? Map.of()
+                : new HashMap<>(signatures.size() * 2);
         if (signatures != null) {
             this.signatures = signatures;
         } else {
@@ -224,7 +252,7 @@ final class JvmInstructionEmitter {
     private void emitConst(IrInstruction instruction) {
         IrValue result = instruction.result();
         String raw = instruction.operands().isEmpty() ? "0" : instruction.operands().get(0).name();
-        IrModule.IrConstant constant = module.constants().get(raw);
+        IrModule.IrConstant constant = moduleConstants.get(raw);
         if (constant != null) {
             // Global constant read: inline the resolved literal value.
             raw = constant.value();
@@ -237,7 +265,7 @@ final class JvmInstructionEmitter {
             createCellArray(result.type());            // [cell]
             code.simple(DUP);                         // [cell, cell]
             code.store(ASTORE, local.slot());         // [cell]
-            code.ldc(pool.integer(0), 1);             // [cell, 0]
+            pushIntConstant(0);                       // [cell, 0]
             pushConstant(raw, result.type());         // [cell, 0, value]
             code.simple(arrayStoreOpcode(result.type()));
             return;
@@ -254,17 +282,10 @@ final class JvmInstructionEmitter {
                 code.simple(ACONST_NULL);
             }
             case BOOL -> {
-                int value;
-                if ("true".equals(raw)) {
-                    value = 1;
-                } else if ("false".equals(raw)) {
-                    value = 0;
-                } else {
-                    value = Integer.parseInt(raw);
-                }
-                code.ldc(pool.integer(value), 1);
+                int value = "true".equals(raw) ? 1 : "false".equals(raw) ? 0 : Integer.parseInt(raw);
+                pushIntConstant(value);
             }
-            case BYTE, SHORT, CHAR, INT -> code.ldc(pool.integer(Integer.parseInt(raw)), 1);
+            case BYTE, SHORT, CHAR, INT -> pushIntConstant(Integer.parseInt(raw));
             case LONG -> code.ldc2w(pool.longConstant(Long.parseLong(raw)));
             case FLOAT -> code.ldc(pool.floatConstant(Float.parseFloat(raw)), 1);
             case DOUBLE -> code.ldc2w(pool.doubleConstant(Double.parseDouble(raw)));
@@ -332,37 +353,56 @@ final class JvmInstructionEmitter {
         } else if (operandType.kind() == IrType.Kind.LONG) {
             loadValue(left);
             loadValue(right);
+            // lcmp/dcmp/fcmp leave a -1/0/+1 result on the stack; a 1-operand
+            // if<cond> branches on it directly, with the same truth table as
+            // the materialized `push 0; if_icmp<cond>` shape but 1 byte less
+            // and one instruction fewer.
             code.simple(LCMP);
-            code.ldc(pool.integer(0), 1);
-            emitMaterializedBranch(compareOpcode(symbol));
+            emitMaterializedBranch(singleOperandBranchOpcode(symbol));
         } else if (operandType.kind() == IrType.Kind.FLOAT) {
             loadValue(left);
             loadValue(right);
+            // The fcmp variant is chosen exactly as before (FCMPG for < and
+            // <=) so NaN lands on the false edge for every comparison.
             code.simple(usesFcmpg(symbol) ? FCMPG : FCMPL);
-            code.ldc(pool.integer(0), 1);
-            emitMaterializedBranch(compareOpcode(symbol));
+            emitMaterializedBranch(singleOperandBranchOpcode(symbol));
         } else if (operandType.kind() == IrType.Kind.DOUBLE) {
             loadValue(left);
             loadValue(right);
             code.simple(usesFcmpg(symbol) ? DCMPG : DCMPL);
-            code.ldc(pool.integer(0), 1);
-            emitMaterializedBranch(compareOpcode(symbol));
+            emitMaterializedBranch(singleOperandBranchOpcode(symbol));
         } else {
             throw new CompilerException("comparison on unsupported JVM type " + operandType.kind());
         }
         store(instruction.result());
     }
 
-    /** Emits {@code if_icmpXX Ltrue; ldc 0; goto Lend; Ltrue: ldc 1; Lend:}. */
+    /** Emits {@code if_icmpXX Ltrue; iconst_0; goto Lend; Ltrue: iconst_1; Lend:}. */
     private void emitMaterializedBranch(int ifOpcode) {
         String trueLabel = freshLabel("cmp_t");
         String endLabel = freshLabel("cmp_e");
         code.branch(ifOpcode, trueLabel);
-        code.ldc(pool.integer(0), 1);
+        pushIntConstant(0);
         code.branch(GOTO, endLabel);
         code.label(trueLabel);
-        code.ldc(pool.integer(1), 1);
+        pushIntConstant(1);
         code.label(endLabel);
+    }
+
+    /**
+     * 1-operand branch for a -1/0/+1 compare result: replaces the older
+     * `push 0; if_icmp<cond>` pair with `if<cond>` on the raw result.
+     */
+    private int singleOperandBranchOpcode(String symbol) {
+        return switch (symbol) {
+            case ">" -> IFGT;
+            case "<" -> IFLT;
+            case ">=" -> IFGE;
+            case "<=" -> IFLE;
+            case "==" -> IFEQ;
+            case "!=" -> IFNE;
+            default -> throw new CompilerException("unsupported comparison symbol '" + symbol + "'");
+        };
     }
 
     private int compareOpcode(String symbol) {
@@ -375,6 +415,40 @@ final class JvmInstructionEmitter {
             case "!=" -> IF_ICMPNE;
             default -> throw new CompilerException("unsupported comparison symbol '" + symbol + "'");
         };
+    }
+
+    /** Constant-pool index for a boolean literal, cached for 0/1. */
+    private int booleanConstantPoolIndex(String raw) {
+        if ("true".equals(raw)) {
+            return pool.integer(1);
+        }
+        if ("false".equals(raw)) {
+            return pool.integer(0);
+        }
+        return pool.integer(Integer.parseInt(raw));
+    }
+
+    /** Constant-pool index for an int-family literal (pool entries are shared). */
+    private int intConstantPoolIndex(String raw) {
+        return pool.integer(Integer.parseInt(raw));
+    }
+
+    /**
+     * Pushes an int-family constant. Small values use the 1-byte iconst
+     * opcodes (no constant-pool round trip); everything else falls back to
+     * ldc. Semantically identical, just a tighter encoding.
+     */
+    private void pushIntConstant(int value) {
+        switch (value) {
+            case -1 -> code.simple(ICONST_M1);
+            case 0 -> code.simple(ICONST_0);
+            case 1 -> code.simple(ICONST_1);
+            case 2 -> code.simple(ICONST_2);
+            case 3 -> code.simple(ICONST_3);
+            case 4 -> code.simple(ICONST_4);
+            case 5 -> code.simple(ICONST_5);
+            default -> code.ldc(intConstantPoolIndex(String.valueOf(value)), 1);
+        }
     }
 
     /** NaN semantics: for {@code <}/{@code <=} use the -NaN-comparing instruction so NaN compares false. */
@@ -395,7 +469,7 @@ final class JvmInstructionEmitter {
         if (target != null && cells.contains(target.name())) {
             // Assignment to an address-taken local: [cell, 0, value].
             code.load(ALOAD, target.slot());
-            code.ldc(pool.integer(0), 1);
+            pushIntConstant(0);
             loadValue(source);
             emitConversion(from, to);
             code.simple(arrayStoreOpcode(to));
@@ -477,11 +551,13 @@ final class JvmInstructionEmitter {
             return;
         }
         if (operands.size() == 1) {
-            // Pointer dereference: *(p). Null dereference is a defined runtime
-            // error (diagnosed and thrown), never a raw NPE.
+            // Pointer dereference: *(p). The index is statically 0, so emit the
+            // dedicated iconst_0 (1 byte) instead of a 2-3 byte ldc. Null
+            // dereference is a defined runtime error (diagnosed and thrown),
+            // never a raw NPE.
             loadValue(operands.get(0));
             emitNullDerefGuard();
-            code.ldc(pool.integer(0), 1);
+            code.simple(ICONST_0);
             code.simple(arrayLoadOpcode(result.type()));
             store(result);
             return;
@@ -498,7 +574,7 @@ final class JvmInstructionEmitter {
             // Pointer store: *(p) = v, guarded like the dereference load.
             loadValue(operands.get(0));
             emitNullDerefGuard();
-            code.ldc(pool.integer(0), 1);
+            code.simple(ICONST_0);
             loadValue(operands.get(1));
             code.simple(arrayStoreOpcode(operands.get(1).type()));
             return;
@@ -540,7 +616,7 @@ final class JvmInstructionEmitter {
 
     /** Creates a single-element cell array for an address-taken local. */
     private void createCellArray(IrType elementType) {
-        code.ldc(pool.integer(1), 1);
+        pushIntConstant(1);
         if (mapper.isIntFamily(elementType) || elementType.kind() == IrType.Kind.LONG
                 || elementType.kind() == IrType.Kind.FLOAT || elementType.kind() == IrType.Kind.DOUBLE) {
             code.newarray(arrayTypeCode(elementType));
@@ -637,9 +713,20 @@ final class JvmInstructionEmitter {
             if (signature == null) {
                 throw new CompilerException("unknown function in JVM backend: " + name);
             }
-            descriptor = methodDescriptor(signature);
-            argSlots = slotSum(signature.parameterTypes());
-            returnSlots = mapper.slots(signature.returnType());
+            // Call shape (descriptor + slot counts) is immutable per callee;
+            // cache it so recursive/hot call sites skip re-deriving it.
+            int[] shape = callShapes.get(name);
+            if (shape != null) {
+                descriptor = callDescriptors.get(name);
+                argSlots = shape[0];
+                returnSlots = shape[1];
+            } else {
+                descriptor = methodDescriptor(signature);
+                callDescriptors.put(name, descriptor);
+                argSlots = slotSum(signature.parameterTypes());
+                returnSlots = mapper.slots(signature.returnType());
+                callShapes.put(name, new int[]{argSlots, returnSlots});
+            }
         }
 
         for (IrValue arg : args) {
@@ -784,7 +871,7 @@ final class JvmInstructionEmitter {
             if (cells.contains(value.name())) {
                 // Value read of an address-taken local: load cell[0].
                 code.load(ALOAD, local.slot());
-                code.ldc(pool.integer(0), 1);
+                pushIntConstant(0);
                 code.simple(arrayLoadOpcode(local.type()));
                 return;
             }

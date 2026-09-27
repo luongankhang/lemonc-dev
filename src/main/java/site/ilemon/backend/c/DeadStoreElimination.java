@@ -22,14 +22,14 @@ public final class DeadStoreElimination {
         Set<String> usedVars = computeUsedVariables(function);
         
         // Process each block
-        for (BasicBlock block : function.blocks()) {
+        for (BasicBlock block : function.blocksView()) {
             optimizeBlock(block, usedVars);
         }
     }
 
     private void optimizeBlock(BasicBlock block, Set<String> usedVars) {
-        List<IrInstruction> instructions = new ArrayList<>(block.instructions());
-        List<IrInstruction> optimized = new ArrayList<>();
+        List<IrInstruction> instructions = block.instructionsView();
+        List<IrInstruction> optimized = new ArrayList<>(instructions.size());
         
         for (int i = 0; i < instructions.size(); i++) {
             IrInstruction inst = instructions.get(i);

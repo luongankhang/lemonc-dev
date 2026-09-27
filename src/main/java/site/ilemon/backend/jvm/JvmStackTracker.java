@@ -125,9 +125,13 @@ final class JvmStackTracker {
                 if (target == null) {
                     throw new CompilerException("Missing JVM label target: " + insn.target);
                 }
-                addSuccessor(target, nextHeight, stack, inHeights, worklist);
                 if (!isUnconditional(insn.opcode) && index + 1 < insns.size()) {
-                    addSuccessor(index + 1, nextHeight, stack, inHeights, worklist);
+                    // Fan-out: one edge takes the state itself, the other gets
+                    // a copy; heights stay consistent either way.
+                    addSuccessor(target, nextHeight, stack, inHeights, worklist);
+                    addSuccessor(index + 1, nextHeight, stack.copy(), inHeights, worklist);
+                } else {
+                    addSuccessor(target, nextHeight, stack, inHeights, worklist);
                 }
             } else if (!isReturn(insn.opcode)) {
                 if (index + 1 < insns.size()) {
@@ -143,7 +147,12 @@ final class JvmStackTracker {
         int oldHeight = inHeights[successor];
         if (oldHeight == -1) {
             inHeights[successor] = nextHeight;
-            worklist.add(new WorkItem(successor, stack.copy()));
+            // The producer hands its (already computed) post-state to the
+            // successor and never touches it again, so no defensive copy is
+            // needed along a linear chain. A copy is only required when one
+            // state must feed two successors (conditional branch), and the
+            // caller makes that copy explicitly for the second edge.
+            worklist.add(new WorkItem(successor, stack));
         } else if (oldHeight != nextHeight) {
             throw new CompilerException("Inconsistent operand stack height at IR index "
                     + successor + ": expected " + oldHeight + ", got " + nextHeight);
@@ -303,6 +312,9 @@ final class JvmStackTracker {
                 stack.pop(4);
                 break;
             case 0x01: // aconst_null
+                stack.push(1);
+                break;
+            case 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08: // iconst_m1..iconst_5
                 stack.push(1);
                 break;
             case 0xAC, 0xAE, 0xB0: // ireturn/freturn/areturn
