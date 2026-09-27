@@ -760,10 +760,15 @@ public class Parser {
 
 		}
 		else if( look.kind == TokenKind.Return ) {
+			Token returnToken = look;
+			int lineNumber = returnToken.lineNumber;
 			match( "return" );
-			int lineNumber = look.lineNumber;
-			Ast.Expr.T expr = parseExpr();
+			Ast.Expr.T expr = null;
+			if( look.kind != TokenKind.Semicolon ) {
+				expr = parseExpr();
+			}
 			stmt = new Ast.Stmt.Return(expr, lineNumber);
+			stmt.setSpan(tokenSpan(returnToken));
 			match( ";" );
 
 		}else if( look.kind == TokenKind.If ){

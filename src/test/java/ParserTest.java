@@ -232,6 +232,45 @@ public class ParserTest {
         assertEquals(3, mul.getLineNum());
     }
 
+    @Test
+    public void testVoidReturnWithoutExpression() throws IOException {
+        String source = "void foo() { return; }\nvoid main() { foo(); }\n";
+        Parser parser = createParserFromSource(source);
+        Ast.Program.T prog = parser.parse();
+        assertNotNull(prog);
+        Ast.Program.ProgramSingle ps = (Ast.Program.ProgramSingle) prog;
+        Ast.MainClass.MainClassSingle mc = (Ast.MainClass.MainClassSingle) ps.getMainClass();
+        Ast.Method.MethodSingle ms = (Ast.Method.MethodSingle) mc.getMethods().get(0);
+        assertEquals("foo", ms.getId());
+        assertEquals(1, ms.getStms().size());
+        assertTrue(ms.getStms().get(0) instanceof Ast.Stmt.Return);
+        Ast.Stmt.Return ret = (Ast.Stmt.Return) ms.getStms().get(0);
+        assertNull(ret.getExpr());
+    }
+
+    @Test
+    public void testVoidReturnInIf() throws IOException {
+        String source = "void test(int x) { if (x > 0) { return; } }\nvoid main() { test(1); }\n";
+        Parser parser = createParserFromSource(source);
+        Ast.Program.T prog = parser.parse();
+        assertNotNull(prog);
+        assertTrue(containsStmtType(prog, Ast.Stmt.Return.class));
+    }
+
+    @Test
+    public void testVoidReturnAfterStatement() throws IOException {
+        String source = "void test() { printLine(); return; }\nvoid main() { test(); }\n";
+        Parser parser = createParserFromSource(source);
+        Ast.Program.T prog = parser.parse();
+        assertNotNull(prog);
+        Ast.Program.ProgramSingle ps = (Ast.Program.ProgramSingle) prog;
+        Ast.MainClass.MainClassSingle mc = (Ast.MainClass.MainClassSingle) ps.getMainClass();
+        Ast.Method.MethodSingle ms = (Ast.Method.MethodSingle) mc.getMethods().get(0);
+        assertEquals(2, ms.getStms().size());
+        assertTrue(ms.getStms().get(1) instanceof Ast.Stmt.Return);
+        assertNull(((Ast.Stmt.Return) ms.getStms().get(1)).getExpr());
+    }
+
     // ==================== Helper methods ====================
 
     private Parser createParser(String filename) throws IOException {

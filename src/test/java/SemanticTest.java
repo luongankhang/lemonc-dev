@@ -66,4 +66,88 @@ public class SemanticTest {
         visitor.visit(prog);
         Assert.assertFalse(visitor.passOrNot());
     }
+
+    @org.junit.Test
+    public void testVoidReturnWithoutValuePasses() throws IOException {
+        File file = File.createTempFile("sem_void_ret", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), "void main() { foo(); }\nvoid foo() { return; }\n", java.nio.charset.StandardCharsets.UTF_8);
+        Parser p = new Parser(new Lexer(file));
+        Ast.Program.T prog = p.parse();
+        SemanticVisitor visitor = new SemanticVisitor();
+        visitor.visit(prog);
+        Assert.assertTrue(visitor.passOrNot());
+    }
+
+    @org.junit.Test
+    public void testVoidReturnInIfPasses() throws IOException {
+        File file = File.createTempFile("sem_void_ret_if", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), "void main() { test(1); }\nvoid test(int x) { if (x > 0) { return; } }\n", java.nio.charset.StandardCharsets.UTF_8);
+        Parser p = new Parser(new Lexer(file));
+        Ast.Program.T prog = p.parse();
+        SemanticVisitor visitor = new SemanticVisitor();
+        visitor.visit(prog);
+        Assert.assertTrue(visitor.passOrNot());
+    }
+
+    @org.junit.Test
+    public void testVoidMultipleReturnsPasses() throws IOException {
+        File file = File.createTempFile("sem_void_multi_ret", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), "void main() { foo(); }\nvoid foo() { return; return; }\n", java.nio.charset.StandardCharsets.UTF_8);
+        Parser p = new Parser(new Lexer(file));
+        Ast.Program.T prog = p.parse();
+        SemanticVisitor visitor = new SemanticVisitor();
+        visitor.visit(prog);
+        Assert.assertTrue(visitor.passOrNot());
+    }
+
+    @org.junit.Test
+    public void testVoidReturnWithValueFails() throws IOException {
+        File file = File.createTempFile("sem_void_ret_val", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), "void main() { foo(); }\nvoid foo() { return 123; }\n", java.nio.charset.StandardCharsets.UTF_8);
+        Parser p = new Parser(new Lexer(file));
+        Ast.Program.T prog = p.parse();
+        SemanticVisitor visitor = SemanticVisitor.collecting();
+        visitor.visit(prog);
+        Assert.assertFalse(visitor.passOrNot());
+    }
+
+    @org.junit.Test
+    public void testNonVoidReturnWithoutValueFails() throws IOException {
+        File file = File.createTempFile("sem_nonvoid_ret_noval", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), "void main() { int x; x = test(); }\nint test() { return; }\n", java.nio.charset.StandardCharsets.UTF_8);
+        Parser p = new Parser(new Lexer(file));
+        Ast.Program.T prog = p.parse();
+        SemanticVisitor visitor = SemanticVisitor.collecting();
+        visitor.visit(prog);
+        Assert.assertFalse(visitor.passOrNot());
+    }
+
+    @org.junit.Test
+    public void testNonVoidReturnWithValuePasses() throws IOException {
+        File file = File.createTempFile("sem_nonvoid_ret_val", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), "void main() { int x; x = test(); }\nint test() { return 1; }\n", java.nio.charset.StandardCharsets.UTF_8);
+        Parser p = new Parser(new Lexer(file));
+        Ast.Program.T prog = p.parse();
+        SemanticVisitor visitor = new SemanticVisitor();
+        visitor.visit(prog);
+        Assert.assertTrue(visitor.passOrNot());
+    }
+
+    @org.junit.Test
+    public void testVoidWithoutReturnPasses() throws IOException {
+        File file = File.createTempFile("sem_void_no_ret", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), "void main() { foo(); }\nvoid foo() {}\n", java.nio.charset.StandardCharsets.UTF_8);
+        Parser p = new Parser(new Lexer(file));
+        Ast.Program.T prog = p.parse();
+        SemanticVisitor visitor = new SemanticVisitor();
+        visitor.visit(prog);
+        Assert.assertTrue(visitor.passOrNot());
+    }
 }

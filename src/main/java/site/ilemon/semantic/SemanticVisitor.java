@@ -983,7 +983,15 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         if( this.typeOfMethodDeclared != null
                 && this.typeOfMethodDeclared.getKind() == TypeKind.VOID ){
-            error(obj.getLineNum(), "void method cannot return a value");
+            if (obj.getExpr() != null) {
+                error(obj.getLineNum(), "void method cannot return a value");
+            }
+            return;
+        }
+        if (obj.getExpr() == null) {
+            typeError(DiagnosticCodes.TYPE_RETURN, typeName(typeOfMethodDeclared), "void",
+                    "return;", obj.getLineNum(), obj.getSpan(), "return statement", "non-void method must return a value");
+            return;
         }
         this.visit(obj.getExpr());
         if (isPointerType(typeOfMethodDeclared) && exprMayPointToLocal(obj.getExpr())) {

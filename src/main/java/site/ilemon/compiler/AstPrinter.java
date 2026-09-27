@@ -128,7 +128,9 @@ public final class AstPrinter {
             stmt(node.getBody(), depth + 2);
         } else if (stmt instanceof Ast.Stmt.Return) {
             line(depth, "Return");
-            expr(((Ast.Stmt.Return) stmt).getExpr(), depth + 1);
+            if (((Ast.Stmt.Return) stmt).getExpr() != null) {
+                expr(((Ast.Stmt.Return) stmt).getExpr(), depth + 1);
+            }
         } else if (stmt instanceof Ast.Stmt.Printf) {
             Ast.Stmt.Printf node = (Ast.Stmt.Printf) stmt;
             line(depth, "Printf \"" + escape(node.getFormat()) + "\"");

@@ -287,6 +287,10 @@ public class Ast {
                 this.setLineNum(lineNum);
             }
 
+            public Return(int lineNum) {
+                this(null, lineNum);
+            }
+
             @Override
             public void accept(ISemanticVisitor v) {
                 v.visit(this);

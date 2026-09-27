@@ -201,4 +201,36 @@ public class JvmBackendTest {
                 + "}\n";
         assertEquals("-2147483648", JvmTestSupport.compileAndRun("MinIntTest", source));
     }
+
+    @Test
+    public void handlesVoidReturnWithoutExpression() throws Exception {
+        String source = ""
+                + "void foo() {\n"
+                + "    return;\n"
+                + "}\n"
+                + "void main() {\n"
+                + "    foo();\n"
+                + "    printf(\"done\");\n"
+                + "}\n";
+        byte[] bytes = JvmTestSupport.compileToBytes("VoidRet", source);
+        assertTrue(JvmTestSupport.hasMnemonic(bytes, "return"));
+        assertEquals("done", JvmTestSupport.compileAndRun("VoidRet", source));
+    }
+
+    @Test
+    public void handlesVoidReturnInControlFlow() throws Exception {
+        String source = ""
+                + "void check(int x) {\n"
+                + "    if (x > 0) {\n"
+                + "        printf(\"pos \");\n"
+                + "        return;\n"
+                + "    }\n"
+                + "    printf(\"neg \");\n"
+                + "}\n"
+                + "void main() {\n"
+                + "    check(10);\n"
+                + "    check(-5);\n"
+                + "}\n";
+        assertEquals("pos neg ", JvmTestSupport.compileAndRun("VoidRetCtrl", source));
+    }
 }

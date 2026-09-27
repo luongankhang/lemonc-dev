@@ -242,4 +242,23 @@ public class NativeEndToEndTest {
         String output = compileAndRunNative(code, "FibNative");
         assertTrue(output.contains("144"));
     }
+
+    @Test
+    public void testNativeVoidReturn() throws Exception {
+        String code = """
+                void check(int x) {
+                    if (x > 0) {
+                        printf("pos ");
+                        return;
+                    }
+                    printf("neg ");
+                }
+                void main() {
+                    check(10);
+                    check(-5);
+                }
+                """;
+        String output = compileAndRunNative(code, "VoidReturnNative");
+        assertEquals("pos neg", output);
+    }
 }
