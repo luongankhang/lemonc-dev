@@ -216,21 +216,34 @@ public class Parser {
 	private final ArrayList<Ast.StructDecl> structs = new ArrayList<>();
 
 	private boolean isStructStart() {
-		if (look == null || look.kind != TokenKind.Struct) {
+		if (look == null) {
 			return false;
 		}
-		// A struct *declaration* is `struct Name { ... }`. A method returning a
-		// struct (`struct Name fname(...)`) continues with a second identifier,
-		// not a brace, so it must fall through to method parsing.
-		Token second = lexer.lookahead(1);
-		Token third = lexer.lookahead(2);
-		return second != null && second.kind == TokenKind.Id
-				&& third != null && third.kind == TokenKind.Lbrace;
+		if (look.kind == TokenKind.Struct) {
+			Token second = lexer.lookahead(1);
+			Token third = lexer.lookahead(2);
+			return second != null && second.kind == TokenKind.Id
+					&& third != null && third.kind == TokenKind.Lbrace;
+		}
+		if (look.kind == TokenKind.Pub) {
+			Token second = lexer.lookahead(1);
+			Token third = lexer.lookahead(2);
+			Token fourth = lexer.lookahead(3);
+			return second != null && second.kind == TokenKind.Struct
+					&& third != null && third.kind == TokenKind.Id
+					&& fourth != null && fourth.kind == TokenKind.Lbrace;
+		}
+		return false;
 	}
 
-	// <structDecl> -> struct id { <field>* } ;
+	// <structDecl> -> [pub] struct id { <field>* } [;]
 	private Ast.StructDecl parseStructDecl() throws IOException {
-		Token structToken = look;
+		Token startToken = look;
+		Ast.Visibility visibility = Ast.Visibility.PRIVATE;
+		if (look.kind == TokenKind.Pub) {
+			visibility = Ast.Visibility.PUBLIC;
+			move();
+		}
 		match(new Token(TokenKind.Struct));
 		if (look.kind != TokenKind.Id) {
 			error("expected a struct name after 'struct'");
@@ -241,14 +254,33 @@ public class Parser {
 		match(new Token(TokenKind.Id));
 		match("{");
 		ArrayList<Ast.Declare.T> fields = new ArrayList<>();
-		while (isTypeToken(look.kind)) {
+		boolean anyExplicitPub = false;
+		while (look.kind == TokenKind.Pub || isTypeToken(look.kind)) {
+			Ast.Visibility fieldVis = Ast.Visibility.PRIVATE;
+			if (look.kind == TokenKind.Pub) {
+				fieldVis = Ast.Visibility.PUBLIC;
+				anyExplicitPub = true;
+				move();
+			}
 			Ast.Declare.T field = parseDeclare();
+			if (field instanceof Ast.Declare.DeclareSingle single) {
+				single.setVisibility(fieldVis);
+			}
 			fields.add(field);
 		}
+		if (!anyExplicitPub && visibility == Ast.Visibility.PUBLIC) {
+			for (Ast.Declare.T field : fields) {
+				if (field instanceof Ast.Declare.DeclareSingle single) {
+					single.setVisibility(Ast.Visibility.PUBLIC);
+				}
+			}
+		}
 		match("}");
-		match(";");
-		Ast.StructDecl decl = new Ast.StructDecl(name, fields, lineNumber);
-		decl.setSpan(tokenSpan(structToken));
+		if (look.kind == TokenKind.Semicolon) {
+			match(";");
+		}
+		Ast.StructDecl decl = new Ast.StructDecl(name, fields, visibility, lineNumber);
+		decl.setSpan(tokenSpan(startToken));
 		return decl;
 	}
 
@@ -324,9 +356,10 @@ public class Parser {
 		if (look == null) {
 			return false;
 		}
-		// `pub` starts a method unless it is `pub const`.
+		// `pub` starts a method unless it is `pub const` or `pub struct`.
 		if (look.kind == TokenKind.Pub) {
-			return lexer.lookahead(1) == null || lexer.lookahead(1).kind != TokenKind.Const;
+			if (isConstStart() || isStructStart()) return false;
+			return true;
 		}
 		if (look.kind == TokenKind.Struct) {
 			// `struct Name fname(...)` starts a method; declarations (`struct
@@ -460,53 +493,49 @@ public class Parser {
 
 	}
 
+	private int peekTypeEndOffset() {
+		if (look == null) return -1;
+		int offset = 0;
+		if (look.kind == TokenKind.Struct) {
+			Token next = lexer.lookahead(1);
+			if (next == null || next.kind != TokenKind.Id) return -1;
+			offset = 1;
+			Token dot = lexer.lookahead(2);
+			if (dot != null && dot.kind == TokenKind.Dot) {
+				Token member = lexer.lookahead(3);
+				if (member == null || member.kind != TokenKind.Id) return -1;
+				offset = 3;
+			}
+		} else if (isTypeToken(look.kind)) {
+			offset = 0;
+		} else {
+			return -1;
+		}
+		while (true) {
+			Token star = lexer.lookahead(offset + 1);
+			if (star != null && star.kind == TokenKind.Mul) {
+				offset++;
+			} else {
+				break;
+			}
+		}
+		return offset;
+	}
+
 	private boolean isVarDeclarationWithoutInitializer() {
-		if (!isTypeToken(look.kind)) {
-			return false;
-		}
-		Token ahead = lexer.lookahead(1);
-		if (ahead == null) {
-			return false;
-		}
-		int offset = 1;
-		if (ahead.kind == TokenKind.Mul) {
-			offset = 2;
-			Token candidate = lexer.lookahead(offset);
-			while (candidate != null && candidate.kind == TokenKind.Mul) {
-				candidate = lexer.lookahead(++offset);
-			}
-			if (candidate == null || candidate.kind != TokenKind.Id) {
-				return false;
-			}
-		} else if (ahead.kind != TokenKind.Id) {
-			return false;
-		}
-		Token afterId = lexer.lookahead(offset + 1);
-		return afterId != null && afterId.kind != TokenKind.Assign;
+		int offset = peekTypeEndOffset();
+		if (offset < 0) return false;
+		Token varName = lexer.lookahead(offset + 1);
+		if (varName == null || varName.kind != TokenKind.Id) return false;
+		Token afterVar = lexer.lookahead(offset + 2);
+		return afterVar != null && afterVar.kind != TokenKind.Assign;
 	}
 
 	private boolean isVarDeclarationStart() {
-		if (!isTypeToken(look.kind)) {
-			return false;
-		}
-		// A declaration is `type [*]* id` (or `type id[size]`): peek past any
-		// declarator stars to confirm an identifier follows.
-		Token ahead = lexer.lookahead(1);
-		if (ahead == null) {
-			return false;
-		}
-		if (ahead.kind == TokenKind.Id) {
-			return true;
-		}
-		if (ahead.kind == TokenKind.Mul) {
-			int offset = 2;
-			Token candidate = lexer.lookahead(offset);
-			while (candidate != null && candidate.kind == TokenKind.Mul) {
-				candidate = lexer.lookahead(++offset);
-			}
-			return candidate != null && candidate.kind == TokenKind.Id;
-		}
-		return false;
+		int offset = peekTypeEndOffset();
+		if (offset < 0) return false;
+		Token varName = lexer.lookahead(offset + 1);
+		return varName != null && varName.kind == TokenKind.Id;
 	}
 
 	// // <declare> -> type id; | type id[size];
@@ -688,8 +717,18 @@ public class Parser {
 				error("expected a struct name after 'struct'");
 				return null;
 			}
-			type = new Ast.Type.Struct(look.lexeme);
+			String name = look.lexeme;
 			move();
+			if (look.kind == TokenKind.Dot) {
+				move();
+				if (look.kind != TokenKind.Id) {
+					error("expected a struct name after '.'");
+					return null;
+				}
+				name = name + "." + look.lexeme;
+				move();
+			}
+			type = new Ast.Type.Struct(name);
 		}
 		else {
 			error("expected type keyword int, float, double, bool, byte, short, char, long, string, or void");

@@ -13,8 +13,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -25,7 +27,16 @@ public final class ModuleLoader {
 
     public void resolve(Ast.Program.T program, Path sourcePath) throws IOException {
         Ast.MainClass.MainClassSingle main = (Ast.MainClass.MainClassSingle) ((Ast.Program.ProgramSingle) program).getMainClass();
-        loadImports(main, sourcePath.toAbsolutePath().normalize());
+        Path normalizedOwner = sourcePath.toAbsolutePath().normalize();
+        for (Ast.StructDecl s : main.getStructs()) {
+            s.setDeclaringModule(normalizedOwner.toString());
+        }
+        for (Ast.Method.T m : main.getMethods()) {
+            if (m instanceof Ast.Method.MethodSingle method) {
+                method.setDeclaringModule(normalizedOwner.toString());
+            }
+        }
+        loadImports(main, normalizedOwner);
     }
 
     private void loadImports(Ast.MainClass.MainClassSingle owner, Path ownerPath) throws IOException {
@@ -93,6 +104,7 @@ public final class ModuleLoader {
                 if (existing.add(exportedName)) {
                     Ast.Method.MethodSingle exported = method;
                     exported.setId(exportedName);
+                    exported.setDeclaringModule(importedPath.toString());
                     // Rewrite internal calls to use prefixed names (e.g., mul -> math_mul)
                     new MethodCallRewriter(callRewriteMap).rewrite(exported);
                     // The exported body may reference its declaring module's
@@ -117,6 +129,43 @@ public final class ModuleLoader {
                 }
             }
         }
+
+        // Track all structs in the imported module for alias lookups and visibility enforcement
+        ArrayList<Ast.StructDecl> modStructs = owner.getModuleStructs().computeIfAbsent(importDecl.getName(), k -> new ArrayList<>());
+        for (Ast.StructDecl s : imported.getStructs()) {
+            s.setDeclaringModule(importedPath.toString());
+            boolean found = false;
+            for (Ast.StructDecl existingS : modStructs) {
+                if (existingS.getName().equals(s.getName())) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                modStructs.add(s);
+            }
+        }
+
+        // Re-export all structs into owner so they are available for code generation and
+        // declaring-module internal usage, preserving their visibility and declaringModule
+        // for semantic access checks.
+        for (Ast.StructDecl structDecl : imported.getStructs()) {
+            if (!existingStruct(owner).contains(structDecl.getName())) {
+                Ast.StructDecl exported = new Ast.StructDecl(
+                        structDecl.getName(), structDecl.getFields(), structDecl.getVisibility(), structDecl.getLineNum());
+                exported.setSpan(structDecl.getSpan());
+                exported.setDeclaringModule(importedPath.toString());
+                owner.getStructs().add(exported);
+            }
+        }
+    }
+
+    private static Set<String> existingStruct(Ast.MainClass.MainClassSingle owner) {
+        Set<String> names = new HashSet<>();
+        for (Ast.StructDecl structDecl : owner.getStructs()) {
+            names.add(structDecl.getName());
+        }
+        return names;
     }
 
     private static Set<String> existingConst(Ast.MainClass.MainClassSingle owner) {
@@ -146,6 +195,15 @@ public final class ModuleLoader {
                 throw e;
             }
             Ast.MainClass.MainClassSingle module = (Ast.MainClass.MainClassSingle) ((Ast.Program.ProgramSingle) program).getMainClass();
+            Path normalized = path.toAbsolutePath().normalize();
+            for (Ast.StructDecl s : module.getStructs()) {
+                s.setDeclaringModule(normalized.toString());
+            }
+            for (Ast.Method.T m : module.getMethods()) {
+                if (m instanceof Ast.Method.MethodSingle method) {
+                    method.setDeclaringModule(normalized.toString());
+                }
+            }
             cache.put(path, module);
             loadImports(module, path);
             return module;

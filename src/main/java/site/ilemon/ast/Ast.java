@@ -115,12 +115,14 @@ public class Ast {
             private ArrayList<ConstDecl> constants = new ArrayList<>();
             /** Top-level struct declarations in declaration order. */
             private ArrayList<StructDecl> structs = new ArrayList<>();
+            private java.util.Map<String, ArrayList<StructDecl>> moduleStructs = new java.util.LinkedHashMap<>();
             public ArrayList<Ast.Method.T> getMethods() { return this.methods; }
             public void setMethods(ArrayList<Ast.Method.T> methods) { this.methods = methods; }
             public ArrayList<ImportDecl> getImports() { return this.imports; }
             public ArrayList<ConstDecl> getConstants() { return this.constants; }
             public void setConstants(ArrayList<ConstDecl> constants) { this.constants = constants; }
             public ArrayList<StructDecl> getStructs() { return this.structs; }
+            public java.util.Map<String, ArrayList<StructDecl>> getModuleStructs() { return this.moduleStructs; }
 
             public MainClassSingle(String classId, ArrayList<Declare.T> fields, ArrayList<Ast.Method.T> methods) {
                 this.classId = classId;
@@ -826,6 +828,16 @@ public class Ast {
 
             public String getName() { return name; }
 
+            public String getSimpleName() {
+                int dot = name.indexOf('.');
+                return dot >= 0 ? name.substring(dot + 1) : name;
+            }
+
+            public String getModuleAlias() {
+                int dot = name.indexOf('.');
+                return dot >= 0 ? name.substring(0, dot) : null;
+            }
+
             @Override
             public TypeKind getKind() { return TypeKind.STRUCT; }
 
@@ -848,11 +860,18 @@ public class Ast {
         private final ArrayList<Declare.T> fields;
         private final int lineNum;
         private SourceSpan span;
+        private Visibility visibility = Visibility.PRIVATE;
+        private String declaringModule = null;
 
-        public StructDecl(String name, ArrayList<Declare.T> fields, int lineNum) {
+        public StructDecl(String name, ArrayList<Declare.T> fields, Visibility visibility, int lineNum) {
             this.name = name;
             this.fields = fields;
+            this.visibility = visibility;
             this.lineNum = lineNum;
+        }
+
+        public StructDecl(String name, ArrayList<Declare.T> fields, int lineNum) {
+            this(name, fields, Visibility.PRIVATE, lineNum);
         }
 
         public String getName() { return name; }
@@ -860,16 +879,30 @@ public class Ast {
         public int getLineNum() { return lineNum; }
         public SourceSpan getSpan() { return span; }
         public void setSpan(SourceSpan span) { this.span = span; }
+        public Visibility getVisibility() { return visibility; }
+        public void setVisibility(Visibility visibility) { this.visibility = visibility; }
+        public String getDeclaringModule() { return declaringModule; }
+        public void setDeclaringModule(String declaringModule) { this.declaringModule = declaringModule; }
 
-        /** Resolves a field name to its declared type, or null when absent. */
-        public Type.T fieldType(String fieldName) {
+        public Declare.DeclareSingle getField(String fieldName) {
             if (fields == null) return null;
             for (Declare.T field : fields) {
                 if (field instanceof Declare.DeclareSingle single && single.getId().equals(fieldName)) {
-                    return single.getType();
+                    return single;
                 }
             }
             return null;
+        }
+
+        public Visibility fieldVisibility(String fieldName) {
+            Declare.DeclareSingle f = getField(fieldName);
+            return f == null ? null : f.getVisibility();
+        }
+
+        /** Resolves a field name to its declared type, or null when absent. */
+        public Type.T fieldType(String fieldName) {
+            Declare.DeclareSingle f = getField(fieldName);
+            return f == null ? null : f.getType();
         }
     }
 
@@ -1481,6 +1514,9 @@ public class Ast {
             private java.util.List<ConstDecl> moduleConsts;
             public java.util.List<ConstDecl> getModuleConsts() { return this.moduleConsts; }
             public void setModuleConsts(java.util.List<ConstDecl> moduleConsts) { this.moduleConsts = moduleConsts; }
+            private String declaringModule = null;
+            public String getDeclaringModule() { return this.declaringModule; }
+            public void setDeclaringModule(String declaringModule) { this.declaringModule = declaringModule; }
 
             public MethodSingle(Ast.Type.T  retType, String id,
                                 ArrayList<Declare.T> formals,

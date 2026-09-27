@@ -1,0 +1,11 @@
+import geo = @import("geometry.lemon");
+
+void main() {
+    struct Point p1 = geo.makePoint(1, 2);
+    struct Point p2 = geo.makePoint(4, 6);
+    int dist = geo.distanceSquared(p1, p2);
+    printf("distanceSquared=%d\n", dist);
+
+    geo.scalePoint(&p1, 10);
+    printf("scaled_p1=%d,%d\n", p1.x, p1.y);
+}

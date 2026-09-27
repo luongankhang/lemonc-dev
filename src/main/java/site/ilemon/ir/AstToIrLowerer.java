@@ -973,7 +973,7 @@ public final class AstToIrLowerer {
             return IrType.pointer(toIrType(pointer.getPointee()), 0);
         }
         if (type instanceof Ast.Type.Null) return IrType.pointer(IrType.scalar(IrType.Kind.VOID), 0);
-        if (type instanceof Ast.Type.Struct structType) return IrType.structType(structType.getName());
+        if (type instanceof Ast.Type.Struct structType) return IrType.structType(structType.getSimpleName());
 
         if (type instanceof Ast.Type.IntArray) return IrType.array(IrType.scalar(IrType.Kind.INT));
         if (type instanceof Ast.Type.ByteArray) return IrType.array(IrType.scalar(IrType.Kind.BYTE));

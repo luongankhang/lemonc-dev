@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.nio.file.Path;
 
@@ -84,6 +85,8 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     /** Declared structs of the current program, keyed by struct name. */
     private final HashMap<String, Ast.StructDecl> structTable = new HashMap<>();
+    private Ast.MainClass.MainClassSingle currentMainClass;
+    private String currDeclaringModule;
 
     public SemanticVisitor(){
         this(false);
@@ -604,6 +607,22 @@ public class SemanticVisitor implements ISemanticVisitor {
     @Override
     public void visit(Ast.MainClass.T obj) {
         Ast.MainClass.MainClassSingle mainClassSingle = (Ast.MainClass.MainClassSingle) obj;
+        this.currentMainClass = mainClassSingle;
+        this.currDeclaringModule = null;
+        for (Ast.Method.T m : mainClassSingle.getMethods()) {
+            if (m instanceof Ast.Method.MethodSingle ms && ms.getDeclaringModule() != null) {
+                this.currDeclaringModule = ms.getDeclaringModule();
+                break;
+            }
+        }
+        if (this.currDeclaringModule == null) {
+            for (Ast.StructDecl s : mainClassSingle.getStructs()) {
+                if (s.getDeclaringModule() != null) {
+                    this.currDeclaringModule = s.getDeclaringModule();
+                    break;
+                }
+            }
+        }
         scopeManager = new ScopeManager();
         importedModuleNames.clear();
         structTable.clear();
@@ -683,17 +702,23 @@ public class SemanticVisitor implements ISemanticVisitor {
             error(structDecl.getLineNum(), "struct '" + structDecl.getName() + "' must declare at least one field");
             return;
         }
-        java.util.Set<String> fieldNames = new java.util.HashSet<>();
-        for (Ast.Declare.T field : structDecl.getFields()) {
-            if (!(field instanceof Ast.Declare.DeclareSingle single)) {
-                continue;
+        String prevModule = this.currDeclaringModule;
+        this.currDeclaringModule = structDecl.getDeclaringModule();
+        try {
+            java.util.Set<String> fieldNames = new java.util.HashSet<>();
+            for (Ast.Declare.T field : structDecl.getFields()) {
+                if (!(field instanceof Ast.Declare.DeclareSingle single)) {
+                    continue;
+                }
+                if (single.getId() == null || !fieldNames.add(single.getId())) {
+                    error(structDecl.getLineNum(), "duplicate field declaration in struct '"
+                            + structDecl.getName() + "': " + single.getId());
+                    continue;
+                }
+                validateStructFieldType(structDecl, single);
             }
-            if (single.getId() == null || !fieldNames.add(single.getId())) {
-                error(structDecl.getLineNum(), "duplicate field declaration in struct '"
-                        + structDecl.getName() + "': " + single.getId());
-                continue;
-            }
-            validateStructFieldType(structDecl, single);
+        } finally {
+            this.currDeclaringModule = prevModule;
         }
     }
 
@@ -712,16 +737,18 @@ public class SemanticVisitor implements ISemanticVisitor {
             return;
         }
         if (type.getKind() == TypeKind.STRUCT
-                && ((Ast.Type.Struct) type).getName().equals(owner.getName())) {
+                && ((Ast.Type.Struct) type).getSimpleName().equals(owner.getName())) {
             error(field.getLineNum(), "struct '" + owner.getName() + "' cannot contain itself as a value field");
             return;
         }
-        if (type.getKind() == TypeKind.STRUCT && !structTable.containsKey(((Ast.Type.Struct) type).getName())) {
-            semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
-                    "unknown struct type: " + ((Ast.Type.Struct) type).getName(),
-                    field.getLineNum(), field.getSpan(), "unknown struct",
-                    "declare the struct before using it as a field type", null);
-            return;
+        validateStructTypeReference(type, field.getLineNum(), field.getSpan(), "field type");
+        if (owner.getVisibility() == Ast.Visibility.PUBLIC && field.getVisibility() == Ast.Visibility.PUBLIC) {
+            if (referencesPrivateStruct(type)) {
+                semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                        "public struct '" + owner.getName() + "' cannot expose private struct in public field '" + field.getId() + "'",
+                        field.getLineNum(), field.getSpan(), "private struct in public field",
+                        "declare struct with 'pub' or make field private", null);
+            }
         }
         if (isPointerType(type) && !isLegalStructPointee(((Ast.Type.Pointer) type).getPointee())) {
             semanticError(DiagnosticCodes.TYPE_POINTER_ASSIGNMENT,
@@ -740,7 +767,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             return isLegalStructPointee(((Ast.Type.Pointer) pointee).getPointee());
         }
         if (pointee.getKind() == TypeKind.STRUCT) {
-            return structTable.containsKey(((Ast.Type.Struct) pointee).getName());
+            return resolveStruct(((Ast.Type.Struct) pointee).getName()) != null;
         }
         return switch (pointee.getKind()) {
             case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL -> true;
@@ -750,7 +777,107 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     /** Resolves a struct name to its declaration, or null when unknown. */
     private Ast.StructDecl resolveStruct(String name) {
-        return structTable.get(name);
+        if (name == null) return null;
+        Ast.StructDecl decl = structTable.get(name);
+        if (decl != null) return decl;
+        int dot = name.indexOf('.');
+        if (dot >= 0) {
+            String alias = name.substring(0, dot);
+            String simpleName = name.substring(dot + 1);
+            if (currentMainClass != null && currentMainClass.getModuleStructs().containsKey(alias)) {
+                for (Ast.StructDecl s : currentMainClass.getModuleStructs().get(alias)) {
+                    if (s.getName().equals(simpleName)) {
+                        return s;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean referencesPrivateStruct(Ast.Type.T type) {
+        if (type == null) return false;
+        if (isPointerType(type)) return referencesPrivateStruct(((Ast.Type.Pointer) type).getPointee());
+        if (type.getKind() != TypeKind.STRUCT) return false;
+        Ast.StructDecl decl = resolveStruct(((Ast.Type.Struct) type).getName());
+        return decl != null && decl.getVisibility() == Ast.Visibility.PRIVATE;
+    }
+
+    private void validateStructTypeReference(Ast.Type.T type, int line, site.ilemon.util.SourceSpan span, String context) {
+        if (type == null) return;
+        if (isPointerType(type)) {
+            validateStructTypeReference(((Ast.Type.Pointer) type).getPointee(), line, span, context);
+            return;
+        }
+        if (type.getKind() != TypeKind.STRUCT) {
+            return;
+        }
+        Ast.Type.Struct structType = (Ast.Type.Struct) type;
+        String alias = structType.getModuleAlias();
+        String simpleName = structType.getSimpleName();
+
+        if (alias != null) {
+            if (!importedModuleNames.contains(alias) && scopeManager.resolveImport(alias) == null) {
+                semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                        "module import '" + alias + "' is not visible in this scope",
+                        line, span, "import is out of scope", "declare the import in this lexical scope", null);
+                return;
+            }
+            java.util.List<Ast.StructDecl> modStructs = currentMainClass != null ? currentMainClass.getModuleStructs().get(alias) : null;
+            Ast.StructDecl targetStruct = null;
+            if (modStructs != null) {
+                for (Ast.StructDecl s : modStructs) {
+                    if (s.getName().equals(simpleName)) {
+                        targetStruct = s;
+                        break;
+                    }
+                }
+            }
+            if (targetStruct == null) {
+                semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                        "module import '" + alias + "' has no struct '" + simpleName + "'",
+                        line, span, "unknown struct", "struct is not declared in module '" + alias + "'", null);
+                return;
+            }
+            if (targetStruct.getVisibility() == Ast.Visibility.PRIVATE) {
+                semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                        "cannot access private struct '" + simpleName + "' from module '" + alias + "'",
+                        line, span, "private struct", "struct is private to module '" + alias + "'", null);
+                return;
+            }
+        } else {
+            Ast.StructDecl targetStruct = structTable.get(simpleName);
+            if (targetStruct != null) {
+                if (targetStruct.getVisibility() == Ast.Visibility.PRIVATE) {
+                    if (targetStruct.getDeclaringModule() != null
+                            && !java.util.Objects.equals(this.currDeclaringModule, targetStruct.getDeclaringModule())) {
+                        semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                                "cannot access private struct '" + simpleName + "'",
+                                line, span, "private struct", "struct is private to its module", null);
+                    }
+                }
+                return;
+            }
+            if (currentMainClass != null) {
+                for (Map.Entry<String, java.util.ArrayList<Ast.StructDecl>> entry : currentMainClass.getModuleStructs().entrySet()) {
+                    for (Ast.StructDecl s : entry.getValue()) {
+                        if (s.getName().equals(simpleName) && s.getVisibility() == Ast.Visibility.PRIVATE) {
+                            if (s.getDeclaringModule() != null
+                                    && java.util.Objects.equals(this.currDeclaringModule, s.getDeclaringModule())) {
+                                return;
+                            }
+                            semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                                    "cannot access private struct '" + simpleName + "' from module '" + entry.getKey() + "'",
+                                    line, span, "private struct", "struct is private to module '" + entry.getKey() + "'", null);
+                            return;
+                        }
+                    }
+                }
+            }
+            semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                    "unknown struct type: " + simpleName,
+                    line, span, "unknown struct", "declare the struct before using it as a " + context, null);
+        }
     }
 
     /** True when the type mentions a struct that is not declared. */
@@ -759,7 +886,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             return false;
         }
         if (type.getKind() == TypeKind.STRUCT) {
-            return !structTable.containsKey(((Ast.Type.Struct) type).getName());
+            return resolveStruct(((Ast.Type.Struct) type).getName()) == null;
         }
         if (isPointerType(type)) {
             return referencesUnknownStruct(((Ast.Type.Pointer) type).getPointee());
@@ -819,7 +946,36 @@ public class SemanticVisitor implements ISemanticVisitor {
 
         this.methodVarTable.put(obj.getId(),mTable);
         this.currMethodName = obj.getId();
+        this.currDeclaringModule = obj.getDeclaringModule();
         this.typeOfMethodDeclared = obj.getRetType();
+
+        validateStructTypeReference(obj.getRetType(), obj.getLineNum(), obj.getSpan(), "return type");
+        if (obj.getVisibility() == Ast.Visibility.PUBLIC && referencesPrivateStruct(obj.getRetType())) {
+            semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                    "public function '" + obj.getId() + "' cannot expose private struct in return type",
+                    obj.getLineNum(), obj.getSpan(), "private struct in public signature",
+                    "declare struct with 'pub' or make function private", null);
+        }
+        if (obj.getFormals() != null) {
+            for (Ast.Declare.T formal : obj.getFormals()) {
+                if (formal instanceof Ast.Declare.DeclareSingle single) {
+                    validateStructTypeReference(single.getType(), single.getLineNum(), single.getSpan(), "parameter");
+                    if (obj.getVisibility() == Ast.Visibility.PUBLIC && referencesPrivateStruct(single.getType())) {
+                        semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                                "public function '" + obj.getId() + "' cannot expose private struct in parameter '" + single.getId() + "'",
+                                single.getLineNum(), single.getSpan(), "private struct in public signature",
+                                "declare struct with 'pub' or make function private", null);
+                    }
+                }
+            }
+        }
+        if (obj.getLocals() != null) {
+            for (Ast.Declare.T local : obj.getLocals()) {
+                if (local instanceof Ast.Declare.DeclareSingle single) {
+                    validateStructTypeReference(single.getType(), single.getLineNum(), single.getSpan(), "variable declaration");
+                }
+            }
+        }
 
         validatePointerDeclarations(obj.getFormals());
         validatePointerDeclarations(obj.getLocals());
@@ -992,7 +1148,7 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Type.Struct obj) {
-        if (!structTable.containsKey(obj.getName())) {
+        if (resolveStruct(obj.getName()) == null) {
             semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
                     "unknown struct type: " + obj.getName(),
                     0, null, "unknown struct",
@@ -1041,6 +1197,27 @@ public class SemanticVisitor implements ISemanticVisitor {
                         obj.getLineNum(), obj.getSpan(), "unknown struct", null, null);
                 this.currType = unknownType();
                 return;
+            }
+            boolean isCrossModule = structDecl.getDeclaringModule() != null
+                    && !java.util.Objects.equals(this.currDeclaringModule, structDecl.getDeclaringModule());
+            if (isCrossModule) {
+                if (structDecl.getVisibility() == Ast.Visibility.PRIVATE) {
+                    semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                            "cannot access field '" + fieldName + "' of private struct '" + structDecl.getName() + "'",
+                            obj.getLineNum(), obj.getSpan(), "private struct",
+                            "struct is private to its declaring module", null);
+                    this.currType = unknownType();
+                    return;
+                }
+                Ast.Visibility fieldVis = structDecl.fieldVisibility(fieldName);
+                if (fieldVis == Ast.Visibility.PRIVATE) {
+                    semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                            "cannot access private field '" + fieldName + "' of struct '" + structDecl.getName() + "'",
+                            obj.getLineNum(), obj.getSpan(), "private field",
+                            "field is private to its declaring module", null);
+                    this.currType = unknownType();
+                    return;
+                }
             }
             Ast.Type.T fieldType = structDecl.fieldType(fieldName);
             if (fieldType == null) {
@@ -1533,7 +1710,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         return switch (type.getKind()) {
             case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL -> true;
-            case STRUCT -> structTable.containsKey(((Ast.Type.Struct) type).getName());
+            case STRUCT -> resolveStruct(((Ast.Type.Struct) type).getName()) != null;
             default -> false;
         };
     }
@@ -1560,7 +1737,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             return pointerTypesEqual(leftPointee, rightPointee);
         }
         if (leftPointee.getKind() == TypeKind.STRUCT && rightPointee.getKind() == TypeKind.STRUCT) {
-            return ((Ast.Type.Struct) leftPointee).getName().equals(((Ast.Type.Struct) rightPointee).getName());
+            return ((Ast.Type.Struct) leftPointee).getSimpleName().equals(((Ast.Type.Struct) rightPointee).getSimpleName());
         }
         return leftPointee.getKind() == rightPointee.getKind();
     }
@@ -1651,7 +1828,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         if(target.getKind() == curr.getKind()){
             // Struct values match only when they name the same struct.
             if (target.getKind() == TypeKind.STRUCT) {
-                return ((Ast.Type.Struct) target).getName().equals(((Ast.Type.Struct) curr).getName());
+                return ((Ast.Type.Struct) target).getSimpleName().equals(((Ast.Type.Struct) curr).getSimpleName());
             }
             return true;
         }
@@ -2060,6 +2237,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
 
         Ast.Type.T declType = declareSingle.getType();
+        validateStructTypeReference(declType, declareSingle.getLineNum(), declareSingle.getSpan(), "variable declaration");
         validatePointerDeclarations(List.of(declareSingle));
 
         Ast.Expr.T initExp = declareSingle.getInitExp();

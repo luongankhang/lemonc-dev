@@ -112,10 +112,15 @@ See [examples/TopLevelFunctionsTest.lemon](examples/TopLevelFunctionsTest.lemon)
 
 ### Modules and visibility
 
-Top-level functions are private by default. Prefix an exported function with `pub`, then import its module from a neighboring Lemon file:
+Top-level functions and structs are private by default. Prefix an exported function or struct with `pub`, then import its module from a neighboring Lemon file:
 
 ```c
 // math.lemon
+pub struct Point {
+    pub int x;
+    pub int y;
+}
+
 pub int add(int left, int right) {
     return left + right;
 }
@@ -126,11 +131,19 @@ pub int add(int left, int right) {
 import math = @import("math.lemon");
 
 void main() {
-    printf("%d\n", math.add(10, 20));
+    struct Point p;
+    p.x = 10;
+    p.y = 20;
+    printf("%d\n", math.add(p.x, p.y));
 }
 ```
 
-The complete example is available under [examples/modules](examples/modules). Imports are compile-time bindings, resolved relative to the importing file and rejected when the module is missing, cyclic, duplicated, or accessed through a non-public function.
+Complete examples are available under [examples/modules](examples/modules) and [examples/modules_structs](examples/modules_structs).
+Imports are compile-time bindings, resolved relative to the importing file and rejected with diagnostics when:
+- A module is missing, cyclic, or duplicated.
+- A non-public function or non-public struct is accessed from another module (`E2005`).
+- A private field of a cross-module struct is accessed (`E2005`).
+- A public function or public struct leaks a private struct in its public signature (`E2005`).
 
 ## Compiler Architecture
 

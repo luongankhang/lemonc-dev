@@ -1,6 +1,6 @@
 struct Inner { int v; };
 struct Outer { int id; struct Inner in; };
-struct Point { int x; int y; };
+pub struct Point { int x; int y; };
 struct Point make(int x, int y) {
     struct Point p;
     p.x = x;

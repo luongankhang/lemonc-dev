@@ -27,6 +27,7 @@ public class AstOptimizer {
         optimized.getImports().addAll(single.getImports());
         optimized.getConstants().addAll(single.getConstants());
         optimized.getStructs().addAll(single.getStructs());
+        optimized.getModuleStructs().putAll(single.getModuleStructs());
         return optimized;
     }
 
@@ -36,7 +37,10 @@ public class AstOptimizer {
         Ast.Stmt.T retExp = single.getRetExp() == null ? null : optimizeStmt(single.getRetExp());
         Ast.Method.MethodSingle optimized = new Ast.Method.MethodSingle(single.getRetType(), single.getId(),
                 single.getFormals(), single.getLocals(), statements, retExp, single.getLineNum());
+        optimized.setVisibility(single.getVisibility());
+        optimized.setSpan(single.getSpan());
         optimized.setModuleConsts(single.getModuleConsts());
+        optimized.setDeclaringModule(single.getDeclaringModule());
         return optimized;
     }
 

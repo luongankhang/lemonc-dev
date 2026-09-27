@@ -1,0 +1,27 @@
+pub struct Point {
+    pub int x;
+    pub int y;
+}
+
+// Module-private struct: accessible only within geometry.lemon
+struct InternalData {
+    int secretKey;
+}
+
+pub struct Point makePoint(int x, int y) {
+    struct Point p;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+pub int distanceSquared(struct Point a, struct Point b) {
+    int dx = a.x - b.x;
+    int dy = a.y - b.y;
+    return dx * dx + dy * dy;
+}
+
+pub void scalePoint(struct Point* p, int factor) {
+    p->x = p->x * factor;
+    p->y = p->y * factor;
+}

@@ -60,14 +60,34 @@ java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar examples/StringByteLo
 
 Every Lemon program consists of functions and constants declared directly at top level (with legacy single top-level `class` declarations supported for backward compatibility). Execution begins at `void main()`; for class-free source the JVM backend uses the source file name as its generated class identity.
 
-### Struct Declarations
+### Struct Declarations & Module Visibility
+
+LemonC supports C-style value structs with module-level visibility control (`pub struct`):
+
+- **Declaration**: `[pub] struct Name { [pub] type field; ... } [;]`
+- **Visibility**:
+  - `pub struct`: Exported and visible to importing modules.
+  - `struct` (without `pub`): Private to the declaring module. Accessing a private struct from another module (via bare name or qualified `alias.Name`) triggers diagnostic `E2005 (SEM_INVALID_SCOPE)`.
+- **Field Visibility**:
+  - In a `pub struct`, fields inherit `public` visibility by default unless explicit `pub` modifiers are used.
+  - When explicit `pub` is placed on specific fields, unannotated fields are private to the declaring module.
+  - Private fields can only be accessed (`.` and `->`) within the declaring module; cross-module access triggers `E2005 (SEM_INVALID_SCOPE)`.
+- **Signature Integrity**:
+  - Public functions cannot expose private structs in their parameters or return types (`E2005`).
+  - Public structs cannot expose private structs in their public fields (`E2005`).
+- **Pointers & ARC**:
+  - Full pointer support (`struct Point*`, `->`, `&`) is preserved across modules.
+  - Struct operations integrate seamlessly with the ARC pipeline (`--arc`).
+- **Backend Non-Duplication**:
+  - C backend emits exactly one `typedef struct LemonC_Name` definition in the generated C translation unit.
+  - JVM backend emits exactly one nested class (`Main$Name`) without duplicate class definitions.
 
 Example: [examples/StructDemo.lemon](../examples/StructDemo.lemon)
 
 ```c
-struct Point { int x; int y; };          // top-level declaration
-struct Inner { int v; };
-struct Outer { int id; struct Inner in; }; // nested struct by value
+struct Inner { int v; };                     // module-private struct
+struct Outer { int id; struct Inner in; };   // nested struct by value
+pub struct Point { int x; int y; };          // public struct accessible across modules
 
 struct Point make(int x, int y) {
     struct Point p;                       // zero-initialized
@@ -93,6 +113,32 @@ void main() {
     struct Outer o;
     o.id = 100;
     o.in.v = 5;                           // nested field chain
+}
+```
+
+Cross-Module Example: [examples/modules_structs](../examples/modules_structs)
+
+```c
+// geometry.lemon
+pub struct Point {
+    pub int x;
+    pub int y;
+}
+pub struct Point makePoint(int x, int y) {
+    struct Point p;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+```
+
+```c
+// main.lemon
+import geo = @import("geometry.lemon");
+
+void main() {
+    struct Point p = geo.makePoint(10, 20);
+    printf("%d %d\n", p.x, p.y);
 }
 ```
 
@@ -863,7 +909,7 @@ LemonC includes a standardized diagnostic reporting engine ([`DiagnosticEngine`]
 | `E2002` | Semantic | `SEM_UNKNOWN_FUNCTION` | Call to undefined method. |
 | `E2003` | Semantic | `SEM_DUPLICATE_DECLARATION` | Redefinition of variable or function name in the same scope. |
 | `E2004` | Semantic | `SEM_INVALID_SYMBOL_USAGE` | Invalid symbol usage (e.g. void method used in expression). |
-| `E2005` | Semantic | `SEM_INVALID_SCOPE` | `break` or `continue` outside loop body. |
+| `E2005` | Semantic | `SEM_INVALID_SCOPE` | Invalid scope / visibility access (cross-module private struct/field access, signature exposure, or break/continue outside loop). |
 | `E2006` | Semantic | `SEM_CONST_IMMUTABLE` | Reassignment to an immutable `const` symbol. |
 | `E2007` | Semantic | `SEM_CONST_INITIALIZER` | Missing or non-constant initializer in `const` declaration. |
 | `E2008` | Semantic | `SEM_POINTER_ESCAPE` | Address of local stack variable escapes function scope. |
