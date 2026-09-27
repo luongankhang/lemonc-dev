@@ -11,7 +11,7 @@ LemonC 是一个面向实际编译器工程实践的 C-like 编译器。它不�
 </p>
 
 ```text
-Java 21 | Maven | LemonIR → JVM or C backend | 359 tests passing | 94 examples | MIT License
+Java 21 | Maven | LemonIR → JVM or C backend | 445 tests passing | 95 examples | MIT License
 ```
 
 ## Why LemonC
@@ -78,17 +78,20 @@ The same example also demonstrates constant folding, algebraic simplification, b
 | Category | Features |
 |---|---|
 | Types | `byte`, `short`, `char`, `int`, `long`, `float`, `double`, `bool`, `string`, `void` |
-| Arrays | `int[]`, `byte[]`, `short[]`, `char[]`, `long[]`, `float[]`, `double[]`, `bool[]`, `string[]`, indexed access, indexed assignment, `.length` |
+| Pointers | `int*`, `int**`, scalar `T*`, address-of `&`, dereference `*` (read & write), `null`, identity comparisons (`==`, `!=`), pointer parameters and returns |
+| Arrays | `int[]`, `byte[]`, `short[]`, `char[]`, `long[]`, `float[]`, `double[]`, `bool[]`, `string[]`, indexed access, indexed assignment, `.length`, ARC memory management |
+| Declarations | Declarations throughout blocks, declarations with initializers (`int x = 10;`), scoped nested blocks (`{ ... }`), for-loop header declarations (`for (int i = 0; ...)`), `const` globals |
 | Arithmetic | `+`, `-`, `*`, `/`, `%`, unary `-` |
 | Numeric widening | `byte/short/char -> int -> long -> float -> double` |
-| Comparison | `>`, `<`, `>=`, `<=`, `==`, `!=` |
+| Comparison | `>`, `<`, `>=`, `<=`, `==`, `!=` (scalars and pointers) |
 | Boolean logic | `true`, `false`, `!`, `&&`, `||`, short-circuit control flow |
-| Control flow | `if/else`, `while`, `for`, `break`, `continue`, nested loops |
-| Methods | parameters, return values, `void` methods, recursive calls, expression calls, `pub` exports |
+| Control flow | `if/else`, `while`, `for`, `break`, `continue`, nested loops, lexical block scoping |
+| Methods | parameters (scalars, arrays, pointers), return values, `void` methods, `return;` in void methods, recursive calls, expression calls, `pub` exports |
 | Modules | compile-time `import alias = @import("file.lemon")`, canonical path loading, public function exports, cycle diagnostics |
-| Output | `printf`, `printLine`, `%d` (including `byte`, `short`, `char`, `int`, `long`), `%f`, `\n`, `\t` |
+| Output | `printf`, `printLine`, `%d` (including `byte`, `short`, `char`, `int`, `long`, `bool`), `%f`, `\n`, `\t` |
 | Optimization | constant folding, boolean folding, algebraic simplification, constant branch simplification |
-| Diagnostics | parse and semantic exceptions with source line context |
+| Memory (ARC) | Automatic Reference Counting for managed heap objects (arrays and strings), ownership analysis, `--arc` verification |
+| Diagnostics | compiler diagnostic engine with error codes (`E0001` - `E4001`, `E8001` - `E8006`), primary/secondary spans, labels, and suggestions |
 
 For the complete feature list with source code and real outputs, read [docs/LEMONC_FEATURES.md](docs/LEMONC_FEATURES.md).
 
@@ -229,8 +232,8 @@ mvn test
 Current coverage:
 
 ```text
-Tests run: 359, Failures: 0, Errors: 0, Skipped: 0
-94 root examples verified by real JVM execution
+Tests run: 445, Failures: 0, Errors: 0, Skipped: 0
+95 example programs verified across backends
 ```
 
 ## More Real Examples
@@ -351,48 +354,60 @@ void main() {
 ## Grammar Snapshot
 
 ```bnf
-<program>       ::= <method>*
+<program>       ::= <importDecl>* <constDecl>* <method>*
                   | "class" <id> "{" <method>* "}"
-<method>        ::= <type> <id> "(" <params>? ")" "{" <varDecl>* <stmt>* "}"
-                  | "void" "main" "(" ")" "{" <varDecl>* <stmt>* "}"
-<params>        ::= <type> <id> ("," <type> <id>)*
-<varDecl>       ::= <type> <id> ";"
+<constDecl>     ::= "const" <type> <id> "=" <expr> ";"
+<method>        ::= "pub"? <type> <id> "(" <params>? ")" "{" <stmt>* "}"
+                  | "pub"? "void" <id> "(" <params>? ")" "{" <stmt>* "}"
+<params>        ::= <param> ("," <param>)*
+<param>         ::= <type> <id> | <type> <id> "[" "]"
+<varDecl>       ::= <type> <id> ("=" <expr>)? ";"
                   | <type> <id> "[" <integer> "]" ";"
-<type>          ::= "byte" | "short" | "char" | "int" | "long" | "float" | "double" | "bool" | "string" | "void"
-<stmt>          ::= <id> "=" <expr> ";"
+<type>          ::= <baseType> "*"+ | <baseType>
+<baseType>      ::= "byte" | "short" | "char" | "int" | "long" | "float" | "double" | "bool" | "string" | "void"
+<stmt>          ::= <varDecl>
+                  | <id> "=" <expr> ";"
                   | <id> "[" <expr> "]" "=" <expr> ";"
+                  | "*"+ <id> "=" <expr> ";"
                   | <id> "(" <args>? ")" ";"
                   | "if" "(" <expr> ")" <stmt> ("else" <stmt>)?
                   | "while" "(" <expr> ")" <stmt>
-                  | "for" "(" <forInit> ";" <expr> ";" <forUpdate> ")" <stmt>
+                  | "for" "(" <forInit>? ";" <expr>? ";" <forUpdate>? ")" <stmt>
                   | "break" ";"
                   | "continue" ";"
                   | "{" <stmt>* "}"
-                  | "return" <expr> ";"
+                  | "return" <expr>? ";"
                   | "printf" "(" <string> ("," <expr>)* ")" ";"
+                  | "printLine" "(" <expr> ")" ";"
+<forInit>       ::= <varDecl> | <id> "=" <expr>
+<forUpdate>     ::= <id> "=" <expr>
 <expr>          ::= <andExpr> ("||" <andExpr>)*
 <andExpr>       ::= <relExpr> ("&&" <relExpr>)*
 <relExpr>       ::= <addExpr> ((">" | "<" | ">=" | "<=" | "==" | "!=") <addExpr>)*
 <addExpr>       ::= <term> (("+" | "-") <term>)*
 <term>          ::= <factor> (("*" | "/" | "%") <factor>)*
-<forInit>       ::= <id> "=" <expr>
-<forUpdate>     ::= <id> "=" <expr>
+<factor>        ::= <primary> | "-" <factor> | "!" <factor> | "&" <id> | "*" <factor>
+<primary>       ::= <integer> | <floatLit> | <charLit> | <stringLit> | "true" | "false" | "null"
+                  | <id> | <id> "[" <expr> "]" | <id> "." "length" | <id> "(" <args>? ")"
+                  | "(" <expr> ")"
 ```
 
 ## Test Suite
 
-| Test class | Count | Purpose |
-|---|---:|---|
 | Test class | Purpose |
 |---|---|
 | `AllExamplesJvmTest` | Compile every root example to `.class` via the JVM backend, run it, compare stdout against the manifest |
-| `JvmBackendTest` | Structural tests of direct bytecode emission: descriptors, raw opcodes, max_stack/max_locals, verifier-valid control flow |
-| `CompilerTest` | End-to-end compiler tests |
+| `PointerMultiBackendTest`, `PointerTest`, `PointerShowcaseTest` | Pointer semantics, multi-level indirection, address-of, dereferencing, dual-backend verification |
+| `LocalVarDeclTest` | Flexible declaration placement, initializers, block scoping, and semantic diagnostics |
+| `FullFeatureMatrixTest`, `MultiBackendTest` | Cross-backend integration tests asserting byte-for-byte output parity between JVM and C |
 | `NativeEndToEndTest`, `CBackendTest` | C backend: LemonIR → C source → gcc/clang → native execution |
-| `ArcCliTest`, `ArcOwnershipTest`, `ImportScopeArcTest`, `ArcControlFlowTest` | Shared ownership/ARC analysis and import scoping |
+| `JvmBackendTest`, `JvmBackendArcDebugTest` | Structural tests of direct bytecode emission, descriptors, stack frames, and verifier-valid CFG |
+| `CompilerTest` | End-to-end compiler tests across arithmetic, control flow, functions, and arrays |
+| `GlobalConstTest` | Compile-time constants, expressions, immutability, and scoping |
+| `ArcCliTest`, `ArcOwnershipTest`, `ImportScopeArcTest`, `ArcControlFlowTest` | Ownership/ARC analysis, refcount simulation, and import scoping |
 | `LemonIrTest`, `ModuleSystemTest`, `LemonCCliTest` | LemonIR lowering/verification, module imports, CLI flags |
-| `LexerTest`, `ParserTest`, `ErrorTest`, `SemanticTest`, `AstOptimizerTest` | Frontend stages |
-| `ByteCompilerTest`, `LongCompilerTest`, `ShortArrayCompilerTest`, … | Per-type JVM codegen and diagnostics |
+| `LexerTest`, `ParserTest`, `ParserRecoveryTest`, `ErrorTest`, `SemanticTest`, `AstOptimizerTest` | Frontend parsing, semantic type rules, and AST optimizations |
+| `ByteCompilerTest`, `LongCompilerTest`, `ShortArrayCompilerTest`, … | Per-type JVM codegen, ranges, and diagnostics |
 
 ## Repository Map
 
@@ -410,7 +425,7 @@ src/main/java/site/ilemon
   backend/c/        C backend: LemonIR → C99 source → gcc/clang
   compiler/         CLI, AST printer, IR printer
 
-examples/           94 Lemon programs and output manifest
+examples/           95+ Lemon programs and output manifest
 runtime/            C runtime sources used by the C backend
 docs/               feature guide and architecture notes
 tools/              native backend experiment, kept outside main source
@@ -419,15 +434,18 @@ src/test/java/      automated compiler tests
 
 ## Current Language Boundaries
 
-LemonC intentionally keeps the language small:
+LemonC intentionally focuses on a clean, robust, and verifiable language core:
 
-| Boundary | Status |
+| Boundary | Description |
 |---|---|
-| Identifier `_` | Not part of the current lexer definition |
-| Multi-line comments | Not part of the current language definition |
-| Block scope | Blocks do not introduce independent local scopes |
-| String variables | Strings are primarily `printf` literals |
-| Object model | Top-level function language focused on compiler/runtime correctness, not full Java |
+| Address-of Restrictions | `&` requires a local scalar or pointer variable; parameters (`&p`), constants (`&C`), arrays (`&arr`), and temporaries are not addressable. |
+| Pointer Types | Pointers are value scalars (`T*`, `T**`); pointers to reference-managed heap types (`string*`, `int[]*`) are not supported. |
+| Dereference Assignment | Assignment through dereference (`*p = val`, `**pp = val`) stores a scalar value; indirect pointer reassignment (`*pp = p`) is disallowed. |
+| Pointer Arithmetic | Pointer arithmetic (`p + 1`, `p - 1`) is disallowed in LemonC's safe memory model. |
+| Local Address Escaping | Functions cannot return the address of their own local stack variables (`return &local;` rejected with `E2008`). |
+| String Types | `string` is supported in literals, `printf`, and `string[]` arrays; standalone scalar string variable assignments (`string s = ...`) are not supported. |
+| Object Model | Top-level function and module language; no class instantiation (`new Class()`), inheritance, or user-defined struct types. |
+| Whole Array Copies | Direct assignment of entire arrays (`a = b;`) is disallowed; element-by-element iteration is required. |
 
 ## Roadmap
 

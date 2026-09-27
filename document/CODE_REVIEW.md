@@ -1,10 +1,13 @@
 # LemonC 编译器项目代码评估报告
 
+> **注意**：本报告是对 LemonC 编译器早期版本（第一轮基线状态）的快照评审，部分描述（如"Jasmin 中间代码"、"无块级作用域"）反映的是当时的实现状态，与当前版本不符。当前编译器状态请参阅 [docs/CODE_REVIEW_REPORT.md](../docs/CODE_REVIEW_REPORT.md)（三轮评审完整报告，含后续功能更新记录）。
+
 这是一个结构严谨、逻辑清晰的教学/玩具级（也可能是在此基础上打磨的个人项目）编译器项目。从项目的命名（LemonC）和结构来看，它完成了一个从源代码（`.lemon` 或 `.ilemon`）到 JVM 字节码的完整编译流水线。
 
 通过对 `Lexer.java`, `Parser.java`, `Ast.java`, `SemanticVisitor.java`, `TranslatorVisitor.java` 及入口类的审阅，我们从以下六个维度对其进行客观的打分和详细点评：
 
 ## 综合评分：80 / 100 
+
 
 ---
 

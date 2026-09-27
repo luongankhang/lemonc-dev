@@ -12,18 +12,15 @@ compile-time safety, ownership verification, and the foundation for native C low
 
 ## 1. Scope and Managed Values
 
-LemonC is currently a top-level function language focused on compiler and runtime
-correctness in a compact production-oriented pipeline. It has no user-created
-class instances, structs, fields, pointers, references, or explicit `new` and
-`delete` expressions. The minimum useful ARC scope is therefore:
+LemonC is a multi-backend systems language with static typing, pointers, and reference-counted aggregates. The ARC scope covers heap-managed values:
 
 | Value category | Current status | ARC status |
 |---|---|---|
 | `int`, `float`, `double`, `bool`, `byte`, `short`, `char`, `long` | Immediate scalar values | Never ARC-managed |
-| `string` literal | JVM `String` reference used by output | Managed reference in ownership IR; JVM remains GC-owned |
-| All array types | Heap-allocated JVM arrays | Managed reference in ownership IR |
+| Pointer types (`int*`, `int**`, scalar `T*`) | Unmanaged stack address scalars | Never ARC-managed |
+| `string` literal | JVM `String` / C string literal | Managed reference in ownership IR; JVM uses GC, C uses static buffers |
+| All array types (`int[]`, etc.) | Heap-allocated arrays | Managed reference in ownership IR; C backend uses `lemon_retain`/`lemon_release` |
 | Struct/class instance | Not in current grammar or AST | Future managed aggregate |
-| Pointer/reference | Not in current grammar or AST | Future explicit ownership category |
 
 `string[]` is an array reference managed as an aggregate; its elements are
 references and require element-store rules when the object model supports
@@ -149,10 +146,7 @@ BoundsCheck(array, index)
 Return(value)
 ```
 
-The future C backend can lower these to `lemon_alloc`, `lemon_retain`,
-`lemon_release`, `lemon_load`, and `lemon_store`. The JVM backend must not emit
-these calls; it continues using JVM GC and may only display annotations with a
-debug flag.
+The C backend lowers these to C runtime functions: `lemon_array_new`, `lemon_retain`, `lemon_release`, etc. The JVM backend lowers to standard JVM instructions and garbage collection.
 
 ### Simulator contract
 

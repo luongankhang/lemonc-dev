@@ -820,7 +820,15 @@ Following the initial three review rounds, the compiler underwent major feature 
 ### 11.3. Additional Language Capabilities
 - **Lexer enhancements**: Multi-line comments (`/* ... */`) and identifier underscores (`_`) are fully supported.
 - **Diagnostic Engine**: Complete overhaul inspired by modern industrial compilers (Rust/Clang), including standardized error codes (`E0001` - `E9001`), terminal source snippet rendering with `^~~~` underlining, and automated fix suggestions.
-- **Test suite growth**: Expanded to **241 passing automated tests** and **88 end-to-end JVM verified root examples**.
+- **Test suite growth**: Expanded to **445 passing automated tests** and **95+ end-to-end verified example programs** (both JVM and Native C backends).
+
+### 11.4. Subsequent Feature Additions (Post-Addendum)
+- **Raw Pointer Types (`int*`, `int**`)**: Address-of (`&`), dereference read/write (`*p`, `*p = val`, `**pp = val`), `null` literal, pointer comparisons (`==`, `!=`), pointer parameters and returns. Static safety enforces no stack-address escaping (`E2008`), no pointer arithmetic (`E3014`), and no indirect pointer reassignment (`E3015`).
+- **Flexible Local Variable Declarations**: Declarations can appear anywhere within any block — no restriction to top-of-method. Includes initializers (`int x = 10;`), block-scoped lexical shadowing, and for-loop header declarations (`for (int i = 0; ...)`).
+- **Global Constants (`const`)**: Immutable top-level `const <type> <id> = <expr>;` declarations enforced by `E2006 (SEM_CONST_IMMUTABLE)` and `E2007 (SEM_CONST_INITIALIZER)`.
+- **`void` + `return;`**: Empty `return;` is now fully supported in void methods for early-exit control flow.
+- **C Backend (Production)**: `site.ilemon.backend.c` is a fully active, test-verified backend — not an experiment. Full lowering path: LemonIR → C99 → gcc/clang → native execution.
+- **Module System**: Compile-time `import alias = @import("file.lemon")` with `pub` exported functions, canonical path resolution, and cycle/duplicate diagnostics.
 
 ---
 
