@@ -279,6 +279,24 @@ final class JvmStackTracker {
             case 0xB2: // getstatic
                 stack.push(1);
                 break;
+            case 0xB4: // getfield: pops objectref, pushes the field (insn.extra = slots)
+                stack.pop(1);
+                stack.push(insn.extra);
+                break;
+            case 0xB5: // putfield: pops objectref + value
+                stack.pop(1 + Math.max(0, insn.extra));
+                break;
+            case 0x5A: // dup_x1: [v2, v1] → [v1, v2, v1] (copy-constructor pattern)
+                int dupTop = stack.slots[stack.size - 1];
+                int below = stack.slots[stack.size - 2];
+                if (dupTop != 1 || below != 1) {
+                    throw new CompilerException("dup_x1 requires two 1-slot values");
+                }
+                stack.push(1);
+                stack.slots[stack.size - 1] = dupTop;
+                stack.slots[stack.size - 2] = below;
+                stack.slots[stack.size - 3] = dupTop;
+                break;
             case 0xB6, 0xB7, 0xB8: // invokevirtual, invokespecial, invokestatic
                 int argSlots = (insn.extra >>> 8) & 0xFF;
                 int returnSlots = insn.extra & 0xFF;

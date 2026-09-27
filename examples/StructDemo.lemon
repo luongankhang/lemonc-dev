@@ -1,0 +1,35 @@
+struct Inner { int v; };
+struct Outer { int id; struct Inner in; };
+struct Point { int x; int y; };
+struct Point make(int x, int y) {
+    struct Point p;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+int sum(struct Point p) {
+    return p.x + p.y;
+}
+void shift(struct Point* ptr, int dx) {
+    ptr->x = ptr->x + dx;
+}
+int nestedSum(struct Outer o) {
+    return o.id + o.in.v;
+}
+void main() {
+    struct Point a;
+    a = make(3, 4);
+    printf("%d", sum(a));
+    struct Point* ptr;
+    ptr = &a;
+    shift(ptr, 10);
+    printf(" %d", a.x);
+    struct Outer o;
+    o.id = 100;
+    o.in.v = 5;
+    printf(" %d", nestedSum(o));
+    struct Point b;
+    b = a;
+    b.x = 99;
+    printf(" %d %d", a.x, b.x);
+}

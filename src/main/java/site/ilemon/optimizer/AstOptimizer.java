@@ -22,10 +22,11 @@ public class AstOptimizer {
         }
         Ast.MainClass.MainClassSingle optimized = new Ast.MainClass.MainClassSingle(
                 single.getClassId(), single.getFields(), methods);
-        // Preserve module bookkeeping: imports and global constants are consumed
-        // by later phases (semantic analysis and lowering) after optimization.
+        // Preserve module bookkeeping: imports, global constants, and struct
+        // declarations are consumed by later phases after optimization.
         optimized.getImports().addAll(single.getImports());
         optimized.getConstants().addAll(single.getConstants());
+        optimized.getStructs().addAll(single.getStructs());
         return optimized;
     }
 

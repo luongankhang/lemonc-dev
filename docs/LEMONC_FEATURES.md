@@ -60,6 +60,47 @@ java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar examples/StringByteLo
 
 Every Lemon program consists of functions and constants declared directly at top level (with legacy single top-level `class` declarations supported for backward compatibility). Execution begins at `void main()`; for class-free source the JVM backend uses the source file name as its generated class identity.
 
+### Struct Declarations
+
+Example: [examples/StructDemo.lemon](../examples/StructDemo.lemon)
+
+```c
+struct Point { int x; int y; };          // top-level declaration
+struct Inner { int v; };
+struct Outer { int id; struct Inner in; }; // nested struct by value
+
+struct Point make(int x, int y) {
+    struct Point p;                       // zero-initialized
+    p.x = x;
+    p.y = y;
+    return p;                             // returned by value
+}
+
+int sum(struct Point p) { return p.x + p.y; }   // passed by value
+void shift(struct Point* ptr, int dx) {         // struct pointer
+    ptr->x = ptr->x + dx;                        // arrow field access
+}
+
+void main() {
+    struct Point a;
+    a = make(3, 4);                       // whole-struct copy (by value)
+    struct Point* ptr;
+    ptr = &a;                             // address of a struct local
+    shift(ptr, 10);
+    struct Point b;
+    b = a;                                // independent copy
+    b.x = 99;                             // does not alias a
+    struct Outer o;
+    o.id = 100;
+    o.in.v = 5;                           // nested field chain
+}
+```
+
+Both backends agree: C emits a `LemonC_Point` typedef with plain member access
+(`p.x`, `ptr->x`) and C struct assignment; the JVM synthesizes one nested class
+per struct (`Main$Point`) with a zero constructor and a recursive copy
+constructor, and uses GETFIELD/PUTFIELD for member access.
+
 ### Top-Level Functions & Program Entry
 
 Example: [examples/TopLevelFunctionsTest.lemon](../examples/TopLevelFunctionsTest.lemon)
@@ -877,7 +918,7 @@ The following limitations are deliberate architectural boundaries for LemonC:
 
 | Boundary | Description |
 |---|---|
-| Program Model | Top-level functions with static/global semantics; no user-defined structs, classes (beyond legacy top-level wrapper), interfaces, or object instantiation. |
+| Program Model | Top-level functions with static/global semantics; classes (beyond legacy top-level wrapper), interfaces, or object instantiation are not supported. Structs are C-style value records without methods. |
 | Pointers | Unmanaged scalar stack addresses. Pointer arithmetic (`p + 1`) is forbidden (`E3014`). Returning the address of a local stack variable is prevented at compile time (`E2008`). Reassigning through double dereferences (`*pp = p`) is forbidden (`E3015`). |
 | Memory Management | Heap arrays are managed via ARC (`--arc`) or GC on JVM; raw pointers are unmanaged stack addresses. |
 | Array Dimensions | Statically sized 1-dimensional arrays only; multi-dimensional arrays (`int[][]`) are not supported. |

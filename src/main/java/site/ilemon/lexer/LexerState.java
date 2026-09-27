@@ -17,6 +17,7 @@ public enum LexerState {
     IN_NOT,         // Read '!', could be '!' or '!='
     IN_AND,         // Read '&', expecting '&&'
     IN_OR,          // Read '|', expecting '||'
+    IN_ARROW,       // Read '-', could be '-' or '->'
     IN_DIV,         // Read '/', could be '/' or '//'
     DONE,           // Finished a token
     ERROR           // Error state

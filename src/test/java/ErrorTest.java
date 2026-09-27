@@ -127,8 +127,10 @@ public class ErrorTest {
         compileSource("void main() { int x; int y; x = 1; y = x.length; }");
     }
 
-    @Test(expected = ParseException.class)
+    @Test(expected = SemanticException.class)
     public void testOnlyLengthArrayPropertyIsSupported() throws IOException {
+        // With struct field access, `arr.size` parses as a field chain and is
+        // rejected by the semantic phase: '.' requires a struct value.
         compileSource("void main() { int arr[3]; int y; y = arr.size; }");
     }
 

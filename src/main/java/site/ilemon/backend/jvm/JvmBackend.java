@@ -52,6 +52,8 @@ public final class JvmBackend implements Backend {
         Files.createDirectories(outputDirectory);
         Path classFile = outputDirectory.resolve(module.name() + ".class");
         Files.write(classFile, bytes);
+        // One synthesized class per declared struct: Main$Point etc.
+        new JvmClassWriter().writeStructClasses(module, outputDirectory);
         return classFile;
     }
 

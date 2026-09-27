@@ -91,6 +91,10 @@ public final class MethodCallRewriter implements ISemanticVisitor {
     @Override
     public void visit(Ast.Expr.Null obj) { }
     @Override
+    public void visit(Ast.Expr.Field obj) {
+        // Rewrite nothing in the chain base; field names are struct-internal.
+    }
+    @Override
     public void visit(Ast.Expr obj) { }
     @Override
     public void visit(Ast.Expr.T obj) {
@@ -245,6 +249,8 @@ public final class MethodCallRewriter implements ISemanticVisitor {
     public void visit(Ast.Type.Pointer obj) { }
     @Override
     public void visit(Ast.Type.Null obj) { }
+    @Override
+    public void visit(Ast.Type.Struct obj) { }
 
     @Override
     public void visit(Ast.Program.T obj) { }
@@ -260,5 +266,11 @@ public final class MethodCallRewriter implements ISemanticVisitor {
         if (obj.getDeclaration() instanceof Ast.Declare.DeclareSingle decl && decl.getInitExp() != null) {
             visit(decl.getInitExp());
         }
+    }
+
+    @Override
+    public void visit(Ast.Stmt.FieldAssign obj) {
+        // Field paths contain no method calls; only the RHS may need rewriting.
+        visit(obj.getExpr());
     }
 }

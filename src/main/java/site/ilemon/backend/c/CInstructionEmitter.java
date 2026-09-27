@@ -178,7 +178,49 @@ public final class CInstructionEmitter {
                     yield "lemon_bounds_check(" + String.join(", ", args) + ");";
                 }
             }
+            case FIELD_LOAD -> {
+                // root.path — the first link dereferences when the root is a
+                // struct* (->), the rest are plain member reads.
+                yield result + fieldAccessExpr(instruction, args, false) + ";";
+            }
+            case FIELD_STORE -> {
+                // root.path = v.
+                yield fieldAccessExpr(instruction, args, true)
+                        + " = " + (args.length < 2 ? "0" : args[1]) + ";";
+            }
+            case STRUCT_COPY -> {
+                // d = s: struct assignment copies every field by value.
+                yield result + (args.length == 0 ? "0" : args[0]) + ";";
+            }
+            case STRUCT_ZERO -> {
+                // s = (Type){0}: zero-initializes every field.
+                String cType = instruction.result() != null ? types.emit(instruction.result().type()) : "int32_t";
+                yield result + "(" + cType + "){0};";
+            }
         };
+    }
+
+    /**
+     * Builds the C lvalue for a field path: {@code root.a.b} with the first
+     * {@code ->} when the root is a struct pointer (null-checked at runtime).
+     */
+    private static String fieldAccessExpr(IrInstruction instruction, String[] args, boolean store) {
+        String root = args.length == 0 ? "0" : args[0];
+        String path = instruction.target() == null ? "" : instruction.target();
+        IrType rootType = instruction.operands().isEmpty()
+                ? null : instruction.operands().get(0).type();
+        boolean throughPointer = rootType != null && rootType.kind() == IrType.Kind.POINTER;
+        String[] links = path.isEmpty() ? new String[0] : path.split("\\.", -1);
+        StringBuilder expr = new StringBuilder(root);
+        for (int i = 0; i < links.length; i++) {
+            if (i == 0 && throughPointer) {
+                expr.append("->");
+            } else {
+                expr.append('.');
+            }
+            expr.append(links[i]);
+        }
+        return store ? expr.toString() : expr.toString();
     }
 
     /** Operand names as a plain array (no stream machinery per instruction). */

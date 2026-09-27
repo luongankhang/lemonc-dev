@@ -7,14 +7,15 @@ import java.util.Map;
 import java.util.Set;
 
 public final class CFunctionEmitter {
-    private final CTypeEmitter types = new CTypeEmitter();
+    private final CTypeEmitter types;
     private final CInstructionEmitter instructions;
 
     public CFunctionEmitter() {
-        this(java.util.Set.of());
+        this(java.util.Set.of(), java.util.Map.of());
     }
 
-    public CFunctionEmitter(java.util.Set<String> constNames) {
+    public CFunctionEmitter(java.util.Set<String> constNames, java.util.Map<String, site.ilemon.ir.IrModule.IrStruct> structs) {
+        this.types = new CTypeEmitter(structs);
         this.instructions = new CInstructionEmitter(constNames);
     }
 
@@ -53,7 +54,10 @@ public final class CFunctionEmitter {
 
         for (Map.Entry<String, IrType> entry : locals.entrySet()) {
             String cType = types.emit(entry.getValue());
-            out.append("    ").append(cType).append(" ").append(safe(entry.getKey())).append(" = 0;\n");
+            // Struct locals cannot be zero-initialized with `= 0`; they are
+            // always written by a STRUCT_ZERO/STRUCT_COPY instruction first.
+            String initializer = entry.getValue().kind() == IrType.Kind.STRUCT ? "" : " = 0";
+            out.append("    ").append(cType).append(" ").append(safe(entry.getKey())).append(initializer).append(";\n");
             // Suppress -Wunused-but-set-variable for variables written but never read
             if (!usedVars.contains(entry.getKey())) {
                 out.append("    (void)").append(safe(entry.getKey())).append(";\n");

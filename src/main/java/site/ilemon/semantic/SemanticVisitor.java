@@ -82,6 +82,9 @@ public class SemanticVisitor implements ISemanticVisitor {
     private HashSet<String> importedModuleNames = new HashSet<>();
     private ScopeManager scopeManager = new ScopeManager();
 
+    /** Declared structs of the current program, keyed by struct name. */
+    private final HashMap<String, Ast.StructDecl> structTable = new HashMap<>();
+
     public SemanticVisitor(){
         this(false);
     }
@@ -242,6 +245,8 @@ public class SemanticVisitor implements ISemanticVisitor {
                         "array assignment", "arrays cannot be assigned as whole values");
                 return;
             }
+            // Struct values copy field-by-field (by-value semantics); pointer
+            // alias taint from exprMayPointToLocal is irrelevant for structs.
             if (!isAssignable(targetType, exprType, obj.getExpr())) {
                 if (!rangeErrorIfNeeded(targetType, exprType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                         "assignment to '" + obj.getId().getId() + "'")) {
@@ -601,6 +606,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         Ast.MainClass.MainClassSingle mainClassSingle = (Ast.MainClass.MainClassSingle) obj;
         scopeManager = new ScopeManager();
         importedModuleNames.clear();
+        structTable.clear();
         for (Ast.ImportDecl importDecl : mainClassSingle.getImports()) {
             importedModuleNames.add(importDecl.getName());
             try {
@@ -647,10 +653,118 @@ public class SemanticVisitor implements ISemanticVisitor {
             }
         }
         validateMainMethod();
+        // Struct declarations: register, check duplicates, and validate fields.
+        // Done before method bodies so method signatures can reference structs.
+        for (Ast.StructDecl structDecl : mainClassSingle.getStructs()) {
+            visitStructDecl(structDecl);
+        }
         for(int i = 0; i < mainClassSingle.getMethods().size(); i++){
             Ast.Method.MethodSingle method = (Ast.Method.MethodSingle) mainClassSingle.getMethods().get(i);
             this.visit(method);
         }
+    }
+
+    // ==================================================== struct declarations
+
+    /** Registers and validates one struct declaration. */
+    private void visitStructDecl(Ast.StructDecl structDecl) {
+        if (structDecl == null) {
+            return;
+        }
+        if (structTable.containsKey(structDecl.getName())) {
+            semanticError(DiagnosticCodes.SEM_DUPLICATE_DECLARATION,
+                    "duplicate struct declaration: " + structDecl.getName(),
+                    structDecl.getLineNum(), structDecl.getSpan(), "duplicate struct",
+                    "the struct was declared earlier", null);
+            return;
+        }
+        structTable.put(structDecl.getName(), structDecl);
+        if (structDecl.getFields() == null || structDecl.getFields().isEmpty()) {
+            error(structDecl.getLineNum(), "struct '" + structDecl.getName() + "' must declare at least one field");
+            return;
+        }
+        java.util.Set<String> fieldNames = new java.util.HashSet<>();
+        for (Ast.Declare.T field : structDecl.getFields()) {
+            if (!(field instanceof Ast.Declare.DeclareSingle single)) {
+                continue;
+            }
+            if (single.getId() == null || !fieldNames.add(single.getId())) {
+                error(structDecl.getLineNum(), "duplicate field declaration in struct '"
+                        + structDecl.getName() + "': " + single.getId());
+                continue;
+            }
+            validateStructFieldType(structDecl, single);
+        }
+    }
+
+    /** A struct field may be a scalar, bool, another struct, or struct* — never array/string. */
+    private void validateStructFieldType(Ast.StructDecl owner, Ast.Declare.DeclareSingle field) {
+        Ast.Type.T type = field.getType();
+        if (type == null) {
+            error(field.getLineNum(), "field '" + field.getId() + "' has no type");
+            return;
+        }
+        if (isArrayType(type) || type.getKind() == TypeKind.STRING || type.getKind() == TypeKind.VOID) {
+            semanticError(DiagnosticCodes.SEM_GENERAL,
+                    "invalid field type for '" + owner.getName() + "." + field.getId() + "': " + typeName(type),
+                    field.getLineNum(), field.getSpan(), "unsupported field type",
+                    "struct fields must be value scalars, bool, other structs, or struct pointers", null);
+            return;
+        }
+        if (type.getKind() == TypeKind.STRUCT
+                && ((Ast.Type.Struct) type).getName().equals(owner.getName())) {
+            error(field.getLineNum(), "struct '" + owner.getName() + "' cannot contain itself as a value field");
+            return;
+        }
+        if (type.getKind() == TypeKind.STRUCT && !structTable.containsKey(((Ast.Type.Struct) type).getName())) {
+            semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                    "unknown struct type: " + ((Ast.Type.Struct) type).getName(),
+                    field.getLineNum(), field.getSpan(), "unknown struct",
+                    "declare the struct before using it as a field type", null);
+            return;
+        }
+        if (isPointerType(type) && !isLegalStructPointee(((Ast.Type.Pointer) type).getPointee())) {
+            semanticError(DiagnosticCodes.TYPE_POINTER_ASSIGNMENT,
+                    "unsupported pointer field type '" + typeName(type) + "' in struct '" + owner.getName() + "'",
+                    field.getLineNum(), field.getSpan(), "unsupported pointer type",
+                    "struct pointer fields must point to scalars, bool, or structs", null);
+        }
+    }
+
+    /** Pointees allowed inside struct pointer fields (no arrays/strings). */
+    private boolean isLegalStructPointee(Ast.Type.T pointee) {
+        if (pointee == null) {
+            return false;
+        }
+        if (isPointerType(pointee)) {
+            return isLegalStructPointee(((Ast.Type.Pointer) pointee).getPointee());
+        }
+        if (pointee.getKind() == TypeKind.STRUCT) {
+            return structTable.containsKey(((Ast.Type.Struct) pointee).getName());
+        }
+        return switch (pointee.getKind()) {
+            case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL -> true;
+            default -> false;
+        };
+    }
+
+    /** Resolves a struct name to its declaration, or null when unknown. */
+    private Ast.StructDecl resolveStruct(String name) {
+        return structTable.get(name);
+    }
+
+    /** True when the type mentions a struct that is not declared. */
+    private boolean referencesUnknownStruct(Ast.Type.T type) {
+        if (type == null) {
+            return false;
+        }
+        if (type.getKind() == TypeKind.STRUCT) {
+            return !structTable.containsKey(((Ast.Type.Struct) type).getName());
+        }
+        if (isPointerType(type)) {
+            return referencesUnknownStruct(((Ast.Type.Pointer) type).getPointee());
+        }
+        return false;
     }
 
     private void validateMainMethod() {
@@ -874,6 +988,111 @@ public class SemanticVisitor implements ISemanticVisitor {
     @Override
     public void visit(Ast.Type.Null obj) {
         this.currType = obj;
+    }
+
+    @Override
+    public void visit(Ast.Type.Struct obj) {
+        if (!structTable.containsKey(obj.getName())) {
+            semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                    "unknown struct type: " + obj.getName(),
+                    0, null, "unknown struct",
+                    "declare the struct before using it", null);
+        }
+        this.currType = obj;
+    }
+
+    // ==================================================== struct expressions
+
+    @Override
+    public void visit(Ast.Expr.Field obj) {
+        // Resolve the receiver chain down to the struct value that holds the
+        // first named field, then walk the field path typing each link.
+        this.visit(obj.getReceiver());
+        Ast.Type.T receiverType = this.currType;
+        // Pointer base (->) auto-dereferences exactly once.
+        if (obj.isPointerBase()) {
+            if (!isPointerType(receiverType)
+                    || !(((Ast.Type.Pointer) receiverType).getPointee().getKind() == TypeKind.STRUCT)) {
+                semanticError(DiagnosticCodes.SEM_GENERAL,
+                        "'->' requires a pointer to a struct, but the operand has type " + typeName(receiverType),
+                        obj.getLineNum(), obj.getSpan(), "invalid pointer field access",
+                        "use '.' for struct values and '->' for struct pointers", null);
+                this.currType = unknownType();
+                return;
+            }
+            receiverType = ((Ast.Type.Pointer) receiverType).getPointee();
+        }
+        java.util.ArrayList<String> path = obj.getPath();
+        for (int i = 0; i < path.size(); i++) {
+            String fieldName = path.get(i);
+            if (receiverType == null || receiverType.getKind() != TypeKind.STRUCT) {
+                semanticError(DiagnosticCodes.SEM_GENERAL,
+                        "field access '.' requires a struct value, but '" + path.get(0)
+                                + "' chain reaches type " + typeName(receiverType),
+                        obj.getLineNum(), obj.getSpan(), "invalid field access",
+                        "field access is only valid on struct values", null);
+                this.currType = unknownType();
+                return;
+            }
+            Ast.StructDecl structDecl = resolveStruct(((Ast.Type.Struct) receiverType).getName());
+            if (structDecl == null) {
+                semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                        "unknown struct type: " + ((Ast.Type.Struct) receiverType).getName(),
+                        obj.getLineNum(), obj.getSpan(), "unknown struct", null, null);
+                this.currType = unknownType();
+                return;
+            }
+            Ast.Type.T fieldType = structDecl.fieldType(fieldName);
+            if (fieldType == null) {
+                semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                        "struct '" + structDecl.getName() + "' has no field '" + fieldName + "'",
+                        obj.getLineNum(), obj.getSpan(), "unknown field",
+                        "the field is not declared in the struct", null);
+                this.currType = unknownType();
+                return;
+            }
+            // Follow struct-valued fields toward the next path link.
+            receiverType = fieldType;
+            if (i == path.size() - 1) {
+                this.currType = fieldType;
+                obj.setType(fieldType);
+            }
+        }
+    }
+
+    @Override
+    public void visit(Ast.Stmt.FieldAssign obj) {
+        // Writing through the chain initializes the base struct the same way a
+        // whole-assignment would; clear the may-be-unassigned flag first so
+        // the receiver visit does not report a premature use.
+        if (obj.getTarget().getReceiver() instanceof Ast.Expr.Id base) {
+            this.currMethodLocalVar.remove(base.getId());
+        }
+        // Resolve the target field type first (also validates the chain).
+        this.visit(obj.getTarget());
+        Ast.Type.T targetType = this.currType;
+        if (isPointerType(targetType)) {
+            // Rebinding a pointer field through '.' would need alias tracking
+            // that the current pointer model does not have.
+            semanticError(DiagnosticCodes.TYPE_POINTER_WRITE,
+                    "cannot assign to pointer field '" + typeName(targetType) + "': field pointer writes are not supported",
+                    obj.getLineNum(), obj.getSpan(), "unsupported pointer write",
+                    "assign through the pointer instead: p->field = value", null);
+            return;
+        }
+        this.visit(obj.getExpr());
+        Ast.Type.T valueType = this.currType;
+        if (!isAssignable(targetType, valueType, obj.getExpr())) {
+            if (!rangeErrorIfNeeded(targetType, valueType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
+                    "field assignment")) {
+                if (!shortRangeErrorIfNeeded(targetType, valueType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
+                        "field assignment")) {
+                    typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(targetType), typeName(valueType),
+                            expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(),
+                            "field assignment", null);
+                }
+            }
+        }
     }
 
     @Override
@@ -1300,6 +1519,11 @@ public class SemanticVisitor implements ISemanticVisitor {
         return isArrayType(type) || type.getKind() == TypeKind.STRING || type.getKind() == TypeKind.VOID;
     }
 
+    /** True for struct-typed values (passed and returned by value). */
+    private boolean isStructType(Ast.Type.T type) {
+        return type != null && type.getKind() == TypeKind.STRUCT;
+    }
+
     private boolean isAllowedPointee(Ast.Type.T type) {
         if (isPointerType(type)) {
             return true; // multi-level pointers are legal
@@ -1309,6 +1533,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         return switch (type.getKind()) {
             case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL -> true;
+            case STRUCT -> structTable.containsKey(((Ast.Type.Struct) type).getName());
             default -> false;
         };
     }
@@ -1333,6 +1558,9 @@ public class SemanticVisitor implements ISemanticVisitor {
         Ast.Type.T rightPointee = ((Ast.Type.Pointer) right).getPointee();
         if (isPointerType(leftPointee) || isPointerType(rightPointee)) {
             return pointerTypesEqual(leftPointee, rightPointee);
+        }
+        if (leftPointee.getKind() == TypeKind.STRUCT && rightPointee.getKind() == TypeKind.STRUCT) {
+            return ((Ast.Type.Struct) leftPointee).getName().equals(((Ast.Type.Struct) rightPointee).getName());
         }
         return leftPointee.getKind() == rightPointee.getKind();
     }
@@ -1420,8 +1648,13 @@ public class SemanticVisitor implements ISemanticVisitor {
                     || (target.getKind() == TypeKind.NULL && isPointerType(curr))
                     || (target.getKind() == TypeKind.NULL && curr.getKind() == TypeKind.NULL);
         }
-        if(target.getKind() == curr.getKind())
+        if(target.getKind() == curr.getKind()){
+            // Struct values match only when they name the same struct.
+            if (target.getKind() == TypeKind.STRUCT) {
+                return ((Ast.Type.Struct) target).getName().equals(((Ast.Type.Struct) curr).getName());
+            }
             return true;
+        }
         // Allow float to implicitly widen to double
         if(target.getKind() == TypeKind.DOUBLE && curr.getKind() == TypeKind.FLOAT)
             return true;

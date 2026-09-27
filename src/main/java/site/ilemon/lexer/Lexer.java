@@ -55,6 +55,7 @@ public class Lexer {
         KEYWORDS.put("const", TokenKind.Const);
         KEYWORDS.put("import", TokenKind.Import);
         KEYWORDS.put("null", TokenKind.Null);
+        KEYWORDS.put("struct", TokenKind.Struct);
     }
 
     public Lexer(File f) throws IOException {
@@ -200,6 +201,11 @@ public class Lexer {
                 if (c == '!') return LexerState.IN_NOT;
                 if (c == '&') return LexerState.IN_AND;
                 if (c == '|') return LexerState.IN_OR;
+                if (c == '-') {
+                    // '-' starts either the subtraction operator or the '->'
+                    // pointer-field operator; look ahead to disambiguate.
+                    return peek(1) == '>' ? LexerState.IN_ARROW : LexerState.DONE;
+                }
                 if (c == '/') return LexerState.IN_DIV;
                 if (isSingleCharToken(c)) return LexerState.DONE;
                 if (c == '\0') return LexerState.DONE;
@@ -241,6 +247,10 @@ public class Lexer {
             case IN_OR:
                 if (c == '|') return LexerState.DONE;
                 return LexerState.ERROR;
+
+            case IN_ARROW:
+                // The lookahead in START guarantees the next char is '>' here.
+                return LexerState.DONE;
 
             case IN_DIV:
                 if (c == '/') return LexerState.IN_COMMENT;
@@ -415,6 +425,11 @@ public class Lexer {
             case IN_OR:
                 return TokenKind.Or;
 
+            case IN_ARROW:
+                if (lexeme.equals("->")) return TokenKind.Arrow;
+                // fall through to default error path for a lone '-'
+                break;
+
             case IN_DIV:
                 return TokenKind.Div;
 
@@ -443,6 +458,8 @@ public class Lexer {
                 return c == '&';
             case IN_OR:
                 return c == '|';
+            case IN_ARROW:
+                return c == '>';
             case IN_DIV:
                 return false;
             default:
@@ -500,6 +517,10 @@ public class Lexer {
 
             case IN_OR:
                 return new Token(TokenKind.Or, lexeme, span);
+
+            case IN_ARROW:
+                if (lexeme.equals("->")) return new Token(TokenKind.Arrow, lexeme, span);
+                break;
 
             case IN_DIV:
                 return new Token(TokenKind.Div, lexeme, span);

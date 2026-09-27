@@ -187,10 +187,12 @@ public class Parser {
 		ArrayList<Ast.ImportDecl> imports = parseImports();
 		ArrayList<Ast.Method.T> methods = new ArrayList<>();
 		ArrayList<Ast.ConstDecl> constants = new ArrayList<>();
-		while (isMethodStart() || isConstStart()) {
+		while (isMethodStart() || isConstStart() || isStructStart()) {
 			try {
 				if (isConstStart()) {
 					constants.add(parseConstDecl());
+				} else if (isStructStart()) {
+					structs.add(parseStructDecl());
 				} else {
 					methods.add(parseMethod());
 				}
@@ -206,7 +208,48 @@ public class Parser {
 		Ast.MainClass.MainClassSingle main = new Ast.MainClass.MainClassSingle(lexer.getClassName(), null, methods);
 		main.getImports().addAll(imports);
 		main.getConstants().addAll(constants);
+		main.getStructs().addAll(structs);
 		return main;
+	}
+
+	/** Struct declarations parsed so far, consumed when the program node is built. */
+	private final ArrayList<Ast.StructDecl> structs = new ArrayList<>();
+
+	private boolean isStructStart() {
+		if (look == null || look.kind != TokenKind.Struct) {
+			return false;
+		}
+		// A struct *declaration* is `struct Name { ... }`. A method returning a
+		// struct (`struct Name fname(...)`) continues with a second identifier,
+		// not a brace, so it must fall through to method parsing.
+		Token second = lexer.lookahead(1);
+		Token third = lexer.lookahead(2);
+		return second != null && second.kind == TokenKind.Id
+				&& third != null && third.kind == TokenKind.Lbrace;
+	}
+
+	// <structDecl> -> struct id { <field>* } ;
+	private Ast.StructDecl parseStructDecl() throws IOException {
+		Token structToken = look;
+		match(new Token(TokenKind.Struct));
+		if (look.kind != TokenKind.Id) {
+			error("expected a struct name after 'struct'");
+			return null;
+		}
+		String name = look.lexeme;
+		int lineNumber = look.lineNumber;
+		match(new Token(TokenKind.Id));
+		match("{");
+		ArrayList<Ast.Declare.T> fields = new ArrayList<>();
+		while (isTypeToken(look.kind)) {
+			Ast.Declare.T field = parseDeclare();
+			fields.add(field);
+		}
+		match("}");
+		match(";");
+		Ast.StructDecl decl = new Ast.StructDecl(name, fields, lineNumber);
+		decl.setSpan(tokenSpan(structToken));
+		return decl;
 	}
 
 	private ArrayList<Ast.ImportDecl> parseImports() throws IOException {
@@ -246,10 +289,13 @@ public class Parser {
 		match("{");
 		ArrayList<Ast.Method.T> methods = new ArrayList<>();
 		ArrayList<Ast.ConstDecl> constants = new ArrayList<>();
-		while (isMethodStart() || isConstStart()) {
+		structs.clear();
+		while (isMethodStart() || isConstStart() || isStructStart()) {
 			try {
 				if (isConstStart()) {
 					constants.add(parseConstDecl());
+				} else if (isStructStart()) {
+					structs.add(parseStructDecl());
 				} else {
 					methods.add(parseMethod());
 				}
@@ -262,6 +308,7 @@ public class Parser {
 		}
 		mainClass = new Ast.MainClass.MainClassSingle(className,null,methods);
 		mainClass.getConstants().addAll(constants);
+		mainClass.getStructs().addAll(structs);
 		if (look.kind == TokenKind.Rbrace) {
 			match("}");
 		} else if (!diagnosticEngine.hasErrors()) {
@@ -280,6 +327,11 @@ public class Parser {
 		// `pub` starts a method unless it is `pub const`.
 		if (look.kind == TokenKind.Pub) {
 			return lexer.lookahead(1) == null || lexer.lookahead(1).kind != TokenKind.Const;
+		}
+		if (look.kind == TokenKind.Struct) {
+			// `struct Name fname(...)` starts a method; declarations (`struct
+			// Name {`) were already peeled off by isStructStart().
+			return !isStructStart();
 		}
 		return look.kind == TokenKind.Void || look.kind == TokenKind.Int
 				|| look.kind == TokenKind.Float || look.kind == TokenKind.Double
@@ -583,7 +635,8 @@ public class Parser {
 	 */
 	private boolean isTypeToken(TokenKind kind) {
 		return kind == TokenKind.Int || kind == TokenKind.Float
-				|| kind == TokenKind.Double || kind == TokenKind.Bool || kind == TokenKind.Byte || kind == TokenKind.Short || kind == TokenKind.Char || kind == TokenKind.Long || kind == TokenKind.String;
+				|| kind == TokenKind.Double || kind == TokenKind.Bool || kind == TokenKind.Byte || kind == TokenKind.Short || kind == TokenKind.Char || kind == TokenKind.Long || kind == TokenKind.String
+				|| kind == TokenKind.Struct;
 	}
 
 
@@ -628,6 +681,15 @@ public class Parser {
 		else if(look.kind == TokenKind.String){
 			move();
 			type = new Ast.Type.Str();
+		}
+		else if(look.kind == TokenKind.Struct){
+			move();
+			if (look.kind != TokenKind.Id) {
+				error("expected a struct name after 'struct'");
+				return null;
+			}
+			type = new Ast.Type.Struct(look.lexeme);
+			move();
 		}
 		else {
 			error("expected type keyword int, float, double, bool, byte, short, char, long, string, or void");
@@ -804,6 +866,33 @@ public class Parser {
 					match(new Token(TokenKind.Semicolon));
 				}
 
+			}
+			// Struct field assignment: obj.f = v; / p->f = v; / obj.inner.f = v;
+			else if( ahead.kind == TokenKind.Dot || ahead.kind == TokenKind.Arrow ){
+				Token fieldToken = look;
+				String baseName = look.lexeme;
+				int lineNum = look.lineNumber;
+				match(new Token(TokenKind.Id));
+				boolean pointerBase = ahead.kind == TokenKind.Arrow;
+				ArrayList<String> path = new ArrayList<>();
+				while (look.kind == TokenKind.Dot || look.kind == TokenKind.Arrow) {
+					move(); // '.' or '->'
+					if (look.kind != TokenKind.Id) {
+						error("expected a field name after '.' or '->'");
+						return null;
+					}
+					path.add(look.lexeme);
+					move();
+				}
+				match(new Token(TokenKind.Assign));
+				Ast.Expr.T value = parseExpr();
+				match(new Token(TokenKind.Semicolon));
+				Ast.Expr.Id base = new Ast.Expr.Id(baseName, lineNum);
+				base.setSpan(tokenSpan(fieldToken));
+				Ast.Expr.Field target = new Ast.Expr.Field(base, path, pointerBase, lineNum);
+				target.setSpan(tokenSpan(fieldToken));
+				stmt = new Ast.Stmt.FieldAssign(target, value, lineNum);
+				stmt.setSpan(tokenSpan(fieldToken));
 			}
 			// Array assignment: arr[i] = expr;
 			else if( ahead.kind == TokenKind.Lbracket ){
@@ -1130,12 +1219,49 @@ public class Parser {
 				match(new Token(TokenKind.Id));
 				if ("length".equals(member)) {
 					expr = new Ast.Expr.ArrayLength(baseName, lineNum);
+					expr.setSpan(tokenSpan(temp));
 				} else if (importAliases.contains(baseName)) {
 					// Module-qualified read: alias.MEMBER -> alias_MEMBER
 					expr = new Ast.Expr.Id(baseName + "_" + member, lineNum);
+					expr.setSpan(tokenSpan(temp));
 				} else {
-					error("array property must be length");
+					// Struct field access: parsed as a chain and validated by the
+					// semantic phase (field existence/type of the actual struct).
+					ArrayList<String> path = new ArrayList<>();
+					path.add(member);
+					while (look.kind == TokenKind.Dot || look.kind == TokenKind.Arrow) {
+						move(); // '.' or '->'
+						if (look.kind != TokenKind.Id) {
+							error("expected a field name after '.'");
+							return null;
+						}
+						path.add(look.lexeme);
+						move();
+					}
+					Ast.Expr.Id base = new Ast.Expr.Id(baseName, lineNum);
+					base.setSpan(tokenSpan(temp));
+					expr = new Ast.Expr.Field(base, path, false, lineNum);
+					expr.setSpan(tokenSpan(temp));
 				}
+			}
+			else if( ahead.kind == TokenKind.Arrow ){
+				// Pointer field chain: p->f / p->inner->f (first link dereferences).
+				String baseName = look.lexeme;
+				int lineNum = temp.lineNumber;
+				move(); // consume id
+				ArrayList<String> path = new ArrayList<>();
+				while (look.kind == TokenKind.Arrow || look.kind == TokenKind.Dot) {
+					move(); // '->' or '.'
+					if (look.kind != TokenKind.Id) {
+						error("expected a field name after '->'");
+						return null;
+					}
+					path.add(look.lexeme);
+					move();
+				}
+				Ast.Expr.Id base = new Ast.Expr.Id(baseName, lineNum);
+				base.setSpan(tokenSpan(temp));
+				expr = new Ast.Expr.Field(base, path, true, lineNum);
 				expr.setSpan(tokenSpan(temp));
 			}
 			else{

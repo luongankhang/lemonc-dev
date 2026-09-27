@@ -73,5 +73,7 @@ public enum TokenKind {
 		Assign,
 		Amp,
 		Unknown, PrintLine,
+		Struct,				// struct keyword
+		Arrow,				// -> pointer field access
 
 	}

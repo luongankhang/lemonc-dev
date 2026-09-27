@@ -74,6 +74,11 @@ final class JvmCodeBuilder {
         insns.add(new Insn(opcode, new int[]{constantPoolIndex}, null, 0, false));
     }
 
+    /** GETFIELD/PUTFIELD with the field's slot width, consumed by the stack tracker. */
+    void fieldAccess(int opcode, int constantPoolIndex, int fieldSlots) {
+        insns.add(new Insn(opcode, new int[]{constantPoolIndex}, null, fieldSlots, false));
+    }
+
     void newarray(int atype) {
         insns.add(new Insn(0xBC, new int[]{atype}, null, 0, false));
     }

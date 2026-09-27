@@ -26,8 +26,17 @@ final class JvmMethodEmitter {
                    Map<String, JvmInstructionEmitter.MethodSignature> signatures, boolean arcDebug) {
         boolean isMain = "main".equals(function.name());
 
+        mapper.setStructOwner(module.name());
         JvmLocalAllocator allocator = new JvmLocalAllocator(mapper);
         Map<String, JvmLocalAllocator.Local> locals = allocator.allocate(function);
+        if (isMain) {
+            // The JVM entry point receives String[] args in slot 0; shift every
+            // local up one slot so reference locals never collide with it.
+            for (java.util.Map.Entry<String, JvmLocalAllocator.Local> e : locals.entrySet()) {
+                JvmLocalAllocator.Local l = e.getValue();
+                e.setValue(new JvmLocalAllocator.Local(l.value(), l.slot() + 1, l.type()));
+            }
+        }
 
         // Locals whose address is taken (&x) are materialized as single-element
         // cells so dereferences and direct accesses alias the same storage.
@@ -55,6 +64,9 @@ final class JvmMethodEmitter {
         byte[] bytecode = code.toBytecode();
         int maxStack = JvmStackTracker.computeMaxStack(code.insns(), pool);
         int maxLocals = allocator.slotCount(locals);
+        if (instructions.usesStructScratch()) {
+            maxLocals += 1; // one scratch slot for struct cell writes
+        }
         if (isMain && maxLocals < 1) {
             maxLocals = 1; // the implicit String[] argument occupies slot 0
         }

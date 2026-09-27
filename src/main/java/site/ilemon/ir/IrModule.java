@@ -18,6 +18,42 @@ public final class IrModule {
     private final String name;
     private final List<IrFunction> functions = new ArrayList<>();
     private final Map<String, IrConstant> constants = new LinkedHashMap<>();
+    /** Declared struct layouts, keyed by struct name, in declaration order. */
+    private final Map<String, IrStruct> structs = new LinkedHashMap<>();
+
+    /** Backend-neutral struct layout: name plus ordered typed fields. */
+    public record IrStruct(String name, List<IrStructField> fields) {
+        public IrStruct {
+            if (name == null || name.isBlank()) throw new IllegalArgumentException("struct name is empty");
+            fields = List.copyOf(fields == null ? List.of() : fields);
+        }
+    }
+
+    public record IrStructField(String name, IrType type) {
+        public IrStructField {
+            if (name == null || name.isBlank()) throw new IllegalArgumentException("field name is empty");
+            if (type == null) throw new IllegalArgumentException("field type is null");
+        }
+    }
+
+    /** Registers a struct layout; the first declaration of a name wins. */
+    public IrModule addStruct(IrStruct struct) {
+        if (struct == null) throw new IllegalArgumentException("struct is null");
+        structs.putIfAbsent(struct.name(), struct);
+        return this;
+    }
+
+    public IrStruct struct(String name) {
+        return structs.get(name);
+    }
+
+    public boolean hasNoStructs() {
+        return structs.isEmpty();
+    }
+
+    public Map<String, IrStruct> structsView() {
+        return structs;
+    }
 
     public IrModule(String name) {
         if (name == null || name.isBlank()) throw new IllegalArgumentException("module name is empty");

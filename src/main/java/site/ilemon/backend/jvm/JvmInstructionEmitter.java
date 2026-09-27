@@ -38,6 +38,8 @@ final class JvmInstructionEmitter {
     private static final int ICONST_4 = 0x07;
     private static final int ICONST_5 = 0x08;
     private static final int DUP = 0x59;
+    private static final int DUP_X1 = 0x5A;
+    private static final int SWAP_OPCODE = 0x5F;
     private static final int IALOAD = 0x2E;
     private static final int LALOAD = 0x2F;
     private static final int FALOAD = 0x30;
@@ -124,6 +126,8 @@ final class JvmInstructionEmitter {
     private static final int ARETURN = 0xB0;
     private static final int RETURN = 0xB1;
     private static final int GETSTATIC = 0xB2;
+    private static final int GETFIELD = 0xB4;
+    private static final int PUTFIELD = 0xB5;
     private static final int INVOKEVIRTUAL = 0xB6;
     private static final int INVOKESPECIAL = 0xB7;
     private static final int INVOKESTATIC = 0xB8;
@@ -169,6 +173,10 @@ final class JvmInstructionEmitter {
     private final java.util.Set<String> cells;
 
     private int labelCounter = 0;
+    /** Set when a struct cell write borrows the scratch slot past max_locals. */
+    private boolean usesStructScratch = false;
+    /** &-taken struct locals whose cell array was already materialized. */
+    private final java.util.Set<String> cellCreated = new java.util.HashSet<>();
 
     /** Function signature used for call descriptors. */
     record MethodSignature(List<IrType> parameterTypes, IrType returnType) {
@@ -244,6 +252,10 @@ final class JvmInstructionEmitter {
             case EXTERNAL_CALL -> emitExternalCall(instruction);
             case PHI -> throw new CompilerException(
                     "PHI instructions must be lowered before JVM emission");
+            case FIELD_LOAD -> emitFieldLoad(instruction);
+            case FIELD_STORE -> emitFieldStore(instruction);
+            case STRUCT_COPY -> emitStructCopy(instruction);
+            case STRUCT_ZERO -> emitStructZero(instruction);
         }
     }
 
@@ -639,6 +651,182 @@ final class JvmInstructionEmitter {
         store(instruction.result());
     }
 
+    // ------------------------------------------------------------ structs
+
+    /** Struct class name of an IR struct type, e.g. {@code Main$Point}. */
+    private String structClassName(IrType type) {
+        return className + "$" + type.name();
+    }
+
+    /** GETFIELD/PUTFIELD descriptor of a struct field. */
+    private String fieldDescriptor(IrType type) {
+        return mapper.descriptor(type);
+    }
+
+    /** Emits {@code result = root.path} where root is a struct or struct* value. */
+    private void emitFieldLoad(IrInstruction instruction) {
+        IrValue root = instruction.operands().get(0);
+        String path = instruction.target();
+        IrType rootType = root.type();
+        if (rootType.kind() == IrType.Kind.POINTER) {
+            // p->f: null-guard the cell, load the struct object from cell[0],
+            // then navigate the field chain by reference.
+            loadValue(root);
+            emitNullDerefGuard();
+            pushIntConstant(0);
+            code.simple(AALOAD);
+        } else {
+            loadValue(root);
+        }
+        IrType current = rootType.kind() == IrType.Kind.POINTER ? rootType.elementType() : rootType;
+        for (String fieldName : path.split("\\.", -1)) {
+            IrType fieldType = fieldTypeOf(current, fieldName);
+            code.fieldAccess(GETFIELD, pool.fieldRef(structClassName(current),
+                    fieldName, fieldDescriptor(fieldType)), mapper.slots(fieldType));
+            current = fieldType;
+        }
+        store(instruction.result());
+    }
+
+    /**
+     * Emits {@code root.path = v}. Like C, the write lands in the storage the
+     * root designates: struct roots are navigated by reference (GETFIELD) and
+     * the final link is a PUTFIELD; pointer roots dereference the cell first
+     * (null-guarded) and mutate the same pointee object aliases see.
+     */
+    private void emitFieldStore(IrInstruction instruction) {
+        IrValue root = instruction.operands().get(0);
+        IrValue value = instruction.operands().get(1);
+        String path = instruction.target();
+        IrType rootType = root.type();
+        if (rootType.kind() == IrType.Kind.POINTER) {
+            // Null-guard the cell, then continue on the pointee object.
+            loadValue(root);
+            emitNullDerefGuard();
+            pushIntConstant(0);
+            code.simple(AALOAD);
+        } else {
+            loadValue(root);
+        }
+        IrType current = rootType.kind() == IrType.Kind.POINTER ? rootType.elementType() : rootType;
+        String[] links = path.split("\\.", -1);
+        for (int i = 0; i < links.length; i++) {
+            IrType fieldType = fieldTypeOf(current, links[i]);
+            if (i == links.length - 1) {
+                loadValue(value);
+                code.fieldAccess(PUTFIELD, pool.fieldRef(structClassName(current),
+                        links[i], fieldDescriptor(fieldType)), mapper.slots(fieldType));
+            } else {
+                code.fieldAccess(GETFIELD, pool.fieldRef(structClassName(current),
+                        links[i], fieldDescriptor(fieldType)), mapper.slots(fieldType));
+                current = fieldType;
+            }
+        }
+    }
+
+    /**
+     * Emits {@code result = clone(src)}: a fresh struct object built by the
+     * synthesized copy constructor ({@code <init>(LType;)V}), which copies
+     * every field by value — the by-value semantics C struct assignment has.
+     */
+    private void emitStructCopy(IrInstruction instruction) {
+        IrValue src = instruction.operands().get(0);
+        IrType type = instruction.result().type();
+        // The copy constructor consumes (fresh, src) from the stack. Stash the
+        // source in the scratch slot first — a swap across an uninitialized
+        // object is rejected by the verifier.
+        int scratch = structScratchSlot();
+        if (src.type().kind() == IrType.Kind.POINTER) {
+            // Copying through a pointer reads the pointee (null-guarded).
+            loadValue(src);
+            emitNullDerefGuard();
+            pushIntConstant(0);
+            code.simple(AALOAD);
+        } else {
+            loadValue(src);
+        }
+        code.store(ASTORE, scratch);          // []
+        code.cpRef(NEW, pool.classRef(structClassName(type)));
+        code.simple(DUP);                     // [obj, obj]
+        code.load(ALOAD, scratch);            // [obj, obj, src]
+        code.invoke(INVOKESPECIAL, pool.methodRef(structClassName(type), "<init>",
+                "(" + fieldDescriptor(type) + ")V"), 1, 0);
+        // [obj]: for &-taken targets write through the cell so aliases see it;
+        // otherwise plain local store.
+        storeStructIntoLocal(instruction.result());
+    }
+
+    /**
+     * Stores a struct object (already on the stack) into its result local. An
+     * address-taken struct (&obj) lives in a single-element cell referenced by
+     * the local slot; if the cell does not exist yet (struct locals have no
+     * CONST init), it is allocated here and stored into the slot.
+     */
+    private void storeStructIntoLocal(IrValue result) {
+        if (cells.contains(result.name())) {
+            JvmLocalAllocator.Local local = locals.get(result.name());
+            int scratch = structScratchSlot();
+            code.store(ASTORE, scratch);       // [] (obj stashed)
+            if (!cellCreated.contains(result.name())) {
+                // First write to this &-taken struct: materialize the cell.
+                pushIntConstant(1);            // [1]
+                code.cpRef(ANEWARRAY, pool.classRef(structClassName(
+                        IrType.structType(structNameOf(result)))));
+                code.store(ASTORE, local.slot()); // slot := cell
+                cellCreated.add(result.name());
+            }
+            code.load(ALOAD, local.slot());    // [cell]
+            pushIntConstant(0);                // [cell, 0]
+            code.load(ALOAD, scratch);         // [cell, 0, obj]
+            code.simple(AASTORE);              // cell[0] = obj
+            return;
+        }
+        store(result);
+    }
+
+    /** Struct type name of a result value (root of a struct chain). */
+    private String structNameOf(IrValue value) {
+        return value.type().name();
+    }
+
+    /** One past the method's allocated locals; free for backend scratch. */
+    private int structScratchSlot() {
+        usesStructScratch = true;
+        int max = 0;
+        for (JvmLocalAllocator.Local local : locals.values()) {
+            max = Math.max(max, local.slot() + mapper.slots(local.type()));
+        }
+        return max;
+    }
+
+    /** True when emission used the backend scratch slot (max_locals must grow). */
+    boolean usesStructScratch() {
+        return usesStructScratch;
+    }
+
+    /** Emits {@code result = all-fields-zero} for a struct local. */
+    private void emitStructZero(IrInstruction instruction) {
+        IrType type = instruction.result().type();
+        code.cpRef(NEW, pool.classRef(structClassName(type)));
+        code.simple(DUP);
+        code.invoke(INVOKESPECIAL, pool.methodRef(structClassName(type), "<init>", "()V"), 0, 0);
+        storeStructIntoLocal(instruction.result());
+    }
+
+    /** Result type of a single field link inside a struct type. */
+    private IrType fieldTypeOf(IrType structType, String fieldName) {
+        IrModule.IrStruct struct = module.struct(structType.name());
+        if (struct == null) {
+            throw new CompilerException("unknown struct in JVM backend: " + structType.name());
+        }
+        for (IrModule.IrStructField field : struct.fields()) {
+            if (field.name().equals(fieldName)) {
+                return field.type();
+            }
+        }
+        throw new CompilerException("struct " + structType.name() + " has no field " + fieldName);
+    }
+
     private void emitAlloc(IrInstruction instruction) {
         IrValue result = instruction.result();
         IrType arrayType = result.type();
@@ -661,6 +849,7 @@ final class JvmInstructionEmitter {
             case FLOAT -> FALOAD;
             case DOUBLE -> DALOAD;
             case STRING, POINTER, REFERENCE, ARRAY -> AALOAD;
+            case STRUCT -> AALOAD; // struct cell loads (&obj storage)
             default -> throw new CompilerException("no JVM array load for " + elementType.kind());
         };
     }
@@ -848,6 +1037,12 @@ final class JvmInstructionEmitter {
         if (returnType.kind() == IrType.Kind.VOID) {
             code.simple(POP);
             code.simple(RETURN);
+            return;
+        }
+        if (returnType.kind() == IrType.Kind.STRUCT) {
+            // Returning a struct by value returns the object reference; the
+            // caller clones it before storing into its own locals.
+            code.simple(ARETURN);
             return;
         }
         if (mapper.isIntFamily(returnType)) {

@@ -7,9 +7,9 @@ import site.ilemon.ir.IrValue;
 import java.util.Map;
 
 public final class CModuleEmitter {
-    private final CTypeEmitter types = new CTypeEmitter();
 
     public String emit(IrModule module) {
+        CTypeEmitter types = new CTypeEmitter(module.structsView());
         StringBuilder out = new StringBuilder();
         out.append("#include <stdbool.h>\n");
         out.append("#include <stdint.h>\n");
@@ -19,6 +19,12 @@ public final class CModuleEmitter {
         out.append("#include <limits.h>\n");
         out.append("#include \"lemon_runtime.h\"\n\n");
         out.append("typedef struct { unsigned char _opaque; } lemon_opaque_t;\n\n");
+
+        // Struct typedefs: one C struct per declared LemonC struct. Fields use
+        // the plain LemonIR→C type mapping (nested structs embed by value).
+        if (!module.structsView().isEmpty()) {
+            out.append(CTypeEmitter.emitStructTypedefs(module.structsView(), types)).append('\n');
+        }
 
         // Global constants. Private constants are file-scope static; public ones
         // follow the existing export model (compile-time module visibility, so
@@ -50,7 +56,7 @@ public final class CModuleEmitter {
         }
         out.append("\n");
 
-        CFunctionEmitter functions = new CFunctionEmitter(module.constants().keySet());
+        CFunctionEmitter functions = new CFunctionEmitter(module.constants().keySet(), module.structsView());
         module.functions().forEach(function -> out.append(functions.emit(function)).append('\n'));
         return out.toString();
     }

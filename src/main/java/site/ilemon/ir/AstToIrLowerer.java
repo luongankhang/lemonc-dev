@@ -21,6 +21,7 @@ public final class AstToIrLowerer {
 
     private final Map<String, IrType> methodReturnTypes = new HashMap<>();
     private final Map<String, List<IrType>> methodParamTypes = new HashMap<>();
+    private IrModule module;
 
     public IrModule lower(Ast.Program.T program) {
         if (!(program instanceof Ast.Program.ProgramSingle root)) {
@@ -31,6 +32,13 @@ public final class AstToIrLowerer {
         }
 
         IrModule module = new IrModule(main.getClassId() != null ? main.getClassId() : "Main");
+        this.module = module;
+        // Register struct layouts so both backends can resolve field names.
+        if (main.getStructs() != null) {
+            for (Ast.StructDecl structDecl : main.getStructs()) {
+                module.addStruct(toIrStruct(structDecl));
+            }
+        }
         programConsts = main.getConstants() == null ? List.of() : main.getConstants();
         for (Ast.ConstDecl constant : programConsts) {
             registerConstant(module, constant);
@@ -125,7 +133,9 @@ public final class AstToIrLowerer {
             for (Ast.Declare.T local : method.getLocals()) {
                 if (!varDeclNodes.contains(local) && local instanceof Ast.Declare.DeclareSingle d) {
                     IrType t = variableTypes.get(d.getId());
-                    if (isManaged(t)) {
+                    if (t != null && t.kind() == IrType.Kind.STRUCT) {
+                        ctx.emit(new IrInstruction(IrInstruction.Op.STRUCT_ZERO, new IrValue(d.getId(), t), List.of(), null));
+                    } else if (isManaged(t)) {
                         int size = getArraySize(d.getType());
                         IrValue lenVal = new IrValue(String.valueOf(size), IrType.scalar(IrType.Kind.INT));
                         ctx.emit(new IrInstruction(IrInstruction.Op.ALLOC, new IrValue(d.getId(), t), List.of(lenVal), null));
@@ -175,6 +185,19 @@ public final class AstToIrLowerer {
         }
 
         return irFunc;
+    }
+
+    /** Converts a declared struct into a backend-neutral layout. */
+    private IrModule.IrStruct toIrStruct(Ast.StructDecl structDecl) {
+        List<IrModule.IrStructField> fields = new ArrayList<>();
+        if (structDecl.getFields() != null) {
+            for (Ast.Declare.T field : structDecl.getFields()) {
+                if (field instanceof Ast.Declare.DeclareSingle single) {
+                    fields.add(new IrModule.IrStructField(single.getId(), toIrType(single.getType())));
+                }
+            }
+        }
+        return new IrModule.IrStruct(structDecl.getName(), fields);
     }
 
     /** Adds a resolved AST constant to the module's backend-neutral table. */
@@ -243,6 +266,10 @@ public final class AstToIrLowerer {
                             ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(rhsVal), "lemon_retain"));
                         }
                         ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
+                    } else if (targetType.kind() == IrType.Kind.STRUCT) {
+                        // By-value struct init: copy into the fresh local.
+                        ctx.emit(new IrInstruction(IrInstruction.Op.STRUCT_COPY,
+                                new IrValue(targetId, targetType), List.of(rhsVal), null));
                     } else {
                         if (rhsVal.type().kind() != targetType.kind()) {
                             IrValue converted = ctx.newTemp(targetType);
@@ -252,7 +279,10 @@ public final class AstToIrLowerer {
                         ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
                     }
                 } else {
-                    if (isManaged(targetType)) {
+                    if (targetType.kind() == IrType.Kind.STRUCT) {
+                        // Struct locals zero-initialize every field.
+                        ctx.emit(new IrInstruction(IrInstruction.Op.STRUCT_ZERO, new IrValue(targetId, targetType), List.of(), null));
+                    } else if (isManaged(targetType)) {
                         int size = getArraySize(d.getType());
                         IrValue lenVal = new IrValue(String.valueOf(size), IrType.scalar(IrType.Kind.INT));
                         ctx.emit(new IrInstruction(IrInstruction.Op.ALLOC, new IrValue(targetId, targetType), List.of(lenVal), null));
@@ -284,7 +314,11 @@ public final class AstToIrLowerer {
             } else {
                 rhsVal = lowerExpr(assign.getExpr(), ctx);
             }
-            if (isManaged(targetType)) {
+            if (targetType.kind() == IrType.Kind.STRUCT) {
+                // Struct assignment copies field-by-field (by-value semantics).
+                ctx.emit(new IrInstruction(IrInstruction.Op.STRUCT_COPY,
+                        new IrValue(targetId, targetType), List.of(rhsVal), null));
+            } else if (isManaged(targetType)) {
                 if (isManaged(rhsVal.type())) {
                     ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(rhsVal), "lemon_retain"));
                     ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(new IrValue(targetId, targetType)), "lemon_release"));
@@ -298,6 +332,9 @@ public final class AstToIrLowerer {
                 }
                 ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
             }
+        } else if (stmt instanceof Ast.Stmt.FieldAssign fieldAssign) {
+            IrValue value = lowerExpr(fieldAssign.getExpr(), ctx);
+            lowerFieldStore(fieldAssign.getTarget(), value, ctx);
         } else if (stmt instanceof Ast.Stmt.DerefAssign derefAssign) {
             lowerDerefAssign(derefAssign, ctx);
         } else if (stmt instanceof Ast.Stmt.ArrayAssign arrayAssign) {
@@ -486,6 +523,86 @@ public final class AstToIrLowerer {
         }
     }
 
+    // ==================================================== struct lowering
+
+    /**
+     * Lowers a field-read chain to a single FIELD_LOAD op whose {@code target}
+     * carries the full dotted path ({@code inner.first.x}). The single
+     * operand is the root value: the struct variable itself, or the struct*
+     * variable when the chain starts with {@code ->}. Keeping the whole path
+     * in one op lets the C backend emit plain {@code root.a.b} lvalues while
+     * the JVM backend navigates one reference chain without intermediate
+     * copies — both backends stay field-address based.
+     */
+    private IrValue lowerFieldLoad(Ast.Expr.Field field, MethodLoweringContext ctx) {
+        Ast.Expr.T receiverExpr = field.getReceiver();
+        if (!(receiverExpr instanceof Ast.Expr.Id id)) {
+            throw new CompilerException("field access requires a named struct receiver");
+        }
+        IrType rootType = ctx.variableTypes.get(id.getId());
+        if (rootType == null) rootType = IrType.scalar(IrType.Kind.INT);
+        boolean throughPointer = field.isPointerBase() && isPointerKind(rootType);
+        IrType resultType = fieldPathType(rootType, field.getPath(), throughPointer);
+        IrValue loaded = ctx.newTemp(resultType);
+        ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_LOAD, loaded,
+                List.of(new IrValue(id.getId(), rootType)), String.join(".", field.getPath())));
+        return loaded;
+    }
+
+    /** Result type of a field path, resolving each link through struct layouts. */
+    private IrType fieldPathType(IrType rootType, List<String> path, boolean throughPointer) {
+        IrType current = throughPointer ? rootType.elementType() : rootType;
+        for (String fieldName : path) {
+            current = structFieldType(current, fieldName);
+        }
+        return current;
+    }
+
+    /** Field type of {@code fieldName} inside a struct-typed value. */
+    private IrType structFieldType(IrType structType, String fieldName) {
+        if (structType.kind() != IrType.Kind.STRUCT) {
+            throw new CompilerException("field access on non-struct type " + structType.kind());
+        }
+        IrModule.IrStruct struct = module.struct(structType.name());
+        if (struct == null) {
+            throw new CompilerException("unknown struct in IR: " + structType.name());
+        }
+        for (IrModule.IrStructField field : struct.fields()) {
+            if (field.name().equals(fieldName)) {
+                return field.type();
+            }
+        }
+        throw new CompilerException("struct " + structType.name() + " has no field " + fieldName);
+    }
+
+    /**
+     * Lowers {@code root.path.field = v} to a single FIELD_STORE op. The first
+     * operand is the root (struct variable, or the struct* variable when the
+     * chain starts with {@code ->}), the second is the converted value, and
+     * {@code target} carries the full dotted field path. Both backends write
+     * the field directly in the storage the root designates.
+     */
+    private void lowerFieldStore(Ast.Expr.Field target, IrValue value, MethodLoweringContext ctx) {
+        Ast.Expr.T receiverExpr = target.getReceiver();
+        if (!(receiverExpr instanceof Ast.Expr.Id id)) {
+            throw new CompilerException("field store requires a named struct root");
+        }
+        IrType rootType = ctx.variableTypes.get(id.getId());
+        if (rootType == null) rootType = IrType.scalar(IrType.Kind.INT);
+        boolean throughPointer = target.isPointerBase() && isPointerKind(rootType);
+        IrType fieldType = fieldPathType(rootType, target.getPath(), throughPointer);
+        IrValue stored = value;
+        if (stored.type().kind() != fieldType.kind()
+                || (stored.type().kind() == IrType.Kind.STRUCT && !stored.type().name().equals(fieldType.name()))) {
+            IrValue converted = ctx.newTemp(fieldType);
+            ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(stored), null));
+            stored = converted;
+        }
+        ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_STORE, null,
+                List.of(new IrValue(id.getId(), rootType), stored),
+                String.join(".", target.getPath())));
+    }
+
     /**
      * Lowers {@code *p = v}, {@code **pp = v}, ... by walking the dereference
      * chain down to the storage cell that receives {@code v}. Every pointer
@@ -613,6 +730,8 @@ public final class AstToIrLowerer {
             IrValue res = ctx.newTemp(nullType);
             ctx.emit(new IrInstruction(IrInstruction.Op.CONST, res, List.of(new IrValue("null", nullType)), null));
             return res;
+        } else if (expr instanceof Ast.Expr.Field field) {
+            return lowerFieldLoad(field, ctx);
         } else if (expr instanceof Ast.Expr.ArrayAccess access) {
             String arrName = access.getArrayName();
             IrType arrType = ctx.variableTypes.get(arrName);
@@ -854,6 +973,7 @@ public final class AstToIrLowerer {
             return IrType.pointer(toIrType(pointer.getPointee()), 0);
         }
         if (type instanceof Ast.Type.Null) return IrType.pointer(IrType.scalar(IrType.Kind.VOID), 0);
+        if (type instanceof Ast.Type.Struct structType) return IrType.structType(structType.getName());
 
         if (type instanceof Ast.Type.IntArray) return IrType.array(IrType.scalar(IrType.Kind.INT));
         if (type instanceof Ast.Type.ByteArray) return IrType.array(IrType.scalar(IrType.Kind.BYTE));

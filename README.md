@@ -78,7 +78,8 @@ The same example also demonstrates constant folding, algebraic simplification, b
 | Category | Features |
 |---|---|
 | Types | `byte`, `short`, `char`, `int`, `long`, `float`, `double`, `bool`, `string`, `void` |
-| Pointers | `int*`, `int**`, scalar `T*`, address-of `&`, dereference `*` (read & write), `null`, identity comparisons (`==`, `!=`), pointer parameters and returns |
+| Structs | `struct Name { T field; ... };` declarations, value-typed fields (scalars, `bool`, nested structs, `struct*`), field access `obj.field` / `ptr->field`, field assignment, by-value assignment (`b = a`), pass-by-value parameters, struct returns, `&struct` addresses |
+| Pointers | `int*`, `int**`, scalar `T*`, `struct T*`, address-of `&`, dereference `*` (read & write), `null`, identity comparisons (`==`, `!=`), pointer parameters and returns |
 | Arrays | `int[]`, `byte[]`, `short[]`, `char[]`, `long[]`, `float[]`, `double[]`, `bool[]`, `string[]`, indexed access, indexed assignment, `.length`, ARC memory management |
 | Declarations | Declarations throughout blocks, declarations with initializers (`int x = 10;`), scoped nested blocks (`{ ... }`), for-loop header declarations (`for (int i = 0; ...)`), `const` globals |
 | Arithmetic | `+`, `-`, `*`, `/`, `%`, unary `-` |
@@ -439,12 +440,13 @@ LemonC intentionally focuses on a clean, robust, and verifiable language core:
 | Boundary | Description |
 |---|---|
 | Address-of Restrictions | `&` requires a local scalar or pointer variable; parameters (`&p`), constants (`&C`), arrays (`&arr`), and temporaries are not addressable. |
-| Pointer Types | Pointers are value scalars (`T*`, `T**`); pointers to reference-managed heap types (`string*`, `int[]*`) are not supported. |
+| Pointer Types | Pointers are value scalars (`T*`, `T**`, `struct S*`); pointers to reference-managed heap types (`string*`, `int[]*`) are not supported. |
+| Struct Fields | Struct fields are value types: scalars, `bool`, nested structs, or `struct*` pointers. Array/string fields, struct comparison, struct array elements, and recursive value containment are not supported. |
 | Dereference Assignment | Assignment through dereference (`*p = val`, `**pp = val`) stores a scalar value; indirect pointer reassignment (`*pp = p`) is disallowed. |
 | Pointer Arithmetic | Pointer arithmetic (`p + 1`, `p - 1`) is disallowed in LemonC's safe memory model. |
 | Local Address Escaping | Functions cannot return the address of their own local stack variables (`return &local;` rejected with `E2008`). |
 | String Types | `string` is supported in literals, `printf`, and `string[]` arrays; standalone scalar string variable assignments (`string s = ...`) are not supported. |
-| Object Model | Top-level function and module language; no class instantiation (`new Class()`), inheritance, or user-defined struct types. |
+| Object Model | Top-level function and module language; no class instantiation (`new Class()`), inheritance, or methods on structs. |
 | Whole Array Copies | Direct assignment of entire arrays (`a = b;`) is disallowed; element-by-element iteration is required. |
 
 ## Roadmap

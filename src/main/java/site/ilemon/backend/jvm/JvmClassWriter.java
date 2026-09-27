@@ -2,8 +2,12 @@ package site.ilemon.backend.jvm;
 
 import site.ilemon.exception.CompilerException;
 import site.ilemon.ir.IrModule;
+import site.ilemon.ir.IrType;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -213,7 +217,10 @@ final class JvmClassWriter {
     // ------------------------------------------------------------- writing
 
     byte[] writeClass(IrModule module, List<JvmMethod> methods) {
-        String className = module.name();
+        return writeClass(module.name(), methods, collectStructFields(module));
+    }
+
+    private byte[] writeClass(String className, List<JvmMethod> methods, List<StructField> instanceFields) {
         // Resolve class-level references before writing: they must be part of
         // the constant pool, and the pool is flushed before the access flags.
         int thisClassIndex = classRef(className);
@@ -224,6 +231,12 @@ final class JvmClassWriter {
         for (int i = 0; i < methods.size(); i++) {
             methodNameIndexes[i] = utf8(methods.get(i).name());
             methodDescriptorIndexes[i] = utf8(methods.get(i).descriptor());
+        }
+        int[] fieldNameIndexes = new int[instanceFields.size()];
+        int[] fieldDescriptorIndexes = new int[instanceFields.size()];
+        for (int i = 0; i < instanceFields.size(); i++) {
+            fieldNameIndexes[i] = utf8(instanceFields.get(i).name());
+            fieldDescriptorIndexes[i] = utf8(instanceFields.get(i).descriptor());
         }
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         writeU4(out, 0xCAFEBABE);
@@ -239,7 +252,13 @@ final class JvmClassWriter {
         writeU2(out, thisClassIndex);
         writeU2(out, superClassIndex);
         writeU2(out, 0);              // interfaces
-        writeU2(out, 0);              // fields
+        writeU2(out, instanceFields.size());
+        for (int i = 0; i < instanceFields.size(); i++) {
+            writeU2(out, ACC_PUBLIC);
+            writeU2(out, fieldNameIndexes[i]);
+            writeU2(out, fieldDescriptorIndexes[i]);
+            writeU2(out, 0);          // field attributes
+        }
         writeU2(out, methods.size()); // methods
         for (int i = 0; i < methods.size(); i++) {
             writeMethod(out, methods.get(i), methodNameIndexes[i], methodDescriptorIndexes[i], codeAttributeIndex);
@@ -248,6 +267,131 @@ final class JvmClassWriter {
         return out.toByteArray();
     }
 
+    // ------------------------------------------------------------ structs
+
+    /** One synthesized struct instance field. */
+    private record StructField(String structName, String name, String descriptor) {
+    }
+
+    // Opcodes used by the synthesized struct classes.
+    private static final int OPCODE_ALOAD = 0x19;
+    private static final int OPCODE_ASTORE = 0x3A; // astore n (with index)
+    private static final int OPCODE_NEW = 0xBB;
+    private static final int OPCODE_DUP = 0x59;
+    private static final int OPCODE_SWAP = 0x5F;
+    private static final int OPCODE_RETURN = 0xB1;
+    private static final int OPCODE_GETFIELD = 0xB4;
+    private static final int OPCODE_PUTFIELD = 0xB5;
+    private static final int OPCODE_INVOKESPECIAL = 0xB7;
+
+    /** Gathers every struct instance field referenced by any method's code. */
+    private List<StructField> collectStructFields(IrModule module) {
+        List<StructField> fields = new ArrayList<>();
+        for (IrModule.IrStruct struct : module.structsView().values()) {
+            for (IrModule.IrStructField field : struct.fields()) {
+                fields.add(new StructField(struct.name(), field.name(),
+                        structFieldDescriptor(field.type(), module.name())));
+            }
+        }
+        return fields;
+    }
+
+    /** Descriptor mapper for struct layout generation (owner = this module). */
+    private String structFieldDescriptor(IrType type, String owner) {
+        JvmTypeMapper mapper = new JvmTypeMapper();
+        mapper.setStructOwner(owner);
+        return mapper.descriptor(type);
+    }
+
+    /**
+     * Writes one synthesized class per declared struct: {@code Main$Point}.
+     * Each has zero-initialized instance fields, a no-arg constructor, and a
+     * copy constructor that clones nested struct fields recursively — the
+     * JVM counterpart of C by-value struct assignment.
+     */
+    void writeStructClasses(IrModule module, Path outputDirectory) throws IOException {
+        if (module.structsView().isEmpty()) {
+            return;
+        }
+        for (IrModule.IrStruct struct : module.structsView().values()) {
+            Files.write(outputDirectory.resolve(module.name() + "$" + struct.name() + ".class"),
+                    structClassBytes(module, struct));
+        }
+    }
+
+    private byte[] structClassBytes(IrModule module, IrModule.IrStruct struct) {
+        String owner = module.name();
+        String innerName = owner + "$" + struct.name();
+        JvmClassWriter inner = new JvmClassWriter();
+        JvmTypeMapper mapper = new JvmTypeMapper();
+        mapper.setStructOwner(owner);
+
+        // The nested class declares one instance field per struct field.
+        List<StructField> instanceFields = new ArrayList<>();
+        for (IrModule.IrStructField field : struct.fields()) {
+            instanceFields.add(new StructField(struct.name(), field.name(),
+                    mapper.descriptor(field.type())));
+        }
+
+        List<JvmMethod> innerMethods = new ArrayList<>();
+
+        // no-arg constructor: <init>()V — call super, then allocate a zero
+        // object for every nested struct field (primitives start at zero).
+        JvmCodeBuilder zero = new JvmCodeBuilder();
+        zero.label("entry");
+        zero.load(OPCODE_ALOAD, 0);
+        zero.invoke(OPCODE_INVOKESPECIAL, inner.methodRef("java/lang/Object", "<init>", "()V"), 0, 0);
+        for (IrModule.IrStructField field : struct.fields()) {
+            if (field.type().kind() == IrType.Kind.STRUCT) {
+                String nested = owner + "$" + field.type().name();
+                zero.load(OPCODE_ALOAD, 0);
+                zero.cpRef(OPCODE_NEW, inner.classRef(nested));
+                zero.simple(OPCODE_DUP);
+                zero.invoke(OPCODE_INVOKESPECIAL, inner.methodRef(nested, "<init>", "()V"), 0, 0);
+                zero.fieldAccess(OPCODE_PUTFIELD, inner.fieldRef(innerName, field.name(),
+                        mapper.descriptor(field.type())), 1);
+            }
+        }
+        zero.simple(OPCODE_RETURN);
+        innerMethods.add(new JvmMethod(ACC_PUBLIC, "<init>", "()V", zero.toBytecode(), 3, 1));
+
+        // copy constructor: <init>(LInner;)V — copy every field; nested struct
+        // fields are cloned recursively through the nested copy constructor
+        // (this.nested = new Nested(src.nested)), the by-value C semantics.
+        JvmCodeBuilder copyCtor = new JvmCodeBuilder();
+        copyCtor.label("entry");
+        copyCtor.load(OPCODE_ALOAD, 0);
+        copyCtor.invoke(OPCODE_INVOKESPECIAL, inner.methodRef("java/lang/Object", "<init>", "()V"), 0, 0);
+        for (IrModule.IrStructField field : struct.fields()) {
+            IrType fieldType = field.type();
+            String desc = mapper.descriptor(fieldType);
+            copyCtor.load(OPCODE_ALOAD, 0);
+            if (fieldType.kind() == IrType.Kind.STRUCT) {
+                // this.in = new Inner(src.in), the exact javac shape:
+                // [this, n, n, src] → getfield → [this, n, src.in]
+                // → <init> pops (n, src.in) → [this, n] → putfield → [].
+                String nested = owner + "$" + fieldType.name();
+                copyCtor.cpRef(OPCODE_NEW, inner.classRef(nested));
+                copyCtor.simple(OPCODE_DUP);           // [this, n, n]
+                copyCtor.load(OPCODE_ALOAD, 1);        // [this, n, n, src]
+                copyCtor.fieldAccess(OPCODE_GETFIELD, inner.fieldRef(innerName, field.name(), desc), 1);
+                copyCtor.invoke(OPCODE_INVOKESPECIAL, inner.methodRef(nested, "<init>",
+                        "(L" + nested + ";)V"), 1, 0); // [this, n]
+                copyCtor.fieldAccess(OPCODE_PUTFIELD, inner.fieldRef(innerName, field.name(), desc), 1);
+                continue;
+            }
+            copyCtor.load(OPCODE_ALOAD, 1);
+            copyCtor.fieldAccess(OPCODE_GETFIELD, inner.fieldRef(innerName, field.name(), desc),
+                    mapper.slots(fieldType));
+            copyCtor.fieldAccess(OPCODE_PUTFIELD, inner.fieldRef(innerName, field.name(), desc),
+                    mapper.slots(fieldType));
+        }
+        copyCtor.simple(OPCODE_RETURN);
+        innerMethods.add(new JvmMethod(ACC_PUBLIC, "<init>", "(L" + innerName + ";)V",
+                copyCtor.toBytecode(), 5, 3)); // locals: this, src, scratch@2
+
+        return inner.writeClass(innerName, innerMethods, instanceFields);
+    }
     private void writeMethod(ByteArrayOutputStream out, JvmMethod method, int nameIndex, int descriptorIndex, int codeAttributeIndex) {
         writeU2(out, method.access());
         writeU2(out, nameIndex);

@@ -113,11 +113,14 @@ public class Ast {
             private ArrayList<Ast.Method.T> methods;
             private ArrayList<ImportDecl> imports = new ArrayList<>();
             private ArrayList<ConstDecl> constants = new ArrayList<>();
+            /** Top-level struct declarations in declaration order. */
+            private ArrayList<StructDecl> structs = new ArrayList<>();
             public ArrayList<Ast.Method.T> getMethods() { return this.methods; }
             public void setMethods(ArrayList<Ast.Method.T> methods) { this.methods = methods; }
             public ArrayList<ImportDecl> getImports() { return this.imports; }
             public ArrayList<ConstDecl> getConstants() { return this.constants; }
             public void setConstants(ArrayList<ConstDecl> constants) { this.constants = constants; }
+            public ArrayList<StructDecl> getStructs() { return this.structs; }
 
             public MainClassSingle(String classId, ArrayList<Declare.T> fields, ArrayList<Ast.Method.T> methods) {
                 this.classId = classId;
@@ -431,6 +434,31 @@ public class Ast {
                 v.visit(this);
             }
         }
+
+        /**
+         * Whole-field-path assignment: {@code obj.f = v;}, {@code p->f = v;},
+         * {@code obj.inner.f = v;}. The left side is a Field expression and
+         * the right side is any expression assignable to the field type.
+         */
+        public static class FieldAssign extends T {
+            private Expr.Field target;
+            public Expr.Field getTarget() { return this.target; }
+            public void setTarget(Expr.Field target) { this.target = target; }
+            private Expr.T expr;
+            public Expr.T getExpr() { return this.expr; }
+            public void setExpr(Expr.T expr) { this.expr = expr; }
+
+            public FieldAssign(Expr.Field target, Expr.T expr, int lineNum) {
+                this.target = target;
+                this.expr = expr;
+                this.setLineNum(lineNum);
+            }
+
+            @Override
+            public void accept(ISemanticVisitor v) {
+                v.visit(this);
+            }
+        }
     }
 
     /**
@@ -492,7 +520,8 @@ public class Ast {
         public enum TypeKind {
             INT, FLOAT, DOUBLE, BOOL, CHAR, BYTE, SHORT, LONG, STRING, VOID,
             INT_ARRAY, FLOAT_ARRAY, DOUBLE_ARRAY, BOOL_ARRAY, STRING_ARRAY, BYTE_ARRAY, SHORT_ARRAY, CHAR_ARRAY, LONG_ARRAY,
-            POINTER, NULL
+            POINTER, NULL,
+            STRUCT
         }
 
         public sealed abstract static class T{
@@ -781,6 +810,66 @@ public class Ast {
             public String toString() { return "@null"; }
             @Override
             public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        /**
+         * Named struct type: {@code struct Point}, {@code struct Point*}.
+         * The name is resolved to a {@link StructDecl} by semantic analysis.
+         */
+        public non-sealed static class Struct extends T {
+            private final String name;
+
+            public Struct(String name) {
+                if (name == null || name.isBlank()) throw new IllegalArgumentException("struct type name is empty");
+                this.name = name;
+            }
+
+            public String getName() { return name; }
+
+            @Override
+            public TypeKind getKind() { return TypeKind.STRUCT; }
+
+            @Override
+            public String toString() { return "@struct " + name; }
+
+            @Override
+            public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+    }
+
+    /**
+     * Top-level struct declaration:
+     * {@code struct Name { type field; ... };}. Fields are value scalars,
+     * other declared structs, or pointers to them. Arrays and strings are
+     * not valid field types under the current ARC memory model.
+     */
+    public static class StructDecl {
+        private final String name;
+        private final ArrayList<Declare.T> fields;
+        private final int lineNum;
+        private SourceSpan span;
+
+        public StructDecl(String name, ArrayList<Declare.T> fields, int lineNum) {
+            this.name = name;
+            this.fields = fields;
+            this.lineNum = lineNum;
+        }
+
+        public String getName() { return name; }
+        public ArrayList<Declare.T> getFields() { return fields; }
+        public int getLineNum() { return lineNum; }
+        public SourceSpan getSpan() { return span; }
+        public void setSpan(SourceSpan span) { this.span = span; }
+
+        /** Resolves a field name to its declared type, or null when absent. */
+        public Type.T fieldType(String fieldName) {
+            if (fields == null) return null;
+            for (Declare.T field : fields) {
+                if (field instanceof Declare.DeclareSingle single && single.getId().equals(fieldName)) {
+                    return single.getType();
+                }
+            }
+            return null;
         }
     }
 
@@ -1300,6 +1389,44 @@ public class Ast {
 
             public ArrayLength(String arrayName, int lineNum) {
                 this.arrayName = arrayName;
+                this.setLineNum(lineNum);
+            }
+
+            @Override
+            public void accept(ISemanticVisitor v) {
+                v.visit(this);
+            }
+        }
+
+        /**
+         * Field access chain: {@code obj.field}, {@code ptr->field},
+         * {@code obj.inner.field}. The receiver chain is normalized by the
+         * parser: every link is either a direct struct value ({@code .}) or
+         * an auto-dereferenced pointer ({@code ->}). Resolved field type is
+         * set by semantic analysis.
+         */
+        public static class Field extends T {
+            /** Base of the chain: an Id naming a struct/struct* local. */
+            private Expr.T receiver;
+            public Expr.T getReceiver() { return this.receiver; }
+            public void setReceiver(Expr.T receiver) { this.receiver = receiver; }
+            /** Field path without arrows: inner.first.x; empty arrow links are unwrapped. */
+            private ArrayList<String> path;
+            public ArrayList<String> getPath() { return this.path; }
+            public void setPath(ArrayList<String> path) { this.path = path; }
+            /** True when the first link goes through a pointer ({@code ->}). */
+            private boolean pointerBase;
+            public boolean isPointerBase() { return this.pointerBase; }
+            public void setPointerBase(boolean pointerBase) { this.pointerBase = pointerBase; }
+            /** Resolved type of the accessed field (semantic analysis). */
+            private Type.T type;
+            public Type.T getType() { return this.type; }
+            public void setType(Type.T type) { this.type = type; }
+
+            public Field(Expr.T receiver, ArrayList<String> path, boolean pointerBase, int lineNum) {
+                this.receiver = receiver;
+                this.path = path;
+                this.pointerBase = pointerBase;
                 this.setLineNum(lineNum);
             }
 

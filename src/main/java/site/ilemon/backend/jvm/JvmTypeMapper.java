@@ -18,6 +18,14 @@ import site.ilemon.ir.IrType;
  */
 final class JvmTypeMapper {
 
+    /** Owner class used to spell struct field/method descriptors, e.g. {@code Main}. */
+    private String structOwner = "";
+
+    /** Sets the class whose {@code $Name} nested classes represent structs. */
+    void setStructOwner(String className) {
+        this.structOwner = className == null ? "" : className;
+    }
+
     /** JVM field/method descriptor for an IR type. */
     String descriptor(IrType type) {
         if (type == null) {
@@ -34,6 +42,10 @@ final class JvmTypeMapper {
             case DOUBLE -> "D";
             case VOID -> "V";
             case STRING -> "Ljava/lang/String;";
+            // A struct value is the reference to a synthesized nested class of
+            // the program class: Main$Point. Fields and methods spell it as
+            // LMain$Point; and every access stays a plain reference operation.
+            case STRUCT -> "L" + structOwner + "$" + type.name() + ";";
             // bool arrays are JVM boolean[] ([Z) even though scalar bool maps
             // to I; array creation, element access and descriptors must agree.
             case ARRAY -> "[" + arrayElementDescriptor(type.elementType());
@@ -75,6 +87,7 @@ final class JvmTypeMapper {
             case LONG, DOUBLE -> 2;
             case ARRAY, STRING, BOOL, BYTE, SHORT, CHAR, INT, FLOAT -> 1;
             case POINTER, REFERENCE -> 1;
+            case STRUCT -> 1; // struct values are references
             default -> 0;
         };
     }
