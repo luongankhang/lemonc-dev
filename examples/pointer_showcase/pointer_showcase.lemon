@@ -1,0 +1,228 @@
+// =========================================================================
+// LemonC Integration Example: Pointer Showcase
+//
+// This comprehensive example demonstrates LemonC pointer semantics and their
+// interplay with language features:
+// - Pointers (int*, int**) and multi-level indirection
+// - Address-of (&) and dereference read/write (*)
+// - Pointer assignment, aliasing, and repointing
+// - Pointer comparison (==, !=) and null checking
+// - Passing pointers to functions and returning pointers from functions
+// - Void functions with early 'return;'
+// - Flexible local variable declarations and scoping
+// - Control flow: if/else, for loops, while loops
+// - Primitive scalar types (int, bool, double, long, byte)
+// - Arrays (.length, indexing, passing to functions) and ARC memory management
+// - String arrays and literals
+// =========================================================================
+
+// Required function: mutate a variable through a pointer parameter
+void setValue(int* p, int value) {
+    *p = value;
+}
+
+// Void function demonstrating early return;
+void checkThreshold(int* p, int limit) {
+    if (*p > limit) {
+        printf("threshold_exceeded=1\n");
+        return;
+    }
+    printf("threshold_exceeded=0\n");
+}
+
+// Function returning a pointer passed from the caller
+int* pickLarger(int* a, int* b) {
+    if (*a >= *b) {
+        return a;
+    }
+    return b;
+}
+
+// Function performing a null check on a pointer
+int isNull(int* p) {
+    if (p == null) {
+        return 1;
+    }
+    return 0;
+}
+
+// Array + pointer integration: compute array sum and max through pointer out-params
+void computeStats(int arr[], int* sumOut, int* maxOut) {
+    *sumOut = 0;
+    *maxOut = arr[0];
+    for (int i = 0; i < arr.length; i = i + 1) {
+        *sumOut = *sumOut + arr[i];
+        if (arr[i] > *maxOut) {
+            *maxOut = arr[i];
+        }
+    }
+}
+
+void main() {
+    printf("=== Pointer Showcase ===\n");
+
+    // ---------------------------------------------------------
+    // 1. Mandatory Case: Basic pointer declaration, address-of, deref
+    // ---------------------------------------------------------
+    int x;
+    x = 10;
+
+    int* p;
+    p = &x;
+
+    *p = 20;
+    printf("case1_x=%d\n", x);
+
+    // ---------------------------------------------------------
+    // 2. Mandatory Case: Double pointer (int**)
+    // ---------------------------------------------------------
+    int** pp;
+    pp = &p;
+    **pp = 30;
+    printf("case2_x=%d\n", x);
+    printf("case2_deref_p=%d\n", *p);
+    printf("case2_deref_pp=%d\n", **pp);
+
+    // ---------------------------------------------------------
+    // 3. Mandatory Case: setValue function calls
+    // ---------------------------------------------------------
+    setValue(&x, 40);
+    printf("case3_x_after_setValue_addr=%d\n", x);
+
+    setValue(p, 50);
+    printf("case3_x_after_setValue_ptr=%d\n", x);
+
+    setValue(*pp, 60);
+    printf("case3_x_after_setValue_deref_pp=%d\n", x);
+
+    // ---------------------------------------------------------
+    // 4. Void function with early return;
+    // ---------------------------------------------------------
+    checkThreshold(&x, 100);
+    checkThreshold(&x, 30);
+
+    // ---------------------------------------------------------
+    // 5. Function returning a pointer & caller mutation
+    // ---------------------------------------------------------
+    int y = 75;
+    int* larger = pickLarger(&x, &y);
+    printf("larger_val=%d\n", *larger);
+    *larger = 80;
+    printf("y_after_mutation=%d\n", y);
+
+    // ---------------------------------------------------------
+    // 6. Pointer aliasing, mutation, and repointing
+    // ---------------------------------------------------------
+    int* alias = p;
+    if (alias == p) {
+        printf("alias_equals_p=1\n");
+    } else {
+        printf("alias_equals_p=0\n");
+    }
+    *alias = 90;
+    printf("x_after_alias_write=%d\n", x);
+
+    // Repoint p to y
+    p = &y;
+    if (p == alias) {
+        printf("p_equals_alias_after_repoint=1\n");
+    } else {
+        printf("p_equals_alias_after_repoint=0\n");
+    }
+    // Now pp points to p, which now points to y
+    printf("via_pp_pointing_to_y=%d\n", **pp);
+
+    // ---------------------------------------------------------
+    // 7. Null pointer handling and comparison
+    // ---------------------------------------------------------
+    int* nullPtr = null;
+    if (nullPtr == null) {
+        printf("null_check=1\n");
+    } else {
+        printf("null_check=0\n");
+    }
+    if (nullPtr != p) {
+        printf("null_not_equal_valid=1\n");
+    } else {
+        printf("null_not_equal_valid=0\n");
+    }
+    printf("isNull_helper_null=%d\n", isNull(nullPtr));
+    printf("isNull_helper_valid=%d\n", isNull(p));
+
+    // ---------------------------------------------------------
+    // 8. Other primitive scalar types with pointers
+    // ---------------------------------------------------------
+    double d = 3.14;
+    double* pd = &d;
+    *pd = 2.5;
+    printf("double_val=%f\n", d);
+
+    bool flag = false;
+    bool* pflag = &flag;
+    *pflag = true;
+    if (flag) {
+        printf("bool_via_ptr=1\n");
+    } else {
+        printf("bool_via_ptr=0\n");
+    }
+
+    long bigVal = 1000000;
+    long* pBig = &bigVal;
+    *pBig = 9999999;
+    printf("long_val=%d\n", bigVal);
+
+    byte b = 10;
+    byte* pb = &b;
+    *pb = 42;
+    printf("byte_val=%d\n", b);
+
+    // ---------------------------------------------------------
+    // 9. While loop steering value through pointer
+    // ---------------------------------------------------------
+    int countdown = 3;
+    int* pCount = &countdown;
+    while (*pCount > 0) {
+        printf("countdown=%d\n", *pCount);
+        *pCount = *pCount - 1;
+    }
+    printf("countdown_final=%d\n", countdown);
+
+    // ---------------------------------------------------------
+    // 10. Arrays, .length, ARC, and pointer out-params
+    // ---------------------------------------------------------
+    int data[4];
+    data[0] = 12;
+    data[1] = 45;
+    data[2] = 23;
+    data[3] = 67;
+    printf("data_len=%d\n", data.length);
+
+    int sumResult = 0;
+    int maxResult = 0;
+    computeStats(data, &sumResult, &maxResult);
+    printf("array_sum=%d\n", sumResult);
+    printf("array_max=%d\n", maxResult);
+
+    // ---------------------------------------------------------
+    // 11. Nested block declarations and scoping with pointers
+    // ---------------------------------------------------------
+    int outer = 111;
+    int* pOuter = &outer;
+    {
+        int inner = 222;
+        int* pInner = &inner;
+        *pOuter = *pOuter + *pInner;
+        printf("inside_block=%d\n", *pOuter);
+    }
+    printf("outside_block=%d\n", outer);
+
+    // ---------------------------------------------------------
+    // 12. String arrays and literals
+    // ---------------------------------------------------------
+    string tags[2];
+    tags[0] = "LemonC";
+    tags[1] = "Pointers";
+    printf("tags_len=%d\n", tags.length);
+
+    printf("=== End Pointer Showcase ===\n");
+}
