@@ -7,10 +7,14 @@ import site.ilemon.exception.CompilerException;
 import site.ilemon.ir.IrModule;
 import site.ilemon.ir.IrVerifier;
 
+import site.ilemon.ir.IrValue;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * JVM backend: lowers the shared LemonIR directly to JVM bytecode and writes
@@ -62,8 +66,14 @@ public final class JvmBackend implements Backend {
         }
         IrVerifier.verify(module);
         JvmClassWriter writer = new JvmClassWriter();
+        Map<String, JvmInstructionEmitter.MethodSignature> signatures = new HashMap<>();
+        for (var function : module.functions()) {
+            signatures.put(function.name(), new JvmInstructionEmitter.MethodSignature(
+                    function.parameters().stream().map(IrValue::type).toList(),
+                    function.returnType()));
+        }
         List<JvmMethod> methods = module.functions().stream()
-                .map(function -> new JvmMethodEmitter().emit(function, module, writer, arcDebug))
+                .map(function -> new JvmMethodEmitter().emit(function, module, writer, signatures, arcDebug))
                 .toList();
         return writer.writeClass(module, methods);
     }

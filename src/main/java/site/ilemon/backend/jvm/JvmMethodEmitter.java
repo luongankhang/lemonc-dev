@@ -19,6 +19,11 @@ final class JvmMethodEmitter {
     private final JvmTypeMapper mapper = new JvmTypeMapper();
 
     JvmMethod emit(IrFunction function, IrModule module, JvmClassWriter pool, boolean arcDebug) {
+        return emit(function, module, pool, null, arcDebug);
+    }
+
+    JvmMethod emit(IrFunction function, IrModule module, JvmClassWriter pool,
+                   Map<String, JvmInstructionEmitter.MethodSignature> signatures, boolean arcDebug) {
         boolean isMain = "main".equals(function.name());
 
         JvmLocalAllocator allocator = new JvmLocalAllocator(mapper);
@@ -38,7 +43,7 @@ final class JvmMethodEmitter {
 
         JvmCodeBuilder code = new JvmCodeBuilder();
         JvmInstructionEmitter instructions = new JvmInstructionEmitter(
-                mapper, pool, code, locals, module, function.name(), isMain, function.returnType(), cells, arcDebug);
+                mapper, pool, code, locals, module, function.name(), isMain, function.returnType(), cells, signatures, arcDebug);
 
         for (BasicBlock block : function.blocks()) {
             code.label(block.name());

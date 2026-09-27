@@ -157,6 +157,13 @@ final class JvmInstructionEmitter {
                           Map<String, JvmLocalAllocator.Local> locals, IrModule module,
                           String functionName, boolean isMain, IrType returnType,
                           java.util.Set<String> cells, boolean arcDebug) {
+        this(mapper, pool, code, locals, module, functionName, isMain, returnType, cells, null, arcDebug);
+    }
+
+    JvmInstructionEmitter(JvmTypeMapper mapper, JvmClassWriter pool, JvmCodeBuilder code,
+                          Map<String, JvmLocalAllocator.Local> locals, IrModule module,
+                          String functionName, boolean isMain, IrType returnType,
+                          java.util.Set<String> cells, Map<String, MethodSignature> signatures, boolean arcDebug) {
         this.mapper = mapper;
         this.pool = pool;
         this.code = code;
@@ -167,11 +174,15 @@ final class JvmInstructionEmitter {
         this.returnType = returnType;
         this.cells = cells == null ? java.util.Set.of() : cells;
         this.arcDebug = arcDebug;
-        this.signatures = new HashMap<>();
-        for (var function : module.functions()) {
-            signatures.put(function.name(), new MethodSignature(
-                    function.parameters().stream().map(IrValue::type).toList(),
-                    function.returnType()));
+        if (signatures != null) {
+            this.signatures = signatures;
+        } else {
+            this.signatures = new HashMap<>();
+            for (var function : module.functions()) {
+                this.signatures.put(function.name(), new MethodSignature(
+                        function.parameters().stream().map(IrValue::type).toList(),
+                        function.returnType()));
+            }
         }
     }
 

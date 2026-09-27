@@ -127,10 +127,31 @@ public final class CFunctionEmitter {
 
     public static String safe(String name) {
         if (name == null || name.isBlank()) return "_unnamed";
-        String s = name.replaceAll("[^A-Za-z0-9_]", "_");
-        if (Character.isDigit(s.charAt(0))) {
-            s = "_" + s;
+        boolean needsUnderscore = Character.isDigit(name.charAt(0));
+        boolean hasInvalid = false;
+        int len = name.length();
+        for (int i = 0; i < len; i++) {
+            char c = name.charAt(i);
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')) {
+                hasInvalid = true;
+                break;
+            }
         }
-        return s;
+        if (!needsUnderscore && !hasInvalid) {
+            return name;
+        }
+        StringBuilder sb = new StringBuilder(len + (needsUnderscore ? 1 : 0));
+        if (needsUnderscore) {
+            sb.append('_');
+        }
+        for (int i = 0; i < len; i++) {
+            char c = name.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+                sb.append(c);
+            } else {
+                sb.append('_');
+            }
+        }
+        return sb.toString();
     }
 }
