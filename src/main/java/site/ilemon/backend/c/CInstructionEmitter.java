@@ -51,6 +51,10 @@ public final class CInstructionEmitter {
                         // later pointer-typed CONVERTs cast it.
                         val = "NULL";
                     }
+                } else if (instruction.result() != null && instruction.result().type().kind() == IrType.Kind.INT) {
+                    if ("-2147483648".equals(val)) {
+                        val = "INT32_MIN";
+                    }
                 } else if (instruction.result() != null && instruction.result().type().kind() == IrType.Kind.LONG) {
                     // Handle LONG_MIN (-9223372036854775808) which cannot be
                     // written as a literal in C because the positive value

@@ -272,9 +272,6 @@ public class AstOptimizer {
             if (isOne(right)) return left;
         } else if ("/".equals(op)) {
             if (isOne(right)) return left;
-            if (isZero(left) && !isZero(right) && canDiscardEvaluation(right)) return zeroFor(left, right, lineNum);
-        } else if ("%".equals(op)) {
-            if (isZero(left) && !isZero(right) && canDiscardEvaluation(right)) return zeroFor(left, right, lineNum);
         }
         return null;
     }

@@ -30,4 +30,40 @@ public class SemanticTest {
         visitor.visit(prog);
         Assert.assertTrue(visitor.passOrNot());
     }
+
+    @org.junit.Test
+    public void testIntegerMinValueSemanticCheck() throws IOException {
+        File file = File.createTempFile("sem_min_int", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), "void main() { int x; x = -2147483648; }\n", java.nio.charset.StandardCharsets.UTF_8);
+        Parser p = new Parser(new Lexer(file));
+        Ast.Program.T prog = p.parse();
+        SemanticVisitor visitor = new SemanticVisitor();
+        visitor.visit(prog);
+        Assert.assertTrue(visitor.passOrNot());
+    }
+
+    @org.junit.Test
+    public void testModLongPromotionPasses() throws IOException {
+        File file = File.createTempFile("sem_mod_long", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), "void main() { long a; long b; long c; a = 10; b = 3; c = a % b; }\n", java.nio.charset.StandardCharsets.UTF_8);
+        Parser p = new Parser(new Lexer(file));
+        Ast.Program.T prog = p.parse();
+        SemanticVisitor visitor = new SemanticVisitor();
+        visitor.visit(prog);
+        Assert.assertTrue(visitor.passOrNot());
+    }
+
+    @org.junit.Test
+    public void testModLongAssignedToIntFails() throws IOException {
+        File file = File.createTempFile("sem_mod_fail", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), "void main() { long a; long b; int c; a = 10; b = 3; c = a % b; }\n", java.nio.charset.StandardCharsets.UTF_8);
+        Parser p = new Parser(new Lexer(file));
+        Ast.Program.T prog = p.parse();
+        SemanticVisitor visitor = SemanticVisitor.collecting();
+        visitor.visit(prog);
+        Assert.assertFalse(visitor.passOrNot());
+    }
 }

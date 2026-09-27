@@ -70,6 +70,18 @@ public class AstOptimizerTest {
         assertEquals(7, ((Ast.Expr.Number) ((Ast.Stmt.Assign) optimized).getExpr()).getValue());
     }
 
+    @Test
+    public void doesNotFoldDivisionOrModByZeroVariable() {
+        Ast.Expr.Id y = new Ast.Expr.Id("y", new Ast.Type.Int(), 1);
+        Ast.Expr.T divExpr = new Ast.Expr.Div(num(0), y, 1);
+        Ast.Expr.T optimizedDiv = optimizeAssignExpr(divExpr);
+        assertTrue(optimizedDiv instanceof Ast.Expr.Div);
+
+        Ast.Expr.T modExpr = new Ast.Expr.Mod(num(0), y, 1);
+        Ast.Expr.T optimizedMod = optimizeAssignExpr(modExpr);
+        assertTrue(optimizedMod instanceof Ast.Expr.Mod);
+    }
+
     private Ast.Expr.T optimizeAssignExpr(Ast.Expr.T expr) {
         Ast.Stmt.Assign optimized = (Ast.Stmt.Assign) optimizeStmt(
                 new Ast.Stmt.Assign(new Ast.Expr.Id("x", 1), expr, 1));

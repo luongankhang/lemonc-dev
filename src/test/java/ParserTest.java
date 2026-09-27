@@ -197,11 +197,53 @@ public class ParserTest {
         assertTrue("should contain return statement", hasReturn);
     }
 
+    @Test
+    public void testIntegerMinValueLiteral() throws IOException {
+        String source = "void main() { int x; x = -2147483648; }\n";
+        Parser parser = createParserFromSource(source);
+        Ast.Program.T prog = parser.parse();
+        assertNotNull(prog);
+        Ast.Program.ProgramSingle ps = (Ast.Program.ProgramSingle) prog;
+        Ast.MainClass.MainClassSingle mc = (Ast.MainClass.MainClassSingle) ps.getMainClass();
+        Ast.Method.MethodSingle ms = (Ast.Method.MethodSingle) mc.getMethods().get(0);
+        Ast.Stmt.Assign assign = (Ast.Stmt.Assign) ms.getStms().get(0);
+        assertTrue(assign.getExpr() instanceof Ast.Expr.Number);
+        Ast.Expr.Number num = (Ast.Expr.Number) assign.getExpr();
+        assertEquals(Ast.Type.TypeKind.INT, num.getType().getKind());
+        assertEquals(Integer.MIN_VALUE, num.getValue());
+    }
+
+    @Test
+    public void testTermOperatorLineNumber() throws IOException {
+        String source = "void main() {\n" +
+                "    int a;\n" +
+                "    a = 1 *\n" +
+                "        2;\n" +
+                "}\n";
+        Parser parser = createParserFromSource(source);
+        Ast.Program.T prog = parser.parse();
+        assertNotNull(prog);
+        Ast.Program.ProgramSingle ps = (Ast.Program.ProgramSingle) prog;
+        Ast.MainClass.MainClassSingle mc = (Ast.MainClass.MainClassSingle) ps.getMainClass();
+        Ast.Method.MethodSingle ms = (Ast.Method.MethodSingle) mc.getMethods().get(0);
+        Ast.Stmt.Assign assign = (Ast.Stmt.Assign) ms.getStms().get(0);
+        assertTrue(assign.getExpr() instanceof Ast.Expr.Mul);
+        Ast.Expr.Mul mul = (Ast.Expr.Mul) assign.getExpr();
+        assertEquals(3, mul.getLineNum());
+    }
+
     // ==================== Helper methods ====================
 
     private Parser createParser(String filename) throws IOException {
         Lexer lexer = new Lexer(new File(filename));
         return new Parser(lexer);
+    }
+
+    private Parser createParserFromSource(String source) throws IOException {
+        File file = File.createTempFile("parser_test", ".lemon");
+        file.deleteOnExit();
+        java.nio.file.Files.writeString(file.toPath(), source, java.nio.charset.StandardCharsets.UTF_8);
+        return new Parser(new Lexer(file));
     }
 
     /**

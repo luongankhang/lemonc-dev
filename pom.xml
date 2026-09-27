@@ -39,6 +39,9 @@
 								<include>*.exe</include>
 								<include>**/*.exe</include>
 							</includes>
+							<excludes>
+								<exclude>target/**</exclude>
+							</excludes>
 						</fileset>
 					</filesets>
 				</configuration>
@@ -49,6 +52,9 @@
 						<goals>
 							<goal>clean</goal>
 						</goals>
+						<configuration>
+							<excludeDefaultDirectories>true</excludeDefaultDirectories>
+						</configuration>
 					</execution>
 					<execution>
 						<id>clean-exe-after-build</id>
@@ -56,6 +62,9 @@
 						<goals>
 							<goal>clean</goal>
 						</goals>
+						<configuration>
+							<excludeDefaultDirectories>true</excludeDefaultDirectories>
+						</configuration>
 					</execution>
 					<execution>
 						<id>clean-exe-after-test</id>
@@ -63,6 +72,9 @@
 						<goals>
 							<goal>clean</goal>
 						</goals>
+						<configuration>
+							<excludeDefaultDirectories>true</excludeDefaultDirectories>
+						</configuration>
 					</execution>
 				</executions>
 			</plugin>

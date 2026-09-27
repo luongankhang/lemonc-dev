@@ -315,7 +315,10 @@ public class SemanticVisitor implements ISemanticVisitor {
             typeError(DiagnosticCodes.TYPE_OPERATOR, "int or byte", typeName(leftType) + " and " + typeName(rightType),
                     expressionName(obj), obj.getLineNum(), obj.getSpan(), "operator '%'", "the remainder operator requires int operands");
         }
-        this.currType = new Ast.Type.Int();
+        this.currType = (leftType != null && rightType != null
+                && (leftType.getKind() == TypeKind.LONG || rightType.getKind() == TypeKind.LONG))
+                ? new Ast.Type.Long()
+                : new Ast.Type.Int();
     }
 
     @Override

@@ -190,4 +190,15 @@ public class JvmBackendTest {
         assertTrue(JvmTestSupport.hasMnemonic(bytes, "ldc2_w"));
         assertEquals("92233720368547758071.51.5", JvmTestSupport.compileAndRun("WideConsts", source));
     }
+
+    @Test
+    public void handlesIntegerMinValueLiteral() throws Exception {
+        String source = ""
+                + "void main() {\n"
+                + "    int x;\n"
+                + "    x = -2147483648;\n"
+                + "    printf(\"%d\", x);\n"
+                + "}\n";
+        assertEquals("-2147483648", JvmTestSupport.compileAndRun("MinIntTest", source));
+    }
 }

@@ -907,11 +907,11 @@ public class Parser {
 			move();
 			Ast.Expr.T otherExpr = parseFactor();
 			if(temp.kind == TokenKind.Mul) {
-				expr = new Ast.Expr.Mul(expr, otherExpr, look.lineNumber);
+				expr = new Ast.Expr.Mul(expr, otherExpr, temp.lineNumber);
 			}else if(temp.kind == TokenKind.Div) {
-				expr = new Ast.Expr.Div(expr, otherExpr, look.lineNumber);
+				expr = new Ast.Expr.Div(expr, otherExpr, temp.lineNumber);
 			}else {
-				expr = new Ast.Expr.Mod(expr, otherExpr, look.lineNumber);
+				expr = new Ast.Expr.Mod(expr, otherExpr, temp.lineNumber);
 			}
 		}
 		return expr;
@@ -970,6 +970,16 @@ public class Parser {
 				minLong.setSpan(tokenSpan(numberToken));
 				move();
 				return minLong;
+			}
+			// The magnitude of Integer.MIN_VALUE is one larger than Integer.MAX_VALUE.
+			// It is valid only when immediately preceded by unary minus.
+			if(look.kind==Num && "2147483648".equals(look.lexeme)) {
+				Token numberToken = look;
+				Ast.Expr.Number minInt = new Ast.Expr.Number(
+						new Ast.Type.Int(), Integer.MIN_VALUE, lineNumber);
+				minInt.setSpan(tokenSpan(numberToken));
+				move();
+				return minInt;
 			}
 			Ast.Expr.T operand = parseFactor();
 			Ast.Expr.Sub result = new Ast.Expr.Sub(
