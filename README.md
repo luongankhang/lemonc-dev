@@ -82,11 +82,11 @@ The same example also demonstrates constant folding, algebraic simplification, b
 | Pointers | `int*`, `int**`, scalar `T*`, `struct T*`, address-of `&`, dereference `*` (read & write), `null`, identity comparisons (`==`, `!=`), pointer parameters and returns |
 | Arrays | `int[]`, `byte[]`, `short[]`, `char[]`, `long[]`, `float[]`, `double[]`, `bool[]`, `string[]`, indexed access, indexed assignment, `.length`, ARC memory management |
 | Declarations | Declarations throughout blocks, declarations with initializers (`int x = 10;`), scoped nested blocks (`{ ... }`), for-loop header declarations (`for (int i = 0; ...)`), `const` globals |
-| Arithmetic | `+`, `-`, `*`, `/`, `%`, unary `-` |
+| Arithmetic | `+`, `-`, `*`, `/`, `%`, unary `+`, unary `-`, bitwise `~`, pre/post `++`, pre/post `--`, `+=`, `-=`, `*=`, `/=`, `%=` |
 | Numeric widening | `byte/short/char -> int -> long -> float -> double` |
 | Comparison | `>`, `<`, `>=`, `<=`, `==`, `!=` (scalars and pointers) |
 | Boolean logic | `true`, `false`, `!`, `&&`, `||`, short-circuit control flow |
-| Control flow | `if/else`, `while`, `for`, `break`, `continue`, nested loops, lexical block scoping |
+| Control flow | `if/else`, `while`, `for`, `break`, `continue`, nested loops, lexical block scoping, ternary `? :` |
 | Methods | parameters (scalars, arrays, pointers), return values, `void` methods, `return;` in void methods, recursive calls, expression calls, `pub` exports |
 | Modules | compile-time `import alias = @import("file.lemon")`, canonical path loading, public function exports, cycle diagnostics |
 | Output | `printf`, `printLine`, `%d` (including `byte`, `short`, `char`, `int`, `long`, `bool`), `%f`, `\n`, `\t` |
@@ -246,11 +246,52 @@ mvn test
 Current coverage:
 
 ```text
-Tests run: 445, Failures: 0, Errors: 0, Skipped: 0
-95 example programs verified across backends
+Tests run: 478, Failures: 0, Errors: 0, Skipped: 0
+95+ example programs verified across backends
 ```
 
 ## More Real Examples
+
+### C-like Operators & Expressions
+
+Source: [examples/operator/OperatorShowcase.lemon](examples/operator/OperatorShowcase.lemon)
+
+Demonstrates prefix/postfix `++`/`--`, compound assignment `+= -= *= /= %=`, unary `+ - ! ~`, and ternary `? :`:
+
+```text
+postA=5, a=6
+preA=7, a=7
+postDecA=7, a=6
+preDecA=5, a=5
+after standalone inc: a=6
+after standalone dec: a=5
+a += 10 -> 15
+a -= 3 -> 12
+a *= 2 -> 24
+a /= 4 -> 6
+a mod_assign 4 -> 2
+arr[0]++ -> 101
+++arr[0] -> 102
+arr[0]-- -> 101
+--arr[0] -> 100
+arr[0] += 50 -> 150
+arr[1]=225, idx=2
+(*p)++ -> 41
+++(*p) -> 42
+(*p)-- -> 41
+--(*p) -> 40
+*p += 8 -> 48
+*p -= 3 -> 45
+pt.x=11, pt.y=21
+pPt->x=16, pPt->y=42
++num=15, -num=-15
+!flag is true
+~0=-1, ~10=-11
+maxVal=999, minVal=2
+grade=2
+callRes=31, arg1=11, arg2=21
+for-loop sum=10
+```
 
 ### Numeric Widening, for, break, continue, arrays
 

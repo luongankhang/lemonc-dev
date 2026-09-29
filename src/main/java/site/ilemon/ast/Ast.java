@@ -173,18 +173,28 @@ public class Ast {
             private Expr.T expr;
             public Expr.T getExpr() { return this.expr; }
             public void setExpr(Expr.T expr) { this.expr = expr; }
-            //private Type.T type;
+            private site.ilemon.lexer.TokenKind op;
+            public site.ilemon.lexer.TokenKind getOp() { return this.op; }
+            public void setOp(site.ilemon.lexer.TokenKind op) { this.op = op; }
+
             public Assign(Ast.Expr.Id id, Expr.T exp, int lineNum) {
+                this(id, exp, site.ilemon.lexer.TokenKind.Assign, lineNum);
+            }
+            public Assign(Ast.Expr.Id id, Expr.T exp, site.ilemon.lexer.TokenKind op, int lineNum) {
                 this.id = id;
                 this.expr = exp;
-                //this.type = type;
+                this.op = op;
                 this.setLineNum(lineNum);
             }
 
             // Constructor with SourceSpan
             public Assign(Ast.Expr.Id id, Expr.T exp, site.ilemon.util.SourceSpan span) {
+                this(id, exp, site.ilemon.lexer.TokenKind.Assign, span);
+            }
+            public Assign(Ast.Expr.Id id, Expr.T exp, site.ilemon.lexer.TokenKind op, site.ilemon.util.SourceSpan span) {
                 this.id = id;
                 this.expr = exp;
+                this.op = op;
                 this.setSpan(span);
             }
 
@@ -373,18 +383,30 @@ public class Ast {
             public Type.T getElementType() { return this.elementType; }
             public void setElementType(Type.T elementType) { this.elementType = elementType; }
 
+            private site.ilemon.lexer.TokenKind op;
+            public site.ilemon.lexer.TokenKind getOp() { return this.op; }
+            public void setOp(site.ilemon.lexer.TokenKind op) { this.op = op; }
+
             public ArrayAssign(String arrayName, Expr.T index, Expr.T expr, int lineNum) {
+                this(arrayName, index, expr, site.ilemon.lexer.TokenKind.Assign, lineNum);
+            }
+            public ArrayAssign(String arrayName, Expr.T index, Expr.T expr, site.ilemon.lexer.TokenKind op, int lineNum) {
                 this.arrayName = arrayName;
                 this.index = index;
                 this.expr = expr;
+                this.op = op;
                 this.setLineNum(lineNum);
             }
 
             public ArrayAssign(Expr.Field fieldTarget, Expr.T index, Expr.T expr, int lineNum) {
+                this(fieldTarget, index, expr, site.ilemon.lexer.TokenKind.Assign, lineNum);
+            }
+            public ArrayAssign(Expr.Field fieldTarget, Expr.T index, Expr.T expr, site.ilemon.lexer.TokenKind op, int lineNum) {
                 this.fieldTarget = fieldTarget;
                 this.arrayName = "";
                 this.index = index;
                 this.expr = expr;
+                this.op = op;
                 this.setLineNum(lineNum);
             }
 
@@ -402,10 +424,17 @@ public class Ast {
             private Expr.T expr;
             public Expr.T getExpr() { return this.expr; }
             public void setExpr(Expr.T expr) { this.expr = expr; }
+            private site.ilemon.lexer.TokenKind op;
+            public site.ilemon.lexer.TokenKind getOp() { return this.op; }
+            public void setOp(site.ilemon.lexer.TokenKind op) { this.op = op; }
 
             public DerefAssign(Expr.Deref target, Expr.T expr, int lineNum) {
+                this(target, expr, site.ilemon.lexer.TokenKind.Assign, lineNum);
+            }
+            public DerefAssign(Expr.Deref target, Expr.T expr, site.ilemon.lexer.TokenKind op, int lineNum) {
                 this.target = target;
                 this.expr = expr;
+                this.op = op;
                 this.setLineNum(lineNum);
             }
 
@@ -460,9 +489,32 @@ public class Ast {
             private Expr.T expr;
             public Expr.T getExpr() { return this.expr; }
             public void setExpr(Expr.T expr) { this.expr = expr; }
+            private site.ilemon.lexer.TokenKind op;
+            public site.ilemon.lexer.TokenKind getOp() { return this.op; }
+            public void setOp(site.ilemon.lexer.TokenKind op) { this.op = op; }
 
             public FieldAssign(Expr.Field target, Expr.T expr, int lineNum) {
+                this(target, expr, site.ilemon.lexer.TokenKind.Assign, lineNum);
+            }
+            public FieldAssign(Expr.Field target, Expr.T expr, site.ilemon.lexer.TokenKind op, int lineNum) {
                 this.target = target;
+                this.expr = expr;
+                this.op = op;
+                this.setLineNum(lineNum);
+            }
+
+            @Override
+            public void accept(ISemanticVisitor v) {
+                v.visit(this);
+            }
+        }
+
+        public static class ExprStmt extends T {
+            private Expr.T expr;
+            public Expr.T getExpr() { return this.expr; }
+            public void setExpr(Expr.T expr) { this.expr = expr; }
+
+            public ExprStmt(Expr.T expr, int lineNum) {
                 this.expr = expr;
                 this.setLineNum(lineNum);
             }
@@ -932,6 +984,78 @@ public class Ast {
             public void setSpan(site.ilemon.util.SourceSpan span) { this.span = span; }
 
             public abstract void accept(ISemanticVisitor v);
+        }
+
+        public static class PreInc extends T {
+            private Expr.T exp;
+            public Expr.T getExp() { return this.exp; }
+            public void setExp(Expr.T exp) { this.exp = exp; }
+            public PreInc(Expr.T exp, int lineNum) { this.exp = exp; this.setLineNum(lineNum); }
+            @Override public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        public static class PostInc extends T {
+            private Expr.T exp;
+            public Expr.T getExp() { return this.exp; }
+            public void setExp(Expr.T exp) { this.exp = exp; }
+            public PostInc(Expr.T exp, int lineNum) { this.exp = exp; this.setLineNum(lineNum); }
+            @Override public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        public static class PreDec extends T {
+            private Expr.T exp;
+            public Expr.T getExp() { return this.exp; }
+            public void setExp(Expr.T exp) { this.exp = exp; }
+            public PreDec(Expr.T exp, int lineNum) { this.exp = exp; this.setLineNum(lineNum); }
+            @Override public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        public static class PostDec extends T {
+            private Expr.T exp;
+            public Expr.T getExp() { return this.exp; }
+            public void setExp(Expr.T exp) { this.exp = exp; }
+            public PostDec(Expr.T exp, int lineNum) { this.exp = exp; this.setLineNum(lineNum); }
+            @Override public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        public static class UnaryPlus extends T {
+            private Expr.T exp;
+            public Expr.T getExp() { return this.exp; }
+            public void setExp(Expr.T exp) { this.exp = exp; }
+            public UnaryPlus(Expr.T exp, int lineNum) { this.exp = exp; this.setLineNum(lineNum); }
+            @Override public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        public static class UnaryMinus extends T {
+            private Expr.T exp;
+            public Expr.T getExp() { return this.exp; }
+            public void setExp(Expr.T exp) { this.exp = exp; }
+            public UnaryMinus(Expr.T exp, int lineNum) { this.exp = exp; this.setLineNum(lineNum); }
+            @Override public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        public static class BitNot extends T {
+            private Expr.T exp;
+            public Expr.T getExp() { return this.exp; }
+            public void setExp(Expr.T exp) { this.exp = exp; }
+            public BitNot(Expr.T exp, int lineNum) { this.exp = exp; this.setLineNum(lineNum); }
+            @Override public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        public static class Ternary extends T {
+            private Expr.T condition;
+            private Expr.T trueExpr;
+            private Expr.T falseExpr;
+            public Expr.T getCondition() { return this.condition; }
+            public void setCondition(Expr.T condition) { this.condition = condition; }
+            public Expr.T getTrueExpr() { return this.trueExpr; }
+            public void setTrueExpr(Expr.T trueExpr) { this.trueExpr = trueExpr; }
+            public Expr.T getFalseExpr() { return this.falseExpr; }
+            public void setFalseExpr(Expr.T falseExpr) { this.falseExpr = falseExpr; }
+            public Ternary(Expr.T condition, Expr.T trueExpr, Expr.T falseExpr, int lineNum) {
+                this.condition = condition; this.trueExpr = trueExpr; this.falseExpr = falseExpr; this.setLineNum(lineNum);
+            }
+            @Override public void accept(ISemanticVisitor v) { v.visit(this); }
         }
 
         /** Arithmetic expressions **/

@@ -39,6 +39,14 @@ public interface ISemanticVisitor {
 	void visit(Ast.Expr.Null obj);
 	void visit(Ast.Expr.Field obj);
 	default void visit(Ast.Expr.InitializerList obj) {}
+	default void visit(Ast.Expr.PreInc obj) {}
+	default void visit(Ast.Expr.PostInc obj) {}
+	default void visit(Ast.Expr.PreDec obj) {}
+	default void visit(Ast.Expr.PostDec obj) {}
+	default void visit(Ast.Expr.UnaryPlus obj) {}
+	default void visit(Ast.Expr.UnaryMinus obj) {}
+	default void visit(Ast.Expr.BitNot obj) {}
+	default void visit(Ast.Expr.Ternary obj) {}
 
 	void visit(Ast.Type.T obj);
 	void visit(Ast.Type.Bool obj);
@@ -87,5 +95,6 @@ public interface ISemanticVisitor {
 	void visit(Ast.Stmt.Import obj);
 	void visit(Ast.Stmt.VarDecl obj);
 	void visit(Ast.Stmt.FieldAssign obj);
+	default void visit(Ast.Stmt.ExprStmt obj) {}
 
 }

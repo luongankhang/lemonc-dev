@@ -281,4 +281,32 @@ public final class MethodCallRewriter implements ISemanticVisitor {
         // Field paths contain no method calls; only the RHS may need rewriting.
         visit(obj.getExpr());
     }
+
+    @Override
+    public void visit(Ast.Stmt.ExprStmt obj) {
+        if (obj.getExpr() != null) {
+            visit(obj.getExpr());
+        }
+    }
+
+    @Override
+    public void visit(Ast.Expr.PreInc obj) { visit(obj.getExp()); }
+    @Override
+    public void visit(Ast.Expr.PostInc obj) { visit(obj.getExp()); }
+    @Override
+    public void visit(Ast.Expr.PreDec obj) { visit(obj.getExp()); }
+    @Override
+    public void visit(Ast.Expr.PostDec obj) { visit(obj.getExp()); }
+    @Override
+    public void visit(Ast.Expr.UnaryPlus obj) { visit(obj.getExp()); }
+    @Override
+    public void visit(Ast.Expr.UnaryMinus obj) { visit(obj.getExp()); }
+    @Override
+    public void visit(Ast.Expr.BitNot obj) { visit(obj.getExp()); }
+    @Override
+    public void visit(Ast.Expr.Ternary obj) {
+        visit(obj.getCondition());
+        visit(obj.getTrueExpr());
+        visit(obj.getFalseExpr());
+    }
 }

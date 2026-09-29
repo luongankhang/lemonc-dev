@@ -6,7 +6,7 @@ import java.util.List;
 public record IrInstruction(Op op, IrValue result, List<IrValue> operands, String target) {
     public enum Op {
         CONST, ADD, SUB, MUL, DIV, REM, AND, OR, XOR, CMP, CONVERT, LOAD, STORE, ALLOC, ADDRESS_OF,
-        CALL, RETURN, BRANCH, COND_BRANCH, PHI, BOUNDS_CHECK, EXTERNAL_CALL,
+        CALL, RETURN, BRANCH, COND_BRANCH, PHI, BOUNDS_CHECK, EXTERNAL_CALL, BIT_NOT,
         /** Load a field: {@code result = receiver.field}. {@code target} carries the field name. */
         FIELD_LOAD,
         /** Store a field: {@code receiver.field = operands[1]}. {@code target} carries the field name. */

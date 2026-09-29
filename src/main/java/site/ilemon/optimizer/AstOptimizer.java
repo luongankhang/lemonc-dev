@@ -69,18 +69,18 @@ public class AstOptimizer {
             return null;
         }
         if (stmt instanceof Ast.Stmt.Assign assign) {
-            return new Ast.Stmt.Assign(assign.getId(), optimizeExpr(assign.getExpr()), assign.getLineNum());
+            return new Ast.Stmt.Assign(assign.getId(), optimizeExpr(assign.getExpr()), assign.getOp(), assign.getLineNum());
         }
         if (stmt instanceof Ast.Stmt.ArrayAssign arrayAssign) {
             Ast.Stmt.ArrayAssign optimized;
             if (arrayAssign.getFieldTarget() != null) {
                 optimized = new Ast.Stmt.ArrayAssign(arrayAssign.getFieldTarget(),
                         optimizeExpr(arrayAssign.getIndex()), optimizeExpr(arrayAssign.getExpr()),
-                        arrayAssign.getLineNum());
+                        arrayAssign.getOp(), arrayAssign.getLineNum());
             } else {
                 optimized = new Ast.Stmt.ArrayAssign(arrayAssign.getArrayName(),
                         optimizeExpr(arrayAssign.getIndex()), optimizeExpr(arrayAssign.getExpr()),
-                        arrayAssign.getLineNum());
+                        arrayAssign.getOp(), arrayAssign.getLineNum());
             }
             optimized.setElementType(arrayAssign.getElementType());
             return optimized;
@@ -141,6 +141,12 @@ public class AstOptimizer {
                 return new Ast.Stmt.VarDecl(optDecl, varDecl.getLineNum());
             }
             return varDecl;
+        }
+        if (stmt instanceof Ast.Stmt.ExprStmt exprStmt) {
+            Ast.Expr.T optExpr = optimizeExpr(exprStmt.getExpr());
+            Ast.Stmt.ExprStmt optimized = new Ast.Stmt.ExprStmt(optExpr, exprStmt.getLineNum());
+            optimized.setSpan(exprStmt.getSpan());
+            return optimized;
         }
         return stmt;
     }
@@ -273,6 +279,54 @@ public class AstOptimizer {
                     optimizeExprList(list.getElements()), list.getLineNum());
             optimized.setType(list.getType());
             return optimized;
+        }
+        if (expr instanceof Ast.Expr.PreInc preInc) {
+            Ast.Expr.PreInc opt = new Ast.Expr.PreInc(optimizeExpr(preInc.getExp()), preInc.getLineNum());
+            opt.setSpan(preInc.getSpan());
+            return opt;
+        }
+        if (expr instanceof Ast.Expr.PostInc postInc) {
+            Ast.Expr.PostInc opt = new Ast.Expr.PostInc(optimizeExpr(postInc.getExp()), postInc.getLineNum());
+            opt.setSpan(postInc.getSpan());
+            return opt;
+        }
+        if (expr instanceof Ast.Expr.PreDec preDec) {
+            Ast.Expr.PreDec opt = new Ast.Expr.PreDec(optimizeExpr(preDec.getExp()), preDec.getLineNum());
+            opt.setSpan(preDec.getSpan());
+            return opt;
+        }
+        if (expr instanceof Ast.Expr.PostDec postDec) {
+            Ast.Expr.PostDec opt = new Ast.Expr.PostDec(optimizeExpr(postDec.getExp()), postDec.getLineNum());
+            opt.setSpan(postDec.getSpan());
+            return opt;
+        }
+        if (expr instanceof Ast.Expr.UnaryPlus up) {
+            return optimizeExpr(up.getExp());
+        }
+        if (expr instanceof Ast.Expr.UnaryMinus um) {
+            Ast.Expr.T operand = optimizeExpr(um.getExp());
+            Ast.Expr.UnaryMinus opt = new Ast.Expr.UnaryMinus(operand, um.getLineNum());
+            opt.setSpan(um.getSpan());
+            return opt;
+        }
+        if (expr instanceof Ast.Expr.BitNot bn) {
+            Ast.Expr.T operand = optimizeExpr(bn.getExp());
+            Ast.Expr.BitNot opt = new Ast.Expr.BitNot(operand, bn.getLineNum());
+            opt.setSpan(bn.getSpan());
+            return opt;
+        }
+        if (expr instanceof Ast.Expr.Ternary ternary) {
+            Ast.Expr.T cond = optimizeExpr(ternary.getCondition());
+            Boolean bool = boolValue(cond);
+            if (Boolean.TRUE.equals(bool)) {
+                return optimizeExpr(ternary.getTrueExpr());
+            }
+            if (Boolean.FALSE.equals(bool)) {
+                return optimizeExpr(ternary.getFalseExpr());
+            }
+            Ast.Expr.Ternary opt = new Ast.Expr.Ternary(cond, optimizeExpr(ternary.getTrueExpr()), optimizeExpr(ternary.getFalseExpr()), ternary.getLineNum());
+            opt.setSpan(ternary.getSpan());
+            return opt;
         }
         return expr;
     }

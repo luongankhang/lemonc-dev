@@ -1,0 +1,45 @@
+struct Point {
+    int x;
+    int y;
+};
+
+struct Path {
+    int id;
+    int points[3];
+};
+
+const struct Point ORIGIN = { 0, 0 };
+
+void processPath(struct Path p) {
+    printf("Processing Path %d\n", p.id);
+    printf("Points: %d, %d, %d\n", p.points[0], p.points[1], p.points[2]);
+}
+
+void shiftPath(struct Path* ptr) {
+    ptr->id = ptr->id + 100;
+    ptr->points[0] = ptr->points[0] + 10;
+}
+
+void main() {
+    printf("== Struct + ARC Showcase ==\n");
+    
+    // 1. Const struct
+    printf("Origin: %d, %d\n", ORIGIN.x, ORIGIN.y);
+    
+    // 2. Struct with array fields (ARC managed)
+    struct Path myPath;
+    myPath.id = 1;
+    myPath.points[0] = 5;
+    myPath.points[1] = 10;
+    myPath.points[2] = 15;
+    
+    // 3. Pass-by-value with Move Semantics (JVM rvalue optimization)
+    processPath(myPath);
+    
+    // 4. Pointer aliasing (->)
+    struct Path* pPtr = &myPath;
+    shiftPath(pPtr);
+    
+    printf("\nAfter shift:\n");
+    processPath(myPath);
+}

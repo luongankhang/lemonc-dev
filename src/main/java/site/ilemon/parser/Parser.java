@@ -771,6 +771,8 @@ public class Parser {
 				|| look.kind == TokenKind.Break || look.kind == TokenKind.Continue
 				|| look.kind == TokenKind.Return
 				|| look.kind == TokenKind.Mul
+				|| look.kind == TokenKind.Inc || look.kind == TokenKind.Dec
+				|| look.kind == TokenKind.Lparen
 				|| isVarDeclarationStart());
 	}
 
@@ -884,12 +886,41 @@ public class Parser {
 			if (!(target instanceof Ast.Expr.Deref)) {
 				error("expected a dereference on the left side of this assignment");
 			}
-			match(new Token(TokenKind.Assign));
-			Ast.Expr.T expr = parseExpr();
+			if (look.kind == TokenKind.Inc || look.kind == TokenKind.Dec) {
+				Ast.Expr.T incDec = (look.kind == TokenKind.Inc)
+						? new Ast.Expr.PostInc(target, look.lineNumber)
+						: new Ast.Expr.PostDec(target, look.lineNumber);
+				move();
+				match(new Token(TokenKind.Semicolon));
+				Ast.Stmt.ExprStmt exprStmt = new Ast.Stmt.ExprStmt(incDec, lineNumber);
+				exprStmt.setSpan(tokenSpan(derefToken));
+				stmt = exprStmt;
+			} else {
+				TokenKind op = matchAssignment();
+				Ast.Expr.T expr = parseExpr();
+				match(new Token(TokenKind.Semicolon));
+				Ast.Stmt.DerefAssign derefAssign = new Ast.Stmt.DerefAssign((Ast.Expr.Deref) target, expr, op, lineNumber);
+				derefAssign.setSpan(tokenSpan(derefToken));
+				stmt = derefAssign;
+			}
+		}
+		else if (look.kind == TokenKind.Inc || look.kind == TokenKind.Dec) {
+			Token opToken = look;
+			int lineNumber = look.lineNumber;
+			Ast.Expr.T expr = parseFactor();
 			match(new Token(TokenKind.Semicolon));
-			Ast.Stmt.DerefAssign derefAssign = new Ast.Stmt.DerefAssign((Ast.Expr.Deref) target, expr, lineNumber);
-			derefAssign.setSpan(tokenSpan(derefToken));
-			stmt = derefAssign;
+			Ast.Stmt.ExprStmt exprStmt = new Ast.Stmt.ExprStmt(expr, lineNumber);
+			exprStmt.setSpan(tokenSpan(opToken));
+			stmt = exprStmt;
+		}
+		else if (look.kind == TokenKind.Lparen) {
+			Token parenToken = look;
+			int lineNumber = look.lineNumber;
+			Ast.Expr.T expr = parseFactor();
+			match(new Token(TokenKind.Semicolon));
+			Ast.Stmt.ExprStmt exprStmt = new Ast.Stmt.ExprStmt(expr, lineNumber);
+			exprStmt.setSpan(tokenSpan(parenToken));
+			stmt = exprStmt;
 		}
 		else if( look.kind == TokenKind.Id ) {
 			Token ahead = lexer.lookahead(1);
@@ -931,16 +962,38 @@ public class Parser {
 					move(); // consume '['
 					Ast.Expr.T index = parseExpr();
 					match("]");
-					match(new Token(TokenKind.Assign));
-					Ast.Expr.T value = parseExpr();
+					if (look.kind == TokenKind.Inc || look.kind == TokenKind.Dec) {
+						Ast.Expr.ArrayAccess access = new Ast.Expr.ArrayAccess(target, index, lineNum);
+						access.setSpan(tokenSpan(fieldToken));
+						Ast.Expr.T incDec = (look.kind == TokenKind.Inc)
+								? new Ast.Expr.PostInc(access, look.lineNumber)
+								: new Ast.Expr.PostDec(access, look.lineNumber);
+						move();
+						match(new Token(TokenKind.Semicolon));
+						Ast.Stmt.ExprStmt exprStmt = new Ast.Stmt.ExprStmt(incDec, lineNum);
+						exprStmt.setSpan(tokenSpan(fieldToken));
+						stmt = exprStmt;
+					} else {
+						TokenKind op = matchAssignment();
+						Ast.Expr.T value = parseExpr();
+						match(new Token(TokenKind.Semicolon));
+						stmt = new Ast.Stmt.ArrayAssign(target, index, value, op, lineNum);
+						stmt.setSpan(tokenSpan(fieldToken));
+					}
+				} else if (look.kind == TokenKind.Inc || look.kind == TokenKind.Dec) {
+					Ast.Expr.T incDec = (look.kind == TokenKind.Inc)
+							? new Ast.Expr.PostInc(target, look.lineNumber)
+							: new Ast.Expr.PostDec(target, look.lineNumber);
+					move();
 					match(new Token(TokenKind.Semicolon));
-					stmt = new Ast.Stmt.ArrayAssign(target, index, value, lineNum);
-					stmt.setSpan(tokenSpan(fieldToken));
+					Ast.Stmt.ExprStmt exprStmt = new Ast.Stmt.ExprStmt(incDec, lineNum);
+					exprStmt.setSpan(tokenSpan(fieldToken));
+					stmt = exprStmt;
 				} else {
-					match(new Token(TokenKind.Assign));
+					TokenKind op = matchAssignment();
 					Ast.Expr.T value = parseExpr();
 					match(new Token(TokenKind.Semicolon));
-					stmt = new Ast.Stmt.FieldAssign(target, value, lineNum);
+					stmt = new Ast.Stmt.FieldAssign(target, value, op, lineNum);
 					stmt.setSpan(tokenSpan(fieldToken));
 				}
 			}
@@ -953,23 +1006,45 @@ public class Parser {
 				match( "[" );
 				Ast.Expr.T index = parseExpr();
 				match( "]" );
-				match( new Token(TokenKind.Assign) );
-				Ast.Expr.T expr = parseExpr();
-				match( new Token(TokenKind.Semicolon) );
-				stmt = new Ast.Stmt.ArrayAssign(arrayName, index, expr, lineNum);
-				stmt.setSpan(tokenSpan(arrayToken));
+				if (look.kind == TokenKind.Inc || look.kind == TokenKind.Dec) {
+					Ast.Expr.ArrayAccess access = new Ast.Expr.ArrayAccess(arrayName, index, lineNum);
+					access.setSpan(tokenSpan(arrayToken));
+					Ast.Expr.T incDec = (look.kind == TokenKind.Inc)
+							? new Ast.Expr.PostInc(access, look.lineNumber)
+							: new Ast.Expr.PostDec(access, look.lineNumber);
+					move();
+					match(new Token(TokenKind.Semicolon));
+					Ast.Stmt.ExprStmt exprStmt = new Ast.Stmt.ExprStmt(incDec, lineNum);
+					exprStmt.setSpan(tokenSpan(arrayToken));
+					stmt = exprStmt;
+				} else {
+					TokenKind op = matchAssignment();
+					Ast.Expr.T expr = parseExpr();
+					match( new Token(TokenKind.Semicolon) );
+					stmt = new Ast.Stmt.ArrayAssign(arrayName, index, expr, op, lineNum);
+					stmt.setSpan(tokenSpan(arrayToken));
+				}
+			}
+			else if (ahead.kind == TokenKind.Inc || ahead.kind == TokenKind.Dec) {
+				Token idToken = look;
+				int lineNum = look.lineNumber;
+				Ast.Expr.T factor = parseFactor();
+				match(new Token(TokenKind.Semicolon));
+				Ast.Stmt.ExprStmt exprStmt = new Ast.Stmt.ExprStmt(factor, lineNum);
+				exprStmt.setSpan(tokenSpan(idToken));
+				stmt = exprStmt;
 			}
 			else{
 				String id = look.lexeme;
 				int lineNum = look.lineNumber;
 				Token idToken = look;
 				match( new Token(TokenKind.Id) );
-				match( new Token(TokenKind.Assign) );
+				TokenKind op = matchAssignment();
 				Ast.Expr.T expr = parseExpr();
 				match( new Token(TokenKind.Semicolon) );
 				Ast.Expr.Id target = new Ast.Expr.Id(id, lineNum);
 				target.setSpan(tokenSpan(idToken));
-				stmt = new Ast.Stmt.Assign(target, expr, lineNum);
+				stmt = new Ast.Stmt.Assign(target, expr, op, lineNum);
 				
 			}
 		}
@@ -1012,15 +1087,25 @@ public class Parser {
 	}
 
 	private Ast.Stmt.T parseSimpleStmtWithoutTerminator() throws IOException {
+		if (look.kind == TokenKind.Inc || look.kind == TokenKind.Dec) {
+			int lineNumber = look.lineNumber;
+			Ast.Expr.T expr = parseFactor();
+			return new Ast.Stmt.ExprStmt(expr, lineNumber);
+		}
 		if (look.kind != TokenKind.Id) {
 			error("expected an assignment or method call");
 		}
 		Token ahead = lexer.lookahead(1);
-			if( ahead.kind == TokenKind.Lparen || (ahead.kind == TokenKind.Dot
-					&& lexer.lookahead(2).kind == TokenKind.Id && lexer.lookahead(3).kind == TokenKind.Lparen)){
-				String mthName = qualifiedName();
+		if (ahead.kind == TokenKind.Inc || ahead.kind == TokenKind.Dec) {
 			int lineNumber = look.lineNumber;
-				Ast.Expr.T expr = parseMethodCall(mthName, lineNumber);
+			Ast.Expr.T expr = parseFactor();
+			return new Ast.Stmt.ExprStmt(expr, lineNumber);
+		}
+		if( ahead.kind == TokenKind.Lparen || (ahead.kind == TokenKind.Dot
+					&& lexer.lookahead(2).kind == TokenKind.Id && lexer.lookahead(3).kind == TokenKind.Lparen)){
+			String mthName = qualifiedName();
+			int lineNumber = look.lineNumber;
+			Ast.Expr.T expr = parseMethodCall(mthName, lineNumber);
 			if( expr instanceof Ast.Expr.Call){
 				return new Ast.Stmt.Call(mthName,((Ast.Expr.Call)expr).getInputParams(),lineNumber);
 			}
@@ -1032,19 +1117,27 @@ public class Parser {
 			match( "[" );
 			Ast.Expr.T index = parseExpr();
 			match( "]" );
-			match( new Token(TokenKind.Assign) );
+			if (look.kind == TokenKind.Inc || look.kind == TokenKind.Dec) {
+				Ast.Expr.ArrayAccess access = new Ast.Expr.ArrayAccess(arrayName, index, lineNum);
+				Ast.Expr.T incDec = (look.kind == TokenKind.Inc)
+						? new Ast.Expr.PostInc(access, look.lineNumber)
+						: new Ast.Expr.PostDec(access, look.lineNumber);
+				move();
+				return new Ast.Stmt.ExprStmt(incDec, lineNum);
+			}
+			TokenKind op = matchAssignment();
 			Ast.Expr.T expr = parseExpr();
-			return new Ast.Stmt.ArrayAssign(arrayName, index, expr, lineNum);
+			return new Ast.Stmt.ArrayAssign(arrayName, index, expr, op, lineNum);
 		}
 		else{
 			Token idToken = look;
 			String id = idToken.lexeme;
 			int lineNum = idToken.lineNumber;
 			match( new Token(TokenKind.Id) );
-			match( new Token(TokenKind.Assign) );
+			TokenKind op = matchAssignment();
 			Ast.Expr.T expr = parseExpr();
 			Ast.Expr.Id idExpr = new Ast.Expr.Id(id, lineNum);
-			return new Ast.Stmt.Assign(idExpr, expr, lineNum);
+			return new Ast.Stmt.Assign(idExpr, expr, op, lineNum);
 		}
 		error("could not parse simple statement");
 		return null;
@@ -1056,6 +1149,18 @@ public class Parser {
 	// Exp -> AndExp || AndExp
 	//  -> AndExp
 	private Ast.Expr.T parseExpr() throws IOException {
+		Ast.Expr.T expr = parseOrExpr();
+		if (look.kind == TokenKind.Question) {
+			move();
+			Ast.Expr.T trueExpr = parseExpr();
+			match(new Token(TokenKind.Colon));
+			Ast.Expr.T falseExpr = parseExpr();
+			return new Ast.Expr.Ternary(expr, trueExpr, falseExpr, expr.getLineNum());
+		}
+		return expr;
+	}
+
+	private Ast.Expr.T parseOrExpr() throws IOException {
 		Ast.Expr.T expr = parseAndExpr();
 		while( look.kind == TokenKind.Or ) {
 			move();
@@ -1151,11 +1256,40 @@ public class Parser {
 	//          | * <factor>    (dereference)
 	//          | & <factor>    (address-of)
 	//          | null
-	private Ast.Expr.T parseFactor() throws IOException{
+	private Ast.Expr.T parseFactor() throws IOException {
+		Ast.Expr.T expr = parseFactorInner();
+		while (look.kind == TokenKind.Inc || look.kind == TokenKind.Dec) {
+			if (look.kind == TokenKind.Inc) {
+				expr = new Ast.Expr.PostInc(expr, look.lineNumber);
+				move();
+			} else {
+				expr = new Ast.Expr.PostDec(expr, look.lineNumber);
+				move();
+			}
+		}
+		return expr;
+	}
+
+	private Ast.Expr.T parseFactorInner() throws IOException{
 		Ast.Expr.T expr = null;
-		if(look.kind==TokenKind.Mul){
-			// Unary dereference: *p / **p. (A binary '*' is only reached after a
-			// left operand has been parsed, so this branch is unambiguous.)
+		if(look.kind==TokenKind.Inc) {
+			int line = look.lineNumber;
+			move();
+			return new Ast.Expr.PreInc(parseFactor(), line);
+		}else if(look.kind==TokenKind.Dec) {
+			int line = look.lineNumber;
+			move();
+			return new Ast.Expr.PreDec(parseFactor(), line);
+		}else if (look.kind==TokenKind.Add) {
+			int line = look.lineNumber;
+			move();
+			return new Ast.Expr.UnaryPlus(parseFactor(), line);
+		}else if (look.kind==TokenKind.Tilde) {
+			int line = look.lineNumber;
+			move();
+			return new Ast.Expr.BitNot(parseFactor(), line);
+		}else if(look.kind==TokenKind.Mul){
+			// Unary dereference: *p / **p.
 			Token derefToken = look;
 			int lineNumber = look.lineNumber;
 			move();
@@ -1208,8 +1342,7 @@ public class Parser {
 				return minInt;
 			}
 			Ast.Expr.T operand = parseFactor();
-			Ast.Expr.Sub result = new Ast.Expr.Sub(
-					new Ast.Expr.Number(new Ast.Type.Int(), 0, lineNumber), operand, lineNumber);
+			Ast.Expr.UnaryMinus result = new Ast.Expr.UnaryMinus(operand, lineNumber);
 			result.setSpan(tokenSpan(minusToken));
 			return result;
 		}else if(look.kind== Num){
@@ -1347,10 +1480,18 @@ public class Parser {
 			return expr;
 		}
 		else if(look.kind==TokenKind.Not ){
+			Token notToken = look;
+			int lineNumber = notToken.lineNumber;
 			move();
-			match("(");
-			expr = new Ast.Expr.Not(parseExpr());
-			match(")");
+			if (look.kind == TokenKind.Lparen) {
+				match("(");
+				expr = new Ast.Expr.Not(parseExpr());
+				match(")");
+			} else {
+				expr = new Ast.Expr.Not(parseFactor());
+			}
+			expr.setLineNum(lineNumber);
+			expr.setSpan(tokenSpan(notToken));
 			return expr;
 		}
 		else if(look.kind==TokenKind.True ){
@@ -1390,7 +1531,6 @@ public class Parser {
 
 
 
-	// methodCall->methodCall(Expr,Expr)
 	private String qualifiedName() throws IOException {
 		String name = look.lexeme;
 		move();
@@ -1400,6 +1540,21 @@ public class Parser {
 			match(new Token(TokenKind.Id));
 		}
 		return name;
+	}
+
+	private boolean isAssignmentOperator(TokenKind kind) {
+		return kind == TokenKind.Assign || kind == TokenKind.AddAssign || kind == TokenKind.SubAssign
+			|| kind == TokenKind.MulAssign || kind == TokenKind.DivAssign || kind == TokenKind.ModAssign;
+	}
+
+	private TokenKind matchAssignment() throws IOException {
+		if (isAssignmentOperator(look.kind)) {
+			TokenKind op = look.kind;
+			move();
+			return op;
+		}
+		error("expected assignment operator");
+		return null;
 	}
 
 	private Ast.Expr.T parseMethodCall() throws IOException {

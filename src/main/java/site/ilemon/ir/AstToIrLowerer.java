@@ -341,6 +341,12 @@ public final class AstToIrLowerer {
             } else {
                 rhsVal = lowerExpr(assign.getExpr(), ctx);
             }
+            IrInstruction.Op binOp = compoundAssignOp(assign.getOp());
+            if (binOp != null) {
+                IrValue oldVal = ctx.newTemp(targetType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, oldVal, List.of(new IrValue(targetId, targetType)), null));
+                rhsVal = applyBinaryOp(binOp, oldVal, rhsVal, ctx);
+            }
             if (targetType.kind() == IrType.Kind.STRUCT) {
                 List<String> paths = getManagedPaths(targetType);
                 if (!paths.isEmpty()) {
@@ -368,6 +374,11 @@ public final class AstToIrLowerer {
             }
         } else if (stmt instanceof Ast.Stmt.FieldAssign fieldAssign) {
             IrValue value = lowerExpr(fieldAssign.getExpr(), ctx);
+            IrInstruction.Op binOp = compoundAssignOp(fieldAssign.getOp());
+            if (binOp != null) {
+                IrValue oldVal = lowerFieldLoad(fieldAssign.getTarget(), ctx);
+                value = applyBinaryOp(binOp, oldVal, value, ctx);
+            }
             lowerFieldStore(fieldAssign.getTarget(), value, ctx);
         } else if (stmt instanceof Ast.Stmt.DerefAssign derefAssign) {
             lowerDerefAssign(derefAssign, ctx);
@@ -389,6 +400,12 @@ public final class AstToIrLowerer {
             ctx.emit(new IrInstruction(IrInstruction.Op.BOUNDS_CHECK, null, List.of(arrVal, idxVal), null));
 
             IrType elemType = arrType != null && arrType.elementType() != null ? arrType.elementType() : IrType.scalar(IrType.Kind.INT);
+            IrInstruction.Op binOp = compoundAssignOp(arrayAssign.getOp());
+            if (binOp != null) {
+                IrValue oldVal = ctx.newTemp(elemType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, oldVal, List.of(arrVal, idxVal), null));
+                val = applyBinaryOp(binOp, oldVal, val, ctx);
+            }
             if (val.type().kind() != elemType.kind()) {
                 IrValue converted = ctx.newTemp(elemType);
                 ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(val), null));
@@ -561,6 +578,10 @@ public final class AstToIrLowerer {
                 }
             }
             ctx.emit(new IrInstruction(IrInstruction.Op.CALL, null, callArgs, call.getName()));
+        } else if (stmt instanceof Ast.Stmt.ExprStmt exprStmt) {
+            if (exprStmt.getExpr() != null) {
+                lowerExpr(exprStmt.getExpr(), ctx);
+            }
         }
     }
 
@@ -573,7 +594,7 @@ public final class AstToIrLowerer {
      * variable when the chain starts with {@code ->}. Keeping the whole path
      * in one op lets the C backend emit plain {@code root.a.b} lvalues while
      * the JVM backend navigates one reference chain without intermediate
-     * copies — both backends stay field-address based.
+     * copies ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â both backends stay field-address based.
      */
     private IrValue lowerFieldLoad(Ast.Expr.Field field, MethodLoweringContext ctx) {
         Ast.Expr.T receiverExpr = field.getReceiver();
@@ -695,6 +716,12 @@ public final class AstToIrLowerer {
 
         IrType elemType = address.type().elementType();
         IrValue value = lowerExpr(statement.getExpr(), ctx);
+        IrInstruction.Op binOp = compoundAssignOp(statement.getOp());
+        if (binOp != null) {
+            IrValue oldVal = ctx.newTemp(elemType);
+            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, oldVal, List.of(address), null));
+            value = applyBinaryOp(binOp, oldVal, value, ctx);
+        }
         if (value.type().kind() != elemType.kind()) {
             IrValue converted = ctx.newTemp(elemType);
             ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(value), null));
@@ -874,6 +901,67 @@ public final class AstToIrLowerer {
             IrValue res = ctx.newTemp(retType);
             ctx.emit(new IrInstruction(IrInstruction.Op.CALL, res, callArgs, call.getName()));
             return res;
+        } else if (expr instanceof Ast.Expr.UnaryMinus unaryMinus) {
+            IrValue val = lowerExpr(unaryMinus.getExp(), ctx);
+            IrValue zero = ctx.newTemp(val.type());
+            ctx.emit(new IrInstruction(IrInstruction.Op.CONST, zero, List.of(new IrValue("0", val.type())), null));
+            return applyBinaryOp(IrInstruction.Op.SUB, zero, val, ctx);
+        } else if (expr instanceof Ast.Expr.UnaryPlus unaryPlus) {
+            return lowerExpr(unaryPlus.getExp(), ctx);
+        } else if (expr instanceof Ast.Expr.BitNot bitNot) {
+            IrValue val = lowerExpr(bitNot.getExp(), ctx);
+            IrValue res = ctx.newTemp(val.type());
+            ctx.emit(new IrInstruction(IrInstruction.Op.BIT_NOT, res, List.of(val), null));
+            return res;
+        } else if (expr instanceof Ast.Expr.Ternary ternary) {
+            IrValue condVal = lowerExpr(ternary.getCondition(), ctx);
+            BasicBlock trueBlock = ctx.createBlock("ternary_true");
+            BasicBlock falseBlock = ctx.createBlock("ternary_false");
+            BasicBlock endBlock = ctx.createBlock("ternary_end");
+            
+            IrValue notCond = ctx.newTemp(IrType.scalar(IrType.Kind.BOOL));
+            ctx.emit(new IrInstruction(IrInstruction.Op.CMP, notCond, List.of(condVal, new IrValue("0", condVal.type())), "=="));
+            ctx.emit(new IrInstruction(IrInstruction.Op.COND_BRANCH, null, List.of(notCond), falseBlock.name()));
+
+            ctx.startBlock(trueBlock);
+            IrValue trueVal = lowerExpr(ternary.getTrueExpr(), ctx);
+            BasicBlock trueEndBlock = ctx.currentBlock;
+            
+            ctx.startBlock(falseBlock);
+            IrValue falseVal = lowerExpr(ternary.getFalseExpr(), ctx);
+            BasicBlock falseEndBlock = ctx.currentBlock;
+            
+            IrType resType = commonNumericType(trueVal.type(), falseVal.type());
+            IrValue res = ctx.newTemp(resType);
+            
+            ctx.currentBlock = trueEndBlock;
+            if (trueVal.type().kind() != resType.kind()) {
+                IrValue conv = ctx.newTemp(resType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, conv, List.of(trueVal), null));
+                trueVal = conv;
+            }
+            ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, res, List.of(trueVal), null));
+            ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), endBlock.name()));
+            
+            ctx.currentBlock = falseEndBlock;
+            if (falseVal.type().kind() != resType.kind()) {
+                IrValue conv = ctx.newTemp(resType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, conv, List.of(falseVal), null));
+                falseVal = conv;
+            }
+            ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, res, List.of(falseVal), null));
+            ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), endBlock.name()));
+
+            ctx.startBlock(endBlock);
+            return res;
+        } else if (expr instanceof Ast.Expr.PreInc preInc) {
+            return lowerIncDec(preInc.getExp(), false, false, ctx);
+        } else if (expr instanceof Ast.Expr.PostInc postInc) {
+            return lowerIncDec(postInc.getExp(), true, false, ctx);
+        } else if (expr instanceof Ast.Expr.PreDec preDec) {
+            return lowerIncDec(preDec.getExp(), false, true, ctx);
+        } else if (expr instanceof Ast.Expr.PostDec postDec) {
+            return lowerIncDec(postDec.getExp(), true, true, ctx);
         }
         throw new IllegalArgumentException("unsupported expr: " + expr.getClass().getSimpleName());
     }
@@ -881,6 +969,10 @@ public final class AstToIrLowerer {
     private IrValue lowerBinary(IrInstruction.Op op, Ast.Expr.T leftExpr, Ast.Expr.T rightExpr, MethodLoweringContext ctx) {
         IrValue left = lowerExpr(leftExpr, ctx);
         IrValue right = lowerExpr(rightExpr, ctx);
+        return applyBinaryOp(op, left, right, ctx);
+    }
+
+    private IrValue applyBinaryOp(IrInstruction.Op op, IrValue left, IrValue right, MethodLoweringContext ctx) {
         IrType commonType = commonNumericType(left.type(), right.type());
 
         if (left.type().kind() != commonType.kind()) {
@@ -892,7 +984,8 @@ public final class AstToIrLowerer {
             IrValue converted = ctx.newTemp(commonType);
             ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(right), null));
             right = converted;
-        }        IrValue res = ctx.newTemp(commonType);
+        }        
+        IrValue res = ctx.newTemp(commonType);
         ctx.emit(new IrInstruction(op, res, List.of(left, right), null));
         return res;
     }
@@ -1257,6 +1350,87 @@ public final class AstToIrLowerer {
             collectVarDeclNodes(forStmt.getInit(), decls);
             collectVarDeclNodes(forStmt.getBody(), decls);
         }
+    }
+    private IrInstruction.Op compoundAssignOp(site.ilemon.lexer.TokenKind op) {
+        if (op == null) return null;
+        return switch (op) {
+            case AddAssign -> IrInstruction.Op.ADD;
+            case SubAssign -> IrInstruction.Op.SUB;
+            case MulAssign -> IrInstruction.Op.MUL;
+            case DivAssign -> IrInstruction.Op.DIV;
+            case ModAssign -> IrInstruction.Op.REM;
+            default -> null;
+        };
+    }
+
+    private IrValue lowerIncDec(Ast.Expr.T target, boolean isPost, boolean isDec, MethodLoweringContext ctx) {
+        IrInstruction.Op binOp = isDec ? IrInstruction.Op.SUB : IrInstruction.Op.ADD;
+        IrValue oldValLoc;
+        IrType type;
+        
+        IrValue arrVal = null;
+        IrValue idxVal = null;
+        IrValue address = null;
+        
+        if (target instanceof Ast.Expr.Id id) {
+            type = ctx.variableTypes.get(id.getId());
+            if (type == null) type = IrType.scalar(IrType.Kind.INT);
+            oldValLoc = new IrValue(id.getId(), type);
+        } else if (target instanceof Ast.Expr.Field field) {
+            oldValLoc = lowerFieldLoad(field, ctx);
+            type = oldValLoc.type();
+        } else if (target instanceof Ast.Expr.ArrayAccess arrayAccess) {
+            IrType arrType;
+            if (arrayAccess.getFieldTarget() != null) {
+                arrVal = lowerFieldLoad(arrayAccess.getFieldTarget(), ctx);
+                arrType = arrVal.type();
+            } else {
+                String arrName = arrayAccess.getArrayName();
+                arrType = ctx.variableTypes.get(arrName);
+                arrVal = new IrValue(arrName, arrType);
+            }
+            idxVal = lowerExpr(arrayAccess.getIndex(), ctx);
+            type = arrType != null && arrType.elementType() != null ? arrType.elementType() : IrType.scalar(IrType.Kind.INT);
+            oldValLoc = ctx.newTemp(type);
+            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, oldValLoc, List.of(arrVal, idxVal), null));
+        } else if (target instanceof Ast.Expr.Deref deref) {
+            int depth = 0;
+            Ast.Expr.T base = deref;
+            while (base instanceof Ast.Expr.Deref d) {
+                depth++;
+                base = d.getOperand();
+            }
+            address = lowerExpr(base, ctx);
+            for (int i = 1; i < depth; i++) {
+                IrValue next = ctx.newTemp(address.type().elementType());
+                ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, next, List.of(address), null));
+                address = next;
+            }
+            type = address.type().elementType();
+            oldValLoc = ctx.newTemp(type);
+            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, oldValLoc, List.of(address), null));
+        } else {
+            throw new IllegalArgumentException("invalid target for increment/decrement");
+        }
+        
+        IrValue oldValCached = ctx.newTemp(type);
+        ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, oldValCached, List.of(oldValLoc), null));
+
+        IrValue one = ctx.newTemp(type);
+        ctx.emit(new IrInstruction(IrInstruction.Op.CONST, one, List.of(new IrValue("1", type)), null));
+        IrValue newVal = applyBinaryOp(binOp, oldValCached, one, ctx);
+        
+        if (target instanceof Ast.Expr.Id id) {
+            ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(id.getId(), type), List.of(newVal), null));
+        } else if (target instanceof Ast.Expr.Field field) {
+            lowerFieldStore(field, newVal, ctx);
+        } else if (target instanceof Ast.Expr.ArrayAccess) {
+            ctx.emit(new IrInstruction(IrInstruction.Op.STORE, null, List.of(arrVal, idxVal, newVal), null));
+        } else if (target instanceof Ast.Expr.Deref) {
+            ctx.emit(new IrInstruction(IrInstruction.Op.STORE, null, List.of(address, newVal), null));
+        }
+
+        return isPost ? oldValCached : newVal;
     }
 }
 

@@ -533,18 +533,21 @@ byte / short / char  ──►  int  ──►  long  ──►  float  ──�
 
 ---
 
-## 8. Arithmetic & Expressions
+## 8. Operators & Expressions
 
-LemonC supports all standard arithmetic operations on integer and floating-point types:
+LemonC provides a complete set of C-like arithmetic, bitwise, unary, assignment, and conditional operators. Every operator is unified in the shared AST and lowered into backend-neutral LemonIR with 100% semantic and behavioral parity across both JVM and C backends.
 
-| Operator | Name | Valid Types | JVM Instructions |
-|---|---|---|---|
-| `+` | Addition | `byte`, `int`, `long`, `float`, `double` | `iadd`, `ladd`, `fadd`, `dadd` |
-| `-` | Subtraction | `byte`, `int`, `long`, `float`, `double` | `isub`, `lsub`, `fsub`, `dsub` |
-| `*` | Multiplication | `byte`, `int`, `long`, `float`, `double` | `imul`, `lmul`, `fmul`, `dmul` |
-| `/` | Division | `byte`, `int`, `long`, `float`, `double` | `idiv`, `ldiv`, `fdiv`, `ddiv` |
-| `%` | Remainder (Mod) | `byte`, `int`, `long` | `irem`, `lrem` |
-| `-` (unary) | Negation | `byte`, `int`, `long`, `float`, `double` | `0 - x` / `lneg`, `fneg`, `dneg` |
+### 8.1. Binary Arithmetic Operators
+
+| Operator | Name | Valid Types | JVM Instructions | C Backend Mapping |
+|---|---|---|---|---|
+| `+` | Addition | `byte`, `short`, `int`, `long`, `float`, `double` | `iadd`, `ladd`, `fadd`, `dadd` | `+` |
+| `-` | Subtraction | `byte`, `short`, `int`, `long`, `float`, `double` | `isub`, `lsub`, `fsub`, `dsub` | `-` |
+| `*` | Multiplication | `byte`, `short`, `int`, `long`, `float`, `double` | `imul`, `lmul`, `fmul`, `dmul` | `*` |
+| `/` | Division | `byte`, `short`, `int`, `long`, `float`, `double` | `idiv`, `ldiv`, `fdiv`, `ddiv` | `/` |
+| `%` | Remainder (Mod) | `byte`, `short`, `int`, `long` | `irem`, `lrem` | `%` |
+
+Operands undergo standard numeric widening before arithmetic operations (e.g. `byte + byte` $\to$ `int`, `int + long` $\to$ `long`, `long + float` $\to$ `float`).
 
 Example: [examples/ModTest.lemon](../examples/ModTest.lemon)
 
@@ -562,6 +565,98 @@ Output:
 ```text
 a=1,b=8,c=5
 ```
+
+### 8.2. Unary Operators
+
+| Operator | Name | Valid Types | Semantics & Implementation |
+|---|---|---|---|
+| `+` | Unary Plus | `byte`, `short`, `int`, `long`, `float`, `double` | Identity operator; evaluates operand without changing sign. |
+| `-` | Unary Minus (Negation) | `byte`, `short`, `int`, `long`, `float`, `double` | Emits `0 - x` / `ineg`, `lneg`, `fneg`, `dneg` or `-x`. |
+| `!` | Logical NOT | `bool` | Inverts boolean truth value. Works in expressions and branch conditions. |
+| `~` | Bitwise NOT | `int`, `long` | Two's complement bit inversion. Lowers to `ixor -1` / `lxor -1L` on JVM and `~` in C. |
+
+### 8.3. Increment and Decrement Operators (`++`, `--`)
+
+LemonC supports both prefix and postfix forms of increment and decrement:
+
+- **Prefix (`++x`, `--x`)**: Updates the operand by 1 and yields the new (updated) value.
+- **Postfix (`x++`, `x--`)**: Updates the operand by 1 and yields the previous (original) value.
+
+#### Supported Lvalue Targets
+
+Increment and decrement operate on any modifiable lvalue:
+1. **Local Variables**: `a++`, `++a`, `b--`, `--b`
+2. **Array Elements**: `arr[i]++`, `++arr[i]` (the array reference and index are evaluated strictly once)
+3. **Pointer Dereferences**: `(*p)++`, `++(*p)` (modifies the target memory location)
+4. **Struct Fields**: `pt.x++`, `pPt->x++`
+
+#### Usage Contexts
+
+- **Standalone Statements**: `x++;`, `--arr[0];`, `(*p)++;`
+- **Expressions & Arguments**: `int res = calc(a++, ++b);`
+- **For-Loop Stepping Clauses**: `for (int i = 0; i < n; i++)`
+
+#### Compile-Time Safety & Diagnostics
+
+- **Const Immutability (`SEM_CONST_IMMUTABLE` / `E2006`)**: Applying `++` or `--` to a constant symbol declared with `const` is rejected at compile time.
+- **Pointer Arithmetic Prohibition (`TYPE_POINTER_ARITHMETIC` / `E3014`)**: Direct pointer arithmetic (`p++`, `--p` where `p` is of pointer type `T*`) is forbidden. Only value dereferences (`(*p)++`) are valid.
+
+### 8.4. Compound Assignment Operators
+
+LemonC supports five compound assignment operators:
+
+```text
++=    -=    *=    /=    %=
+```
+
+#### Single-Evaluation of Left-Hand Side (LHS)
+
+A critical requirement of compound assignment is that the target location (LHS) is evaluated **strictly once**. LemonC's `AstToIrLowerer` guarantees this by caching array references and index values (or pointer/field bases) in temporary IR registers before reading, computing, and writing back:
+
+```c
+int arr[5];
+int i = 0;
+arr[i++] += 5; // Evaluates i++ exactly once! arr[0] is modified, and i becomes 1.
+```
+
+### 8.5. Conditional (Ternary) Operator (`? :`)
+
+The conditional operator provides compact, value-producing branching:
+
+```c
+condition ? exprTrue : exprFalse
+```
+
+- **Semantics**: If `condition` is `true`, only `exprTrue` is evaluated; otherwise only `exprFalse` is evaluated.
+- **Control Flow Lowering**: The ternary expression is lowered directly into branchy control flow in LemonIR with temporary/phi merging, ensuring short-circuit evaluation without unnecessary overhead.
+- **Type Promotion**: If `exprTrue` and `exprFalse` have different numeric types, automatic widening is applied (e.g. `(cond) ? 1 : 2.5` produces `double`).
+- **AST Optimization**: If `condition` is a compile-time constant, `AstOptimizer` eliminates the untaken branch entirely.
+
+### 8.6. Complete Operator Precedence and Associativity Table
+
+The table below summarizes the exact operator precedence and associativity implemented across the LemonC pipeline (Lexer, Parser, AST, Semantic, LemonIR, JVM, and C backend), ordered from highest precedence (Level 1) to lowest precedence (Level 10):
+
+| Precedence | Operator | Description | Associativity |
+|---|---|---|---|
+| **1 (Highest)** | `()` | Function call / grouping | Left-to-right |
+| | `[]` | Array subscripting | Left-to-right |
+| | `.` | Struct member access | Left-to-right |
+| | `->` | Pointer struct member access | Left-to-right |
+| | `x++`, `x--` | Postfix increment / decrement | Left-to-right |
+| **2** | `++x`, `--x` | Prefix increment / decrement | Right-to-left |
+| | `+`, `-` | Unary plus, unary minus | Right-to-left |
+| | `!` | Logical NOT | Right-to-left |
+| | `~` | Bitwise NOT | Right-to-left |
+| | `*` | Pointer dereference | Right-to-left |
+| | `&` | Address-of | Right-to-left |
+| **3** | `*`, `/`, `%` | Multiplication, division, remainder | Left-to-right |
+| **4** | `+`, `-` | Addition, subtraction | Left-to-right |
+| **5** | `<`, `<=`, `>`, `>=` | Relational comparisons | Left-to-right |
+| **6** | `==`, `!=` | Equality and inequality | Left-to-right |
+| **7** | `&&` | Logical AND (short-circuiting) | Left-to-right |
+| **8** | `\|\|` | Logical OR (short-circuiting) | Left-to-right |
+| **9** | `? :` | Conditional (ternary) | Right-to-left |
+| **10 (Lowest)** | `=`, `+=`, `-=`, `*=`, `/=`, `%=` | Simple & compound assignment | Right-to-left |
 
 ---
 
@@ -893,6 +988,93 @@ Output:
 array-lengths=6
 ```
 
+### 17.3. C-like Syntax Operators Showcase (`examples/operator/OperatorShowcase.lemon`)
+
+Demonstrates prefix/postfix increment and decrement, compound assignment with single evaluation of LHS, unary operators (`+`, `-`, `!`, `~`), ternary operators, and for-loop stepping:
+
+```c
+struct Point {
+    int x;
+    int y;
+}
+
+int addAndReport(int a, int b) {
+    return a + b;
+}
+
+void main() {
+    int a = 5;
+    int postA = a++;
+    int preA = ++a;
+    a += 10;
+    a -= 3;
+    a *= 2;
+    a /= 4;
+    a %= 4;
+
+    int arr[3];
+    arr[0] = 100;
+    arr[0]++;
+    int idx = 1;
+    arr[idx++] += 25; // idx evaluated once
+
+    int val = 40;
+    int* p = &val;
+    (*p)++;
+    *p += 8;
+
+    struct Point pt;
+    pt.x = 10;
+    pt.y = 20;
+    pt.x++;
+    struct Point* pPt = &pt;
+    pPt->x += 5;
+
+    int bitNotTen = ~10; // -11
+    int maxVal = (a > 10) ? a : 999;
+    int callRes = addAndReport(a++, ++val);
+}
+```
+
+Output:
+
+```text
+postA=5, a=6
+preA=7, a=7
+postDecA=7, a=6
+preDecA=5, a=5
+after standalone inc: a=6
+after standalone dec: a=5
+a += 10 -> 15
+a -= 3 -> 12
+a *= 2 -> 24
+a /= 4 -> 6
+a mod_assign 4 -> 2
+arr[0]++ -> 101
+++arr[0] -> 102
+arr[0]-- -> 101
+--arr[0] -> 100
+arr[0] += 50 -> 150
+arr[1]=225, idx=2
+(*p)++ -> 41
+++(*p) -> 42
+(*p)-- -> 41
+--(*p) -> 40
+*p += 8 -> 48
+*p -= 3 -> 45
+pt.x=11, pt.y=21
+pPt->x=16, pPt->y=42
++num=15, -num=-15
+!flag is true
+~0=-1, ~10=-11
+maxVal=999, minVal=2
+grade=2
+callRes=31, arg1=11, arg2=21
+for-loop sum=10
+```
+
+Verified with byte-for-byte output equivalence across both JVM direct bytecode and C99 native targets.
+
 ---
 
 ## 18. Compiler Diagnostics & Error Codes
@@ -952,9 +1134,9 @@ mvn clean test
 ```
 
 Current Test Baseline:
-- **445 Automated Tests Passing** (0 failures, 0 errors, 0 skipped).
+- **478 Automated Tests Passing** (0 failures, 0 errors, 0 skipped).
 - **95+ Root & Integration Example Programs** compiled to `.class` files by the JVM backend, executed on a real JVM, and verified byte-for-byte against `examples/example-output-manifest.tsv`.
-- **Dual-Backend Parity Tests** (`PointerMultiBackendTest`, `NativeEndToEndTest`): LemonIR -> JVM and LemonIR -> C produce 100% identical outputs.
+- **Dual-Backend Parity Tests** (`OperatorTest`, `PointerMultiBackendTest`, `NativeEndToEndTest`): LemonIR -> JVM and LemonIR -> C produce 100% identical outputs.
 
 ---
 

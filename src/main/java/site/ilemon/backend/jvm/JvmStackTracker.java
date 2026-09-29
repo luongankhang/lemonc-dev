@@ -225,10 +225,10 @@ final class JvmStackTracker {
             case 0x5F: // swap
                 swap(stack);
                 break;
-            case 0x60, 0x64, 0x68, 0x6C, 0x70, 0x7E, 0x7F, 0x80: // iadd/isub/imul/idiv/irem/iand/ior/ixor
+            case 0x60, 0x64, 0x68, 0x6C, 0x70, 0x7E, 0x7F, 0x80, 0x82: // iadd/isub/imul/idiv/irem/iand/ior/ixor
                 pop2Push1(stack);
                 break;
-            case 0x61, 0x65, 0x69, 0x6D, 0x71: // ladd/lsub/lmul/ldiv/lrem
+            case 0x61, 0x65, 0x69, 0x6D, 0x71, 0x81, 0x83: // ladd/lsub/lmul/ldiv/lrem/lor/lxor
                 stack.pop(4);
                 stack.push(2);
                 break;

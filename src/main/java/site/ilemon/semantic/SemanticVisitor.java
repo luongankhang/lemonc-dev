@@ -487,6 +487,9 @@ public class SemanticVisitor implements ISemanticVisitor {
                 && "0".equals(String.valueOf(zero.getValue()))) {
             return sub.getRight() instanceof Ast.Expr.Number;
         }
+        if (initializer instanceof Ast.Expr.UnaryMinus um) {
+            return um.getExp() instanceof Ast.Expr.Number;
+        }
         return false;
     }
 
@@ -516,6 +519,10 @@ public class SemanticVisitor implements ISemanticVisitor {
         if (initializer instanceof Ast.Expr.Sub sub) {
             String right = resolveLiteralValue(sub.getRight());
             return right == null ? null : "-" + right;
+        }
+        if (initializer instanceof Ast.Expr.UnaryMinus um) {
+            String op = resolveLiteralValue(um.getExp());
+            return op == null ? null : "-" + op;
         }
         return null;
     }
@@ -742,7 +749,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
     }
 
-    /** A struct field may be a scalar, bool, array, string, another struct, or pointer — never void. */
+    /** A struct field may be a scalar, bool, array, string, another struct, or pointer Ã¢â‚¬â€ never void. */
     private void validateStructFieldType(Ast.StructDecl owner, Ast.Declare.DeclareSingle field) {
         Ast.Type.T type = field.getType();
         if (type == null) {
@@ -2007,6 +2014,14 @@ public class SemanticVisitor implements ISemanticVisitor {
                 return null;
             }
         }
+        if (expression instanceof Ast.Expr.UnaryMinus um
+                && um.getExp() instanceof Ast.Expr.Number number) {
+            try {
+                return -Long.parseLong(number.getValue().toString());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
         return null;
     }
 
@@ -2380,5 +2395,79 @@ public class SemanticVisitor implements ISemanticVisitor {
             collectVarDeclNodes(forStmt.getBody(), decls);
         }
     }
-}
+    private void checkIncDecOperand(Ast.Expr.T target, int lineNum, site.ilemon.util.SourceSpan span, String op) {
+        if (target instanceof Ast.Expr.Id id) {
+            MethodVarTable assignTable = this.methodVarTable.get(currMethodName);
+            boolean isLocalTarget = assignTable != null && assignTable.get(id.getId()) != null;
+            if (!isLocalTarget && resolveConst(id.getId()) != null) {
+                semanticError(DiagnosticCodes.SEM_CONST_IMMUTABLE,
+                        "cannot assign to constant '" + id.getId() + "': constants are immutable",
+                        lineNum, span, "immutable constant",
+                        "constants cannot be reassigned after declaration", null);
+                return;
+            }
+        } else if (!(target instanceof Ast.Expr.Field || target instanceof Ast.Expr.ArrayAccess || target instanceof Ast.Expr.Deref)) {
+            error(lineNum, op + " requires a modifiable lvalue operand");
+        }
+    }
 
+    @Override
+    public void visit(Ast.Expr.PreInc obj) {
+        checkIncDecOperand(obj.getExp(), obj.getLineNum(), obj.getSpan(), "++");
+        this.visit(obj.getExp());
+        if (!isNumberType(this.currType)) { error(obj.getLineNum(), "++ requires a numeric operand"); }
+    }
+    @Override
+    public void visit(Ast.Expr.PostInc obj) {
+        checkIncDecOperand(obj.getExp(), obj.getLineNum(), obj.getSpan(), "++");
+        this.visit(obj.getExp());
+        if (!isNumberType(this.currType)) { error(obj.getLineNum(), "++ requires a numeric operand"); }
+    }
+    @Override
+    public void visit(Ast.Expr.PreDec obj) {
+        checkIncDecOperand(obj.getExp(), obj.getLineNum(), obj.getSpan(), "--");
+        this.visit(obj.getExp());
+        if (!isNumberType(this.currType)) { error(obj.getLineNum(), "-- requires a numeric operand"); }
+    }
+    @Override
+    public void visit(Ast.Expr.PostDec obj) {
+        checkIncDecOperand(obj.getExp(), obj.getLineNum(), obj.getSpan(), "--");
+        this.visit(obj.getExp());
+        if (!isNumberType(this.currType)) { error(obj.getLineNum(), "-- requires a numeric operand"); }
+    }
+    @Override
+    public void visit(Ast.Expr.UnaryPlus obj) {
+        this.visit(obj.getExp());
+        if (!isNumberType(this.currType)) { error(obj.getLineNum(), "+ requires a numeric operand"); }
+    }
+    @Override
+    public void visit(Ast.Expr.UnaryMinus obj) {
+        this.visit(obj.getExp());
+        if (!isNumberType(this.currType)) { error(obj.getLineNum(), "- requires a numeric operand"); }
+    }
+    @Override
+    public void visit(Ast.Expr.BitNot obj) {
+        this.visit(obj.getExp());
+        if (!isIntegerLike(this.currType)) { error(obj.getLineNum(), "~ requires an integer operand"); }
+    }
+    @Override
+    public void visit(Ast.Expr.Ternary obj) {
+        this.visit(obj.getCondition());
+        if (this.currType.getKind() != TypeKind.BOOL) { error(obj.getLineNum(), "ternary condition must be bool"); }
+        this.visit(obj.getTrueExpr());
+        Ast.Type.T tType = this.currType;
+        this.visit(obj.getFalseExpr());
+        if (!isMatch(tType, this.currType)) {
+            Ast.Type.T promoted = promoteNumeric(tType, this.currType);
+            if (promoted != null) { this.currType = promoted; }
+            else { error(obj.getLineNum(), "ternary branches must have matching types"); }
+        }
+    }
+
+    @Override
+    public void visit(Ast.Stmt.ExprStmt obj) {
+        if (obj.getExpr() != null) {
+            this.visit(obj.getExpr());
+        }
+    }
+}

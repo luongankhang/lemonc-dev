@@ -81,6 +81,7 @@ final class JvmInstructionEmitter {
     private static final int IAND = 0x7E;
     private static final int IOR = 0x80;
     private static final int IXOR = 0x82;
+    private static final int LXOR = 0x83;
     private static final int I2L = 0x85;
     private static final int I2F = 0x86;
     private static final int I2D = 0x87;
@@ -234,6 +235,7 @@ final class JvmInstructionEmitter {
             case OR -> emitIntBinary(instruction, IOR);
             case XOR -> emitIntBinary(instruction, IXOR);
             case CMP -> emitCompare(instruction);
+            case BIT_NOT -> emitBitNot(instruction);
             case CONVERT -> emitConvert(instruction);
             case LOAD -> emitLoad(instruction);
             case STORE -> emitStore(instruction);
@@ -365,6 +367,19 @@ final class JvmInstructionEmitter {
         loadValue(operands.get(0));
         loadValue(operands.get(1));
         code.simple(opcode);
+        store(instruction.result());
+    }
+    private void emitBitNot(IrInstruction instruction) {
+        IrValue operand = instruction.operands().get(0);
+        IrType type = operand.type();
+        loadValue(operand);
+        if (type.kind() == IrType.Kind.LONG) {
+            code.ldc2w(pool.longConstant(-1L));
+            code.simple(LXOR);
+        } else {
+            code.simple(ICONST_M1);
+            code.simple(IXOR);
+        }
         store(instruction.result());
     }
 

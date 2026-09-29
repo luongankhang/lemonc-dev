@@ -73,6 +73,16 @@ public enum TokenKind {
 		Assign,
 		Amp,
 		Unknown, PrintLine,
+		Inc,		// ++
+		Dec,		// --
+		AddAssign,	// +=
+		SubAssign,	// -=
+		MulAssign,	// *=
+		DivAssign,	// /=
+		ModAssign,	// %=
+		Question,	// ?
+		Colon,		// :
+		Tilde,		// ~
 		Struct,				// struct keyword
 		Arrow,				// -> pointer field access
 

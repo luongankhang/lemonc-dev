@@ -201,12 +201,11 @@ public class Lexer {
                 if (c == '!') return LexerState.IN_NOT;
                 if (c == '&') return LexerState.IN_AND;
                 if (c == '|') return LexerState.IN_OR;
-                if (c == '-') {
-                    // '-' starts either the subtraction operator or the '->'
-                    // pointer-field operator; look ahead to disambiguate.
-                    return peek(1) == '>' ? LexerState.IN_ARROW : LexerState.DONE;
-                }
+                if (c == '+') return LexerState.IN_PLUS;
+                if (c == '-') return LexerState.IN_MINUS;
+                if (c == '*') return LexerState.IN_MUL;
                 if (c == '/') return LexerState.IN_DIV;
+                if (c == '%') return LexerState.IN_MOD;
                 if (isSingleCharToken(c)) return LexerState.DONE;
                 if (c == '\0') return LexerState.DONE;
                 return LexerState.ERROR;
@@ -240,16 +239,16 @@ public class Lexer {
                 return LexerState.DONE;
 
             case IN_AND:
-                // "&&" consumes the second ampersand; a lone '&' is the address-of
-                // operator and simply terminates the token.
                 return LexerState.DONE;
 
             case IN_OR:
                 if (c == '|') return LexerState.DONE;
                 return LexerState.ERROR;
 
-            case IN_ARROW:
-                // The lookahead in START guarantees the next char is '>' here.
+            case IN_PLUS:
+            case IN_MINUS:
+            case IN_MUL:
+            case IN_MOD:
                 return LexerState.DONE;
 
             case IN_DIV:
@@ -262,9 +261,9 @@ public class Lexer {
     }
 
     private boolean isSingleCharToken(char c) {
-        return c == '+' || c == '-' || c == '*' || c == '%' ||
-               c == '{' || c == '}' || c == '(' || c == ')' ||
-               c == '[' || c == ']' || c == ';' || c == ',' || c == '.';
+        return c == '{' || c == '}' || c == '(' || c == ')' ||
+               c == '[' || c == ']' || c == ';' || c == ',' || c == '.' ||
+               c == '?' || c == ':' || c == '~';
     }
 
     private boolean isIdentifierStart(char c) {
@@ -291,6 +290,9 @@ public class Lexer {
             case ',': return TokenKind.Comma;
             case '.': return TokenKind.Dot;
             case '@': return TokenKind.At;
+            case '?': return TokenKind.Question;
+            case ':': return TokenKind.Colon;
+            case '~': return TokenKind.Tilde;
             default: return TokenKind.Unknown;
         }
     }
@@ -378,67 +380,6 @@ public class Lexer {
                 SourceSpan.of(className, startOffset, position, startLine, startColumn, line, column));
     }
     
-    private TokenKind getTokenKindForState(LexerState state, String lexeme) {
-        switch (state) {
-            case START:
-                if (lexeme.length() == 1) {
-                    return getSingleCharTokenKind(lexeme.charAt(0));
-                }
-                break;
-
-            case IN_ID:
-                TokenKind kind = KEYWORDS.get(lexeme);
-                if (kind != null) {
-                    return kind;
-                }
-                return TokenKind.Id;
-
-            case IN_NUM:
-                return TokenKind.Num;
-
-            case IN_FLOAT:
-                return TokenKind.FloatLiteral;
-
-            case IN_STRING:
-                return TokenKind.String;
-
-            case IN_ASSIGN:
-                if (lexeme.equals("==")) return TokenKind.EQ;
-                return TokenKind.Assign;
-
-            case IN_LT:
-                if (lexeme.equals("<=")) return TokenKind.LTE;
-                return TokenKind.LT;
-
-            case IN_GT:
-                if (lexeme.equals(">=")) return TokenKind.GTE;
-                return TokenKind.GT;
-
-            case IN_NOT:
-                if (lexeme.equals("!=")) return TokenKind.NEQ;
-                return TokenKind.Not;
-
-            case IN_AND:
-                if (lexeme.equals("&&")) return TokenKind.And;
-                return TokenKind.Amp;
-
-            case IN_OR:
-                return TokenKind.Or;
-
-            case IN_ARROW:
-                if (lexeme.equals("->")) return TokenKind.Arrow;
-                // fall through to default error path for a lone '-'
-                break;
-
-            case IN_DIV:
-                return TokenKind.Div;
-
-            default:
-                break;
-        }
-        // Fallback to makeToken for error handling
-        return null;
-    }
 
     private boolean shouldConsumeOnDone(LexerState state, char c) {
         switch (state) {
@@ -447,21 +388,22 @@ public class Lexer {
             case IN_STRING:
                 return c == '"';
             case IN_ASSIGN:
-                return c == '=';
             case IN_LT:
-                return c == '=';
             case IN_GT:
-                return c == '=';
             case IN_NOT:
                 return c == '=';
             case IN_AND:
                 return c == '&';
             case IN_OR:
                 return c == '|';
-            case IN_ARROW:
-                return c == '>';
+            case IN_PLUS:
+                return c == '+' || c == '=';
+            case IN_MINUS:
+                return c == '-' || c == '=' || c == '>';
+            case IN_MUL:
             case IN_DIV:
-                return false;
+            case IN_MOD:
+                return c == '=';
             default:
                 return false;
         }
@@ -518,12 +460,28 @@ public class Lexer {
             case IN_OR:
                 return new Token(TokenKind.Or, lexeme, span);
 
-            case IN_ARROW:
+            case IN_PLUS:
+                if (lexeme.equals("++")) return new Token(TokenKind.Inc, lexeme, span);
+                if (lexeme.equals("+=")) return new Token(TokenKind.AddAssign, lexeme, span);
+                return new Token(TokenKind.Add, lexeme, span);
+
+            case IN_MINUS:
+                if (lexeme.equals("--")) return new Token(TokenKind.Dec, lexeme, span);
+                if (lexeme.equals("-=")) return new Token(TokenKind.SubAssign, lexeme, span);
                 if (lexeme.equals("->")) return new Token(TokenKind.Arrow, lexeme, span);
-                break;
+                return new Token(TokenKind.Sub, lexeme, span);
+
+            case IN_MUL:
+                if (lexeme.equals("*=")) return new Token(TokenKind.MulAssign, lexeme, span);
+                return new Token(TokenKind.Mul, lexeme, span);
 
             case IN_DIV:
+                if (lexeme.equals("/=")) return new Token(TokenKind.DivAssign, lexeme, span);
                 return new Token(TokenKind.Div, lexeme, span);
+
+            case IN_MOD:
+                if (lexeme.equals("%=")) return new Token(TokenKind.ModAssign, lexeme, span);
+                return new Token(TokenKind.Mod, lexeme, span);
 
             default:
                 break;

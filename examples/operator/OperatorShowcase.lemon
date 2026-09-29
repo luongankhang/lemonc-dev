@@ -1,0 +1,134 @@
+struct Point {
+    int x;
+    int y;
+}
+
+int addAndReport(int a, int b) {
+    return a + b;
+}
+
+void main() {
+    // 1. Local variable prefix and postfix ++/--
+    int a = 5;
+    int postA = a++;
+    printf("postA=%d, a=%d\n", postA, a); // postA=5, a=6
+
+    int preA = ++a;
+    printf("preA=%d, a=%d\n", preA, a);   // preA=7, a=7
+
+    int postDecA = a--;
+    printf("postDecA=%d, a=%d\n", postDecA, a); // postDecA=7, a=6
+
+    int preDecA = --a;
+    printf("preDecA=%d, a=%d\n", preDecA, a);   // preDecA=5, a=5
+
+    // Standalone increment/decrement statements
+    a++;
+    printf("after standalone inc: a=%d\n", a); // 6
+    --a;
+    printf("after standalone dec: a=%d\n", a); // 5
+
+    // 2. Compound assignment operators on local variable
+    a += 10; // 15
+    printf("a += 10 -> %d\n", a);
+    a -= 3;  // 12
+    printf("a -= 3 -> %d\n", a);
+    a *= 2;  // 24
+    printf("a *= 2 -> %d\n", a);
+    a /= 4;  // 6
+    printf("a /= 4 -> %d\n", a);
+    a %= 4;  // 2
+    printf("a mod_assign 4 -> %d\n", a);
+
+    // 3. Array element ++/-- and compound assignment
+    int arr[3];
+    arr[0] = 100;
+    arr[1] = 200;
+    arr[2] = 300;
+
+    arr[0]++;
+    printf("arr[0]++ -> %d\n", arr[0]); // 101
+    ++arr[0];
+    printf("++arr[0] -> %d\n", arr[0]); // 102
+    arr[0]--;
+    printf("arr[0]-- -> %d\n", arr[0]); // 101
+    --arr[0];
+    printf("--arr[0] -> %d\n", arr[0]); // 100
+
+    arr[0] += 50; // 150
+    printf("arr[0] += 50 -> %d\n", arr[0]);
+
+    // Compound assignment evaluates LHS strictly once
+    int idx = 1;
+    arr[idx++] += 25; // arr[1] += 25 -> 225, idx becomes 2
+    printf("arr[1]=%d, idx=%d\n", arr[1], idx);
+
+    // 4. Pointer dereference ++/-- and compound assignment
+    int val = 40;
+    int* p = &val;
+    (*p)++;
+    printf("(*p)++ -> %d\n", *p); // 41
+    ++(*p);
+    printf("++(*p) -> %d\n", *p); // 42
+    (*p)--;
+    printf("(*p)-- -> %d\n", *p); // 41
+    --(*p);
+    printf("--(*p) -> %d\n", *p); // 40
+    *p += 8;
+    printf("*p += 8 -> %d\n", *p); // 48
+    *p -= 3;
+    printf("*p -= 3 -> %d\n", *p); // 45
+
+    // 5. Struct field ++/-- and compound assignment
+    struct Point pt;
+    pt.x = 10;
+    pt.y = 20;
+    pt.x++;
+    ++pt.y;
+    printf("pt.x=%d, pt.y=%d\n", pt.x, pt.y); // 11, 21
+
+    struct Point* pPt = &pt;
+    pPt->x += 5;
+    pPt->y *= 2;
+    printf("pPt->x=%d, pPt->y=%d\n", pPt->x, pPt->y); // 16, 42
+
+    // 6. Unary operators: +, -, !, ~
+    int num = 15;
+    int pos = +num;
+    int neg = -num;
+    printf("+num=%d, -num=%d\n", pos, neg); // 15, -15
+
+    bool flag = false;
+    bool notFlag = !flag;
+    if (notFlag) {
+        printf("!flag is true\n");
+    }
+
+    int bitNotZero = ~0; // -1 in two's complement
+    int bitNotTen = ~10; // -11
+    printf("~0=%d, ~10=%d\n", bitNotZero, bitNotTen);
+
+    // 7. Ternary operator: condition ? a : b
+    int maxVal = (a > 10) ? a : 999;
+    int minVal = (a < 10) ? a : 999;
+    printf("maxVal=%d, minVal=%d\n", maxVal, minVal); // 999, 2
+
+    // Nested ternary
+    int score = 85;
+    int grade = (score >= 90) ? 1 : ((score >= 80) ? 2 : 3);
+    printf("grade=%d\n", grade); // 2
+
+    // 8. Function call argument evaluation with pre/post increment
+    int arg1 = 10;
+    int arg2 = 20;
+    int callRes = addAndReport(arg1++, ++arg2);
+    printf("callRes=%d, arg1=%d, arg2=%d\n", callRes, arg1, arg2); // 31, 11, 21
+
+    // 9. For loop with postfix increment
+    int sum = 0;
+    int i = 0;
+    for (i = 0; i < 5; i++) {
+        sum += i;
+    }
+    printf("for-loop sum=%d\n", sum); // 10
+}

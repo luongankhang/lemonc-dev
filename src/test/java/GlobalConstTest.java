@@ -178,11 +178,8 @@ public class GlobalConstTest {
 
     @Test
     public void rejectsIncrementAndCompoundAssignmentOperators() throws Exception {
-        // The language has no ++/--/+=/-= tokens, so they are rejected at parse
-        // time and constants can never be mutated through them.
         for (String stmt : new String[]{"X++;", "X--;", "X += 1;", "X -= 1;"}) {
-            ParseFailure failure = parseFailure("const int X = 1;\nvoid main() { " + stmt + " }\n");
-            assertTrue(failure.message(), failure.message().contains("expected 'Assign'"));
+            assertConstImmutable("const int X = 1;\nvoid main() { " + stmt + " }\n", "X");
         }
     }
 

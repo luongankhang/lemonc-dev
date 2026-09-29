@@ -101,6 +101,9 @@ public final class CInstructionEmitter {
                 String sym = instruction.op() == IrInstruction.Op.AND ? (isBool ? "&&" : "&") : (isBool ? "||" : "|");
                 yield result + (args.length < 2 ? (args.length == 0 ? "0" : args[0]) : args[0] + " " + sym + " " + args[1]) + ";";
             }
+            case BIT_NOT -> {
+                yield result + (args.length == 0 ? "0" : "~" + args[0]) + ";";
+            }
             case XOR -> {
                 boolean isBool = instruction.result() != null && instruction.result().type().kind() == IrType.Kind.BOOL;
                 if (isBool) {
