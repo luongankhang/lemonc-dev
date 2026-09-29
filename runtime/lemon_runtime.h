@@ -10,7 +10,14 @@
 #include "include/lemon_error.h"
 #include "include/lemon_floatfmt.h"
 
-void lemon_dealloc(void *ptr);
-void lemon_bounds_check(const void *array, size_t length, size_t index);
+LEMON_INLINE void lemon_dealloc(void *ptr) {
+    lemon_free(ptr);
+}
+
+LEMON_INLINE void lemon_bounds_check(const void *array, size_t length, size_t index) {
+    if (LEMON_UNLIKELY(array == NULL || index >= length)) {
+        lemon_panic_bounds(array, length, index);
+    }
+}
 
 #endif

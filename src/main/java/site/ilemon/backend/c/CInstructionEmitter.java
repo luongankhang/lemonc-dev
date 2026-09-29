@@ -214,7 +214,12 @@ public final class CInstructionEmitter {
                 ? null : instruction.operands().get(0).type();
         boolean throughPointer = rootType != null && rootType.kind() == IrType.Kind.POINTER;
         String[] links = path.isEmpty() ? new String[0] : path.split("\\.", -1);
-        StringBuilder expr = new StringBuilder(root);
+        StringBuilder expr = new StringBuilder();
+        if (throughPointer) {
+            expr.append("(lemon_require_ptr(").append(root).append("), ").append(root).append(")");
+        } else {
+            expr.append(root);
+        }
         for (int i = 0; i < links.length; i++) {
             if (i == 0 && throughPointer) {
                 expr.append("->");

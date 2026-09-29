@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "lemon_runtime_config.h"
 
 typedef struct lemon_type_info lemon_type_info;
 typedef struct lemon_object lemon_object;
@@ -17,9 +18,10 @@ struct lemon_type_info {
 };
 
 struct lemon_object {
+    uint32_t magic;
+    uint32_t flags;
     const lemon_type_info *type;
     size_t refcount;
-    uint32_t flags;
 };
 
 void lemon_object_init(lemon_object *object, const lemon_type_info *type);
@@ -27,5 +29,6 @@ void lemon_retain(void *object);
 void lemon_release(void *object);
 size_t lemon_retain_count(const lemon_object *object);
 void lemon_destroy(lemon_object *object);
+void lemon_object_validate_alive(const lemon_object *object, const char *op);
 
 #endif

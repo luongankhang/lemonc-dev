@@ -20,5 +20,7 @@ int main(void) {
     lemon_release(&left->object);
     lemon_release(&right->object);
     lemon_release(&values->object);
+
+    if (lemon_runtime_check_leaks() != 0) return 3;
     return 0;
 }
