@@ -32,12 +32,98 @@ public final class ArcOptimizer {
         function.removeEmptyBlocks();
     }
 
+    private record FieldLoadRecord(IrInstruction inst, String base, String field, String tempName) {}
+    private record RetainRecord(int index, IrInstruction retainInst, FieldLoadRecord loadRec) {}
+
     private void optimizeBlock(BasicBlock block, LivenessInfo liveness) {
         List<IrInstruction> instructions = block.instructionsView();
+        Set<IrInstruction> toRemove = Collections.newSetFromMap(new IdentityHashMap<>());
+
+        // Pass 1: Intra-block field load tracking & retain/release cancellation
+        Map<String, FieldLoadRecord> activeLoads = new HashMap<>();
+        Map<String, RetainRecord> pendingFieldRetains = new HashMap<>();
+
+        for (int i = 0; i < instructions.size(); i++) {
+            IrInstruction inst = instructions.get(i);
+
+            // Self-copy elimination: STRUCT_COPY x, [x]
+            if (inst.op() == IrInstruction.Op.STRUCT_COPY && inst.result() != null
+                    && inst.operands().size() == 1
+                    && inst.result().name().equals(inst.operands().get(0).name())) {
+                toRemove.add(inst);
+                continue;
+            }
+
+            // Track FIELD_LOAD
+            if (inst.op() == IrInstruction.Op.FIELD_LOAD && inst.result() != null && inst.operands().size() == 1) {
+                String temp = inst.result().name();
+                String base = inst.operands().get(0).name();
+                String field = inst.target() != null ? inst.target() : "";
+                activeLoads.put(temp, new FieldLoadRecord(inst, base, field, temp));
+            }
+
+            // Check if this instruction modifies any base
+            Set<String> modifiedBases = getModifiedBases(inst);
+            for (String modified : modifiedBases) {
+                activeLoads.entrySet().removeIf(e -> e.getValue().base().equals(modified));
+                pendingFieldRetains.entrySet().removeIf(e -> e.getValue().loadRec().base().equals(modified));
+            }
+
+            // If an external call passes an address containing base, invalidate base
+            if (inst.op() == IrInstruction.Op.EXTERNAL_CALL && !"lemon_retain".equals(inst.target()) && !"lemon_release".equals(inst.target())) {
+                for (IrValue op : inst.operands()) {
+                    String opName = op.name();
+                    activeLoads.entrySet().removeIf(e -> opName.contains(e.getValue().base()));
+                    pendingFieldRetains.entrySet().removeIf(e -> opName.contains(e.getValue().loadRec().base()));
+                }
+            }
+
+            if (isRetain(inst) && inst.operands().size() == 1) {
+                String operandName = inst.operands().get(0).name();
+                FieldLoadRecord loadRec = activeLoads.get(operandName);
+                if (loadRec != null) {
+                    String key = loadRec.base() + "." + loadRec.field();
+                    pendingFieldRetains.put(key, new RetainRecord(i, inst, loadRec));
+                }
+            } else if (isRelease(inst) && inst.operands().size() == 1) {
+                String operandName = inst.operands().get(0).name();
+                FieldLoadRecord loadRec = activeLoads.get(operandName);
+                if (loadRec != null) {
+                    String key = loadRec.base() + "." + loadRec.field();
+                    RetainRecord retainRec = pendingFieldRetains.remove(key);
+                    if (retainRec != null) {
+                        String retainTemp = retainRec.loadRec().tempName();
+                        String releaseTemp = loadRec.tempName();
+                        if (retainTemp.equals(releaseTemp)) {
+                            // Same temp used for retain and release
+                            if (countOperandUsesInBlock(instructions, retainTemp) == 2) {
+                                toRemove.add(retainRec.retainInst());
+                                toRemove.add(inst);
+                                toRemove.add(retainRec.loadRec().inst());
+                            }
+                        } else {
+                            // Two different temps loaded from same base.field
+                            int retainUses = countOperandUsesInBlock(instructions, retainTemp);
+                            int releaseUses = countOperandUsesInBlock(instructions, releaseTemp);
+                            if (retainUses == 1 && releaseUses == 1) {
+                                toRemove.add(retainRec.retainInst());
+                                toRemove.add(inst);
+                                toRemove.add(retainRec.loadRec().inst());
+                                toRemove.add(loadRec.inst());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         List<IrInstruction> optimized = new ArrayList<>(instructions.size());
         
         for (int i = 0; i < instructions.size(); i++) {
             IrInstruction inst = instructions.get(i);
+            if (toRemove.contains(inst)) {
+                continue;
+            }
             
             // Optimization 1: Self-assignment retain/release elimination
             // Pattern: retain(x); release(x) where x is the same variable
@@ -89,6 +175,32 @@ public final class ArcOptimizer {
         
         // Replace block instructions
         block.setInstructions(optimized);
+    }
+
+    private Set<String> getModifiedBases(IrInstruction inst) {
+        Set<String> modified = new HashSet<>();
+        if (inst.op() == IrInstruction.Op.FIELD_STORE && !inst.operands().isEmpty()) {
+            modified.add(inst.operands().get(0).name());
+        } else if (inst.op() == IrInstruction.Op.STRUCT_ZERO && inst.result() != null) {
+            modified.add(inst.result().name());
+        } else if (inst.op() == IrInstruction.Op.STRUCT_COPY && inst.result() != null) {
+            modified.add(inst.result().name());
+        } else if ((inst.op() == IrInstruction.Op.CONVERT || inst.op() == IrInstruction.Op.STORE) && inst.result() != null) {
+            modified.add(inst.result().name());
+        }
+        return modified;
+    }
+
+    private int countOperandUsesInBlock(List<IrInstruction> instructions, String varName) {
+        int count = 0;
+        for (IrInstruction inst : instructions) {
+            for (IrValue op : inst.operands()) {
+                if (op.name().equals(varName)) {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     private boolean isRetain(IrInstruction inst) {

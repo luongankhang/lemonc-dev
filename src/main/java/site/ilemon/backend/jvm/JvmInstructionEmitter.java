@@ -273,14 +273,12 @@ final class JvmInstructionEmitter {
         }
         JvmLocalAllocator.Local local = locals.get(result.name());
         if (local != null && cells.contains(result.name())) {
-            // Address-taken local: allocate its single-element cell, keep the
-            // cell reference in the local slot, then store the initial value
-            // into cell[0].
-            createCellArray(result.type());            // [cell]
-            code.simple(DUP);                         // [cell, cell]
-            code.store(ASTORE, local.slot());         // [cell]
-            pushIntConstant(0);                       // [cell, 0]
-            pushConstant(raw, result.type());         // [cell, 0, value]
+            // Address-taken local: allocate its single-element cell if needed,
+            // then store the initial value into cell[0].
+            ensureCell(result.name(), result.type());
+            code.load(ALOAD, local.slot());
+            pushIntConstant(0);
+            pushConstant(raw, result.type());
             code.simple(arrayStoreOpcode(result.type()));
             return;
         }
@@ -524,6 +522,7 @@ final class JvmInstructionEmitter {
         // FLOAT -> DOUBLE convert is a genuine float32 widening.
         JvmLocalAllocator.Local target = locals.get(instruction.result().name());
         if (target != null && cells.contains(target.name())) {
+            ensureCell(target.name(), to);
             // Assignment to an address-taken local: [cell, 0, value].
             code.load(ALOAD, target.slot());
             pushIntConstant(0);
@@ -684,6 +683,24 @@ final class JvmInstructionEmitter {
         }
     }
 
+    private void ensureCell(String varName, IrType type) {
+        if (cells.contains(varName) && !cellCreated.contains(varName)) {
+            JvmLocalAllocator.Local local = locals.get(varName);
+            if (local != null) {
+                if (type != null && type.kind() == IrType.Kind.STRUCT) {
+                    pushIntConstant(1);
+                    code.cpRef(ANEWARRAY, pool.classRef(structClassName(
+                            IrType.structType(type.name()))));
+                    code.store(ASTORE, local.slot());
+                } else {
+                    createCellArray(type != null ? type : local.type());
+                    code.store(ASTORE, local.slot());
+                }
+                cellCreated.add(varName);
+            }
+        }
+    }
+
     private void emitAddressOf(IrInstruction instruction) {
         IrValue operand = instruction.operands().get(0);
         JvmLocalAllocator.Local local = locals.get(operand.name());
@@ -691,6 +708,7 @@ final class JvmInstructionEmitter {
             throw new CompilerException(
                     "address-of target is not an addressable local cell: " + operand.name());
         }
+        ensureCell(operand.name(), operand.type());
         // The pointer value is the cell reference held in the local slot.
         code.load(ALOAD, local.slot());
         store(instruction.result());
@@ -817,14 +835,7 @@ final class JvmInstructionEmitter {
             JvmLocalAllocator.Local local = locals.get(result.name());
             int scratch = structScratchSlot();
             code.store(ASTORE, scratch);       // [] (obj stashed)
-            if (!cellCreated.contains(result.name())) {
-                // First write to this &-taken struct: materialize the cell.
-                pushIntConstant(1);            // [1]
-                code.cpRef(ANEWARRAY, pool.classRef(structClassName(
-                        IrType.structType(structNameOf(result)))));
-                code.store(ASTORE, local.slot()); // slot := cell
-                cellCreated.add(result.name());
-            }
+            ensureCell(result.name(), result.type());
             code.load(ALOAD, local.slot());    // [cell]
             pushIntConstant(0);                // [cell, 0]
             code.load(ALOAD, scratch);         // [cell, 0, obj]
@@ -1119,6 +1130,7 @@ final class JvmInstructionEmitter {
         JvmLocalAllocator.Local local = locals.get(value.name());
         if (local != null) {
             if (cells.contains(value.name())) {
+                ensureCell(value.name(), local.type());
                 // Value read of an address-taken local: load cell[0].
                 code.load(ALOAD, local.slot());
                 pushIntConstant(0);

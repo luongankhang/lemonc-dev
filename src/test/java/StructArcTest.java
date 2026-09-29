@@ -292,4 +292,149 @@ public class StructArcTest {
         assertTrue(output.contains("BOUNDS_CHECK h.arr"));
         assertTrue(output.contains("RELEASE h.arr"));
     }
+
+    @Test
+    public void zeroIterationLoopWithStruct_Parity() throws Exception {
+        String code = """
+                struct Vector {
+                    int data[4];
+                };
+
+                void main() {
+                    int i = 0;
+                    for (i = 0; i < 0; i++) {
+                        struct Vector v;
+                    }
+                    printf("zero loop ok\\n");
+                }
+                """;
+        Path file = write("ZeroLoopTest.lemon", code);
+        assertOutputsMatch(file, "ZeroLoopTest", "zero loop ok\n");
+    }
+
+    @Test
+    public void loopIterationScopingAndNoLeak_Parity() throws Exception {
+        String code = """
+                struct Vector {
+                    int id;
+                    int data[2];
+                };
+
+                void main() {
+                    int sum = 0;
+                    int i = 0;
+                    for (i = 0; i < 50; i++) {
+                        struct Vector v;
+                        v.id = i;
+                        v.data[0] = i;
+                        v.data[1] = i * 2;
+                        sum += v.data[0] + v.data[1];
+                    }
+                    printf("sum=%d\\n", sum);
+                }
+                """;
+        Path file = write("LoopScopingDemo.lemon", code);
+        assertOutputsMatch(file, "LoopScopingDemo", "sum=3675\n");
+    }
+
+    @Test
+    public void structBreakAndContinueScopeReleases_Parity() throws Exception {
+        String code = """
+                struct Vector {
+                    int data[2];
+                };
+
+                void main() {
+                    int count = 0;
+                    int i = 0;
+                    for (i = 0; i < 10; i++) {
+                        struct Vector v;
+                        v.data[0] = i;
+                        if (i % 2 == 0) {
+                            continue;
+                        }
+                        if (i > 7) {
+                            break;
+                        }
+                        count += v.data[0];
+                    }
+                    printf("count=%d\\n", count);
+                }
+                """;
+        Path file = write("BreakContinueDemo.lemon", code);
+        assertOutputsMatch(file, "BreakContinueDemo", "count=16\n");
+    }
+
+    @Test
+    public void earlyReturnWithInnerScopesAndBorrowedParams_Parity() throws Exception {
+        String code = """
+                struct Box {
+                    int val[2];
+                };
+
+                int inspectBox(struct Box b, int flag) {
+                    if (flag > 0) {
+                        struct Box inner;
+                        inner.val[0] = b.val[0] * 10;
+                        return inner.val[0];
+                    }
+                    return b.val[1];
+                }
+
+                void main() {
+                    struct Box b;
+                    b.val[0] = 7;
+                    b.val[1] = 99;
+                    int r1 = inspectBox(b, 1);
+                    int r2 = inspectBox(b, 0);
+                    printf("r1=%d, r2=%d\\n", r1, r2);
+                }
+                """;
+        Path file = write("EarlyReturnDemo.lemon", code);
+        assertOutputsMatch(file, "EarlyReturnDemo", "r1=70, r2=99\n");
+    }
+
+    @Test
+    public void structSelfAssignmentOptimization_Parity() throws Exception {
+        String code = """
+                struct Vector {
+                    int data[3];
+                };
+
+                void main() {
+                    struct Vector v;
+                    v.data[0] = 11;
+                    v.data[1] = 22;
+                    v.data[2] = 33;
+                    v = v;
+                    printf("%d %d %d\\n", v.data[0], v.data[1], v.data[2]);
+                }
+                """;
+        Path file = write("SelfAssignDemo.lemon", code);
+        assertOutputsMatch(file, "SelfAssignDemo", "11 22 33\n");
+    }
+
+    @Test
+    public void discardedStructReturnReleased_Parity() throws Exception {
+        String code = """
+                struct Vector {
+                    int data[2];
+                };
+
+                struct Vector makeVec(int x, int y) {
+                    struct Vector v;
+                    v.data[0] = x;
+                    v.data[1] = y;
+                    return v;
+                }
+
+                void main() {
+                    makeVec(10, 20);
+                    struct Vector v = makeVec(30, 40);
+                    printf("ok: %d %d\\n", v.data[0], v.data[1]);
+                }
+                """;
+        Path file = write("DiscardedReturnDemo.lemon", code);
+        assertOutputsMatch(file, "DiscardedReturnDemo", "ok: 30 40\n");
+    }
 }

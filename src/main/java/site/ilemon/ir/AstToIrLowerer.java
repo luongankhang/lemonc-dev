@@ -17,7 +17,24 @@ public final class AstToIrLowerer {
     /** Program-level constants (including {@code alias_NAME} re-exports from imports). */
     private List<Ast.ConstDecl> programConsts = List.of();
 
-    private record LoopContext(BasicBlock breakTarget, BasicBlock continueTarget) {}
+    private enum ScopeKind {
+        METHOD,
+        BLOCK,
+        LOOP_FOR,
+        LOOP_BODY
+    }
+
+    private static final class LexicalScope {
+        final ScopeKind kind;
+        final List<String> managedVars = new ArrayList<>();
+        final List<IrValue> tempRvalues = new ArrayList<>();
+
+        LexicalScope(ScopeKind kind) {
+            this.kind = kind;
+        }
+    }
+
+    private record LoopContext(BasicBlock breakTarget, BasicBlock continueTarget, LexicalScope forScope, LexicalScope bodyScope) {}
 
     private final Map<String, IrType> methodReturnTypes = new HashMap<>();
     private final Map<String, List<IrType>> methodParamTypes = new HashMap<>();
@@ -96,7 +113,6 @@ public final class AstToIrLowerer {
 
         List<IrValue> params = new ArrayList<>();
         Map<String, IrType> variableTypes = new HashMap<>();
-        Set<String> managedLocals = new LinkedHashSet<>();
 
         if (method.getFormals() != null) {
             for (Ast.Declare.T formal : method.getFormals()) {
@@ -104,9 +120,6 @@ public final class AstToIrLowerer {
                     IrType t = toIrType(d.getType());
                     params.add(new IrValue(d.getId(), t));
                     variableTypes.put(d.getId(), t);
-                    if (isManaged(t) || !getManagedPaths(t).isEmpty()) {
-                        managedLocals.add(d.getId());
-                    }
                 }
             }
         }
@@ -116,9 +129,6 @@ public final class AstToIrLowerer {
                 if (local instanceof Ast.Declare.DeclareSingle d) {
                     IrType t = toIrType(d.getType());
                     variableTypes.put(d.getId(), t);
-                    if (isManaged(t) || !getManagedPaths(t).isEmpty()) {
-                        managedLocals.add(d.getId());
-                    }
                 }
             }
         }
@@ -130,16 +140,28 @@ public final class AstToIrLowerer {
 
         List<Ast.ConstDecl> methodConsts = method.getModuleConsts() != null ? method.getModuleConsts() : programConsts;
         MethodLoweringContext ctx = new MethodLoweringContext(
-                irFunc, blocks, entry, variableTypes, managedLocals, isMain, returnType, methodConsts
+                irFunc, blocks, entry, variableTypes, isMain, returnType, methodConsts
         );
+        LexicalScope methodScope = ctx.pushScope(ScopeKind.METHOD);
+
+        // In entry block: retain incoming managed parameters unless they are purely borrowed
+        for (IrValue p : params) {
+            if (!isParameterBorrowed(p.name(), method)) {
+                emitRetain(p, ctx);
+                methodScope.managedVars.add(p.name());
+            }
+        }
 
         // In entry block: allocate arrays and initialize locals that do not have VarDecl statements
-        Set<Ast.Declare.T> varDeclNodes = Collections.newSetFromMap(new IdentityHashMap<>());
-        collectVarDeclNodes(method.getStms(), varDeclNodes);
+        Set<String> varDeclNames = new HashSet<>();
+        collectVarDeclNames(method.getStms(), varDeclNames);
         if (method.getLocals() != null) {
             for (Ast.Declare.T local : method.getLocals()) {
-                if (!varDeclNodes.contains(local) && local instanceof Ast.Declare.DeclareSingle d) {
+                if (local instanceof Ast.Declare.DeclareSingle d && !varDeclNames.contains(d.getId())) {
                     IrType t = variableTypes.get(d.getId());
+                    if (isManaged(t) || !getManagedPaths(t).isEmpty()) {
+                        methodScope.managedVars.add(d.getId());
+                    }
                     if (t != null && t.kind() == IrType.Kind.STRUCT) {
                         emitStructInit(d.getId(), t, ctx);
                     } else if (isManaged(t)) {
@@ -153,11 +175,6 @@ public final class AstToIrLowerer {
             }
         }
 
-        // In entry block: retain incoming managed parameters
-        for (IrValue p : params) {
-            emitRetain(p, ctx);
-        }
-
         // Lower method statements
         if (method.getStms() != null) {
             for (Ast.Stmt.T stmt : method.getStms()) {
@@ -167,9 +184,7 @@ public final class AstToIrLowerer {
 
         // If the last block is not terminated, emit cleanup and default return
         if (!ctx.isTerminated(ctx.currentBlock)) {
-            for (String managed : managedLocals) {
-                emitRelease(managed, variableTypes.get(managed), ctx);
-            }
+            ctx.releaseAllScopesExcept(null);
             if (isMain) {
                 IrValue zero = new IrValue("0", IrType.scalar(IrType.Kind.INT));
                 ctx.emit(new IrInstruction(IrInstruction.Op.RETURN, null, List.of(zero), null));
@@ -269,12 +284,12 @@ public final class AstToIrLowerer {
                 if (targetType == null) {
                     targetType = toIrType(d.getType());
                     ctx.variableTypes.put(targetId, targetType);
-                    if (isManaged(targetType) || !getManagedPaths(targetType).isEmpty()) {
-                        ctx.managedLocals.add(targetId);
-                    }
                 }
+                if (isManaged(targetType) || !getManagedPaths(targetType).isEmpty()) {
+                    ctx.currentScope().managedVars.add(targetId);
+                }
+                IrValue rhsVal = null;
                 if (d.getInitExp() != null) {
-                    IrValue rhsVal;
                     if (targetType.kind() == IrType.Kind.DOUBLE
                             && d.getInitExp() instanceof Ast.Expr.Number number
                             && number.getType() instanceof Ast.Type.Float) {
@@ -287,7 +302,9 @@ public final class AstToIrLowerer {
                     }
                     if (isManaged(targetType)) {
                         if (isManaged(rhsVal.type())) {
-                            ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(rhsVal), "lemon_retain"));
+                            if (!rhsVal.name().startsWith("_t")) {
+                                ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(rhsVal), "lemon_retain"));
+                            }
                         }
                         ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
                     } else if (targetType.kind() == IrType.Kind.STRUCT) {
@@ -317,6 +334,11 @@ public final class AstToIrLowerer {
                         ctx.emit(new IrInstruction(IrInstruction.Op.CONST, new IrValue(targetId, targetType), List.of(new IrValue("0", targetType)), null));
                     }
                 }
+                if (rhsVal != null) {
+                    final String rName = rhsVal.name();
+                    ctx.currentScope().tempRvalues.removeIf(v -> v.name().equals(rName));
+                }
+                ctx.cleanupStatementTemporaries();
             }
             return;
         }
@@ -360,7 +382,9 @@ public final class AstToIrLowerer {
                         new IrValue(targetId, targetType), List.of(rhsVal), null));
             } else if (isManaged(targetType)) {
                 if (isManaged(rhsVal.type())) {
-                    ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(rhsVal), "lemon_retain"));
+                    if (!rhsVal.name().startsWith("_t")) {
+                        ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(rhsVal), "lemon_retain"));
+                    }
                     ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(new IrValue(targetId, targetType)), "lemon_release"));
                 }
                 ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
@@ -372,6 +396,11 @@ public final class AstToIrLowerer {
                 }
                 ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
             }
+            if (rhsVal != null) {
+                final String rName = rhsVal.name();
+                ctx.currentScope().tempRvalues.removeIf(v -> v.name().equals(rName));
+            }
+            ctx.cleanupStatementTemporaries();
         } else if (stmt instanceof Ast.Stmt.FieldAssign fieldAssign) {
             IrValue value = lowerExpr(fieldAssign.getExpr(), ctx);
             IrInstruction.Op binOp = compoundAssignOp(fieldAssign.getOp());
@@ -380,8 +409,10 @@ public final class AstToIrLowerer {
                 value = applyBinaryOp(binOp, oldVal, value, ctx);
             }
             lowerFieldStore(fieldAssign.getTarget(), value, ctx);
+            ctx.cleanupStatementTemporaries();
         } else if (stmt instanceof Ast.Stmt.DerefAssign derefAssign) {
             lowerDerefAssign(derefAssign, ctx);
+            ctx.cleanupStatementTemporaries();
         } else if (stmt instanceof Ast.Stmt.ArrayAssign arrayAssign) {
             IrValue arrVal;
             IrType arrType;
@@ -413,12 +444,16 @@ public final class AstToIrLowerer {
             }
 
             ctx.emit(new IrInstruction(IrInstruction.Op.STORE, null, List.of(arrVal, idxVal, val), null));
+            ctx.cleanupStatementTemporaries();
         } else if (stmt instanceof Ast.Stmt.Block block) {
+            LexicalScope blockScope = ctx.pushScope(ScopeKind.BLOCK);
             if (block.getStmts() != null) {
                 for (Ast.Stmt.T s : block.getStmts()) {
                     lowerStmt(s, ctx);
                 }
             }
+            ctx.releaseScope(blockScope);
+            ctx.popScope();
         } else if (stmt instanceof Ast.Stmt.If ifStmt) {
             IrValue condVal = lowerExpr(ifStmt.getCondition(), ctx);
 
@@ -433,7 +468,13 @@ public final class AstToIrLowerer {
 
             // Then branch
             ctx.startBlock(thenBlock);
+            boolean isBlockThen = ifStmt.getThenStmt() instanceof Ast.Stmt.Block;
+            LexicalScope thenScope = isBlockThen ? null : ctx.pushScope(ScopeKind.BLOCK);
             lowerStmt(ifStmt.getThenStmt(), ctx);
+            if (thenScope != null) {
+                ctx.releaseScope(thenScope);
+                ctx.popScope();
+            }
             boolean thenTerm = ctx.isTerminated(ctx.currentBlock);
             if (!thenTerm) {
                 ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), mergeBlock.name()));
@@ -443,7 +484,13 @@ public final class AstToIrLowerer {
             boolean elseTerm = false;
             if (elseBlock != null) {
                 ctx.startBlock(elseBlock);
+                boolean isBlockElse = ifStmt.getElseStmt() instanceof Ast.Stmt.Block;
+                LexicalScope elseScope = isBlockElse ? null : ctx.pushScope(ScopeKind.BLOCK);
                 lowerStmt(ifStmt.getElseStmt(), ctx);
+                if (elseScope != null) {
+                    ctx.releaseScope(elseScope);
+                    ctx.popScope();
+                }
                 elseTerm = ctx.isTerminated(ctx.currentBlock);
                 if (!elseTerm) {
                     ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), mergeBlock.name()));
@@ -467,9 +514,12 @@ public final class AstToIrLowerer {
             ctx.emit(new IrInstruction(IrInstruction.Op.COND_BRANCH, null, List.of(notCond), exitBlock.name()));
 
             ctx.startBlock(bodyBlock);
-            ctx.loopStack.push(new LoopContext(exitBlock, condBlock));
+            LexicalScope bodyScope = ctx.pushScope(ScopeKind.LOOP_BODY);
+            ctx.loopStack.push(new LoopContext(exitBlock, condBlock, null, bodyScope));
             lowerStmt(whileStmt.getBody(), ctx);
             ctx.loopStack.pop();
+            ctx.releaseScope(bodyScope);
+            ctx.popScope();
 
             if (!ctx.isTerminated(ctx.currentBlock)) {
                 ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), condBlock.name()));
@@ -477,6 +527,7 @@ public final class AstToIrLowerer {
 
             ctx.startBlock(exitBlock);
         } else if (stmt instanceof Ast.Stmt.For forStmt) {
+            LexicalScope forScope = ctx.pushScope(ScopeKind.LOOP_FOR);
             if (forStmt.getInit() != null) {
                 lowerStmt(forStmt.getInit(), ctx);
             }
@@ -497,9 +548,12 @@ public final class AstToIrLowerer {
             }
 
             ctx.startBlock(bodyBlock);
-            ctx.loopStack.push(new LoopContext(exitBlock, updateBlock));
+            LexicalScope bodyScope = ctx.pushScope(ScopeKind.LOOP_BODY);
+            ctx.loopStack.push(new LoopContext(exitBlock, updateBlock, forScope, bodyScope));
             lowerStmt(forStmt.getBody(), ctx);
             ctx.loopStack.pop();
+            ctx.releaseScope(bodyScope);
+            ctx.popScope();
 
             if (!ctx.isTerminated(ctx.currentBlock)) {
                 ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), updateBlock.name()));
@@ -514,14 +568,18 @@ public final class AstToIrLowerer {
             }
 
             ctx.startBlock(exitBlock);
+            ctx.releaseScope(forScope);
+            ctx.popScope();
         } else if (stmt instanceof Ast.Stmt.Break) {
             if (!ctx.loopStack.isEmpty()) {
                 LoopContext loop = ctx.loopStack.peek();
+                ctx.releaseScopesUpTo(loop.bodyScope);
                 ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), loop.breakTarget.name()));
             }
         } else if (stmt instanceof Ast.Stmt.Continue) {
             if (!ctx.loopStack.isEmpty()) {
                 LoopContext loop = ctx.loopStack.peek();
+                ctx.releaseScopesUpTo(loop.bodyScope);
                 ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), loop.continueTarget.name()));
             }
         } else if (stmt instanceof Ast.Stmt.Return retStmt) {
@@ -532,16 +590,15 @@ public final class AstToIrLowerer {
                     ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(retVal), null));
                     retVal = converted;
                 }
-                for (String managed : ctx.managedLocals) {
-                    if (!managed.equals(retVal.name())) {
-                        emitRelease(managed, ctx.variableTypes.get(managed), ctx);
+                if (isManaged(retVal.type()) || !getManagedPaths(retVal.type()).isEmpty()) {
+                    if (retStmt.getExpr() instanceof Ast.Expr.Field || retStmt.getExpr() instanceof Ast.Expr.ArrayAccess) {
+                        emitRetain(retVal, ctx);
                     }
                 }
+                ctx.releaseAllScopesExcept(retVal.name());
                 ctx.emit(new IrInstruction(IrInstruction.Op.RETURN, null, List.of(retVal), null));
             } else {
-                for (String managed : ctx.managedLocals) {
-                    emitRelease(managed, ctx.variableTypes.get(managed), ctx);
-                }
+                ctx.releaseAllScopesExcept(null);
                 if (ctx.isMain) {
                     IrValue zero = new IrValue("0", IrType.scalar(IrType.Kind.INT));
                     ctx.emit(new IrInstruction(IrInstruction.Op.RETURN, null, List.of(zero), null));
@@ -560,9 +617,11 @@ public final class AstToIrLowerer {
                 }
             }
             ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, callArgs, "printf"));
+            ctx.cleanupStatementTemporaries();
         } else if (stmt instanceof Ast.Stmt.PrintLine) {
             IrValue nlVal = new IrValue("\"\\n\"", IrType.scalar(IrType.Kind.STRING));
             ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(nlVal), "printf"));
+            ctx.cleanupStatementTemporaries();
         } else if (stmt instanceof Ast.Stmt.Call call) {
             List<IrValue> callArgs = new ArrayList<>();
             List<IrType> expectedParams = methodParamTypes.get(call.getName());
@@ -578,10 +637,12 @@ public final class AstToIrLowerer {
                 }
             }
             ctx.emit(new IrInstruction(IrInstruction.Op.CALL, null, callArgs, call.getName()));
+            ctx.cleanupStatementTemporaries();
         } else if (stmt instanceof Ast.Stmt.ExprStmt exprStmt) {
             if (exprStmt.getExpr() != null) {
                 lowerExpr(exprStmt.getExpr(), ctx);
             }
+            ctx.cleanupStatementTemporaries();
         }
     }
 
@@ -1278,24 +1339,105 @@ public final class AstToIrLowerer {
         final List<BasicBlock> blocks;
         BasicBlock currentBlock;
         final Map<String, IrType> variableTypes;
-        final Set<String> managedLocals;
         final boolean isMain;
         final IrType returnType;
         final Deque<LoopContext> loopStack = new ArrayDeque<>();
-
+        final Deque<LexicalScope> scopeStack = new ArrayDeque<>();
         final List<Ast.ConstDecl> consts;
 
         MethodLoweringContext(IrFunction function, List<BasicBlock> blocks, BasicBlock currentBlock,
-                              Map<String, IrType> variableTypes, Set<String> managedLocals,
+                              Map<String, IrType> variableTypes,
                               boolean isMain, IrType returnType, List<Ast.ConstDecl> consts) {
             this.function = function;
             this.blocks = blocks;
             this.currentBlock = currentBlock;
             this.variableTypes = variableTypes;
-            this.managedLocals = managedLocals;
             this.isMain = isMain;
             this.returnType = returnType;
             this.consts = consts;
+        }
+
+        LexicalScope pushScope(ScopeKind kind) {
+            LexicalScope scope = new LexicalScope(kind);
+            scopeStack.push(scope);
+            return scope;
+        }
+
+        LexicalScope popScope() {
+            return scopeStack.pop();
+        }
+
+        LexicalScope currentScope() {
+            return scopeStack.peek();
+        }
+
+        void registerTempRvalue(IrValue val) {
+            if (val != null && val.name().startsWith("_t") && (isManaged(val.type()) || !getManagedPaths(val.type()).isEmpty())) {
+                LexicalScope s = currentScope();
+                if (s != null) {
+                    s.tempRvalues.add(val);
+                }
+            }
+        }
+
+        void cleanupStatementTemporaries() {
+            if (isTerminated(currentBlock)) return;
+            LexicalScope s = currentScope();
+            if (s != null && !s.tempRvalues.isEmpty()) {
+                for (int i = s.tempRvalues.size() - 1; i >= 0; i--) {
+                    IrValue temp = s.tempRvalues.get(i);
+                    emitRelease(temp.name(), temp.type(), this);
+                }
+                s.tempRvalues.clear();
+            }
+        }
+
+        void releaseScope(LexicalScope scope) {
+            if (isTerminated(currentBlock)) return;
+            for (int i = scope.managedVars.size() - 1; i >= 0; i--) {
+                String varName = scope.managedVars.get(i);
+                emitRelease(varName, variableTypes.get(varName), this);
+            }
+            for (int i = scope.tempRvalues.size() - 1; i >= 0; i--) {
+                IrValue temp = scope.tempRvalues.get(i);
+                emitRelease(temp.name(), temp.type(), this);
+            }
+            scope.tempRvalues.clear();
+        }
+
+        void releaseAllScopesExcept(String exceptVarName) {
+            if (isTerminated(currentBlock)) return;
+            for (LexicalScope scope : scopeStack) {
+                for (int i = scope.managedVars.size() - 1; i >= 0; i--) {
+                    String varName = scope.managedVars.get(i);
+                    if (exceptVarName == null || !varName.equals(exceptVarName)) {
+                        emitRelease(varName, variableTypes.get(varName), this);
+                    }
+                }
+                for (int i = scope.tempRvalues.size() - 1; i >= 0; i--) {
+                    IrValue temp = scope.tempRvalues.get(i);
+                    if (exceptVarName == null || !temp.name().equals(exceptVarName)) {
+                        emitRelease(temp.name(), temp.type(), this);
+                    }
+                }
+            }
+        }
+
+        void releaseScopesUpTo(LexicalScope targetScope) {
+            if (isTerminated(currentBlock)) return;
+            for (LexicalScope scope : scopeStack) {
+                for (int i = scope.managedVars.size() - 1; i >= 0; i--) {
+                    String varName = scope.managedVars.get(i);
+                    emitRelease(varName, variableTypes.get(varName), this);
+                }
+                for (int i = scope.tempRvalues.size() - 1; i >= 0; i--) {
+                    IrValue temp = scope.tempRvalues.get(i);
+                    emitRelease(temp.name(), temp.type(), this);
+                }
+                if (scope == targetScope) {
+                    break;
+                }
+            }
         }
 
         BasicBlock createBlock(String prefix) {
@@ -1328,27 +1470,244 @@ public final class AstToIrLowerer {
         }
     }
 
-    private void collectVarDeclNodes(List<Ast.Stmt.T> stmts, Set<Ast.Declare.T> decls) {
+    private boolean isParameterBorrowed(String paramName, Ast.Method.MethodSingle method) {
+        if (paramName == null || method == null || method.getStms() == null) {
+            return true;
+        }
+        return !isParamMutatedOrEscaping(paramName, method.getStms(), method);
+    }
+
+    private boolean isParamMutatedOrEscaping(String paramName, List<Ast.Stmt.T> stmts, Ast.Method.MethodSingle method) {
+        if (stmts == null) return false;
+        for (Ast.Stmt.T stmt : stmts) {
+            if (isParamMutatedOrEscaping(paramName, stmt, method)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isParamMutatedOrEscaping(String paramName, Ast.Stmt.T stmt, Ast.Method.MethodSingle method) {
+        if (stmt == null) return false;
+        if (stmt instanceof Ast.Stmt.Assign assign) {
+            if (assign.getId() != null && paramName.equals(assign.getId().getId())) {
+                return true;
+            }
+            return containsParamAddressOrReturn(paramName, assign.getExpr());
+        }
+        if (stmt instanceof Ast.Stmt.FieldAssign fieldAssign) {
+            if (isFieldReceiverParam(paramName, fieldAssign.getTarget())) {
+                return true;
+            }
+            return containsParamAddressOrReturn(paramName, fieldAssign.getExpr());
+        }
+        if (stmt instanceof Ast.Stmt.ArrayAssign arrayAssign) {
+            if (paramName.equals(arrayAssign.getArrayName())) {
+                return true;
+            }
+            if (arrayAssign.getFieldTarget() != null && isFieldReceiverParam(paramName, arrayAssign.getFieldTarget())) {
+                return true;
+            }
+            return containsParamAddressOrReturn(paramName, arrayAssign.getExpr());
+        }
+        if (stmt instanceof Ast.Stmt.DerefAssign derefAssign) {
+            return containsParamAddressOrReturn(paramName, derefAssign.getExpr());
+        }
+        if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
+            if (varDecl.getDeclaration() instanceof Ast.Declare.DeclareSingle d) {
+                return containsParamAddressOrReturn(paramName, d.getInitExp());
+            }
+            return false;
+        }
+        if (stmt instanceof Ast.Stmt.Block block) {
+            return isParamMutatedOrEscaping(paramName, block.getStmts(), method);
+        }
+        if (stmt instanceof Ast.Stmt.If ifStmt) {
+            if (isParamMutatedOrEscaping(paramName, ifStmt.getThenStmt(), method)) return true;
+            if (isParamMutatedOrEscaping(paramName, ifStmt.getElseStmt(), method)) return true;
+            return false;
+        }
+        if (stmt instanceof Ast.Stmt.While whileStmt) {
+            return isParamMutatedOrEscaping(paramName, whileStmt.getBody(), method);
+        }
+        if (stmt instanceof Ast.Stmt.For forStmt) {
+            if (isParamMutatedOrEscaping(paramName, forStmt.getInit(), method)) return true;
+            if (isParamMutatedOrEscaping(paramName, forStmt.getBody(), method)) return true;
+            if (isParamMutatedOrEscaping(paramName, forStmt.getUpdate(), method)) return true;
+            return false;
+        }
+        if (stmt instanceof Ast.Stmt.Return retStmt) {
+            IrType retType = methodReturnTypes.get(method.getId());
+            if (retType != null && (isManaged(retType) || !getManagedPaths(retType).isEmpty())) {
+                if (retStmt.getExpr() != null && mentionsParam(paramName, retStmt.getExpr())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return false;
+    }
+
+    private boolean isFieldReceiverParam(String paramName, Ast.Expr.Field field) {
+        if (field == null) return false;
+        Ast.Expr.T receiver = field.getReceiver();
+        while (receiver instanceof Ast.Expr.Field f) {
+            receiver = f.getReceiver();
+        }
+        if (receiver instanceof Ast.Expr.Id id) {
+            return paramName.equals(id.getId());
+        }
+        return false;
+    }
+
+    private boolean mentionsParam(String paramName, Ast.Expr.T expr) {
+        if (expr == null) return false;
+        if (expr instanceof Ast.Expr.Id id) {
+            return paramName.equals(id.getId());
+        }
+        if (expr instanceof Ast.Expr.Field field) {
+            return mentionsParam(paramName, field.getReceiver());
+        }
+        if (expr instanceof Ast.Expr.ArrayAccess aa) {
+            if (paramName.equals(aa.getArrayName())) return true;
+            return mentionsParam(paramName, aa.getFieldTarget()) || mentionsParam(paramName, aa.getIndex());
+        }
+        if (expr instanceof Ast.Expr.AddressOf addr) {
+            return mentionsParam(paramName, addr.getOperand());
+        }
+        if (expr instanceof Ast.Expr.Deref deref) {
+            return mentionsParam(paramName, deref.getOperand());
+        }
+        if (expr instanceof Ast.Expr.UnaryMinus um) {
+            return mentionsParam(paramName, um.getExp());
+        }
+        if (expr instanceof Ast.Expr.UnaryPlus up) {
+            return mentionsParam(paramName, up.getExp());
+        }
+        if (expr instanceof Ast.Expr.BitNot bn) {
+            return mentionsParam(paramName, bn.getExp());
+        }
+        if (expr instanceof Ast.Expr.Not not) {
+            return mentionsParam(paramName, not.getExpr());
+        }
+        if (expr instanceof Ast.Expr.PreInc inc) {
+            return mentionsParam(paramName, inc.getExp());
+        }
+        if (expr instanceof Ast.Expr.PostInc inc) {
+            return mentionsParam(paramName, inc.getExp());
+        }
+        if (expr instanceof Ast.Expr.PreDec dec) {
+            return mentionsParam(paramName, dec.getExp());
+        }
+        if (expr instanceof Ast.Expr.PostDec dec) {
+            return mentionsParam(paramName, dec.getExp());
+        }
+        if (expr instanceof Ast.Expr.InitializerList init) {
+            if (init.getElements() != null) {
+                for (Ast.Expr.T el : init.getElements()) {
+                    if (mentionsParam(paramName, el)) return true;
+                }
+            }
+            return false;
+        }
+        if (expr instanceof Ast.Expr.Call call) {
+            if (call.getInputParams() != null) {
+                for (Ast.Expr.T arg : call.getInputParams()) {
+                    if (mentionsParam(paramName, arg)) return true;
+                }
+            }
+            return false;
+        }
+        if (expr instanceof Ast.Expr.Ternary ternary) {
+            return mentionsParam(paramName, ternary.getCondition())
+                    || mentionsParam(paramName, ternary.getTrueExpr())
+                    || mentionsParam(paramName, ternary.getFalseExpr());
+        }
+        if (isBinaryOp(expr)) {
+            return mentionsParam(paramName, getBinaryLeft(expr)) || mentionsParam(paramName, getBinaryRight(expr));
+        }
+        return false;
+    }
+
+    private boolean isBinaryOp(Ast.Expr.T expr) {
+        return expr instanceof Ast.Expr.Add || expr instanceof Ast.Expr.Sub || expr instanceof Ast.Expr.Mul
+                || expr instanceof Ast.Expr.Div || expr instanceof Ast.Expr.Mod || expr instanceof Ast.Expr.And
+                || expr instanceof Ast.Expr.Or || expr instanceof Ast.Expr.LT || expr instanceof Ast.Expr.LTE
+                || expr instanceof Ast.Expr.GT || expr instanceof Ast.Expr.GTE || expr instanceof Ast.Expr.EQ
+                || expr instanceof Ast.Expr.NEQ;
+    }
+
+    private Ast.Expr.T getBinaryLeft(Ast.Expr.T expr) {
+        if (expr instanceof Ast.Expr.Add e) return e.getLeft();
+        if (expr instanceof Ast.Expr.Sub e) return e.getLeft();
+        if (expr instanceof Ast.Expr.Mul e) return e.getLeft();
+        if (expr instanceof Ast.Expr.Div e) return e.getLeft();
+        if (expr instanceof Ast.Expr.Mod e) return e.getLeft();
+        if (expr instanceof Ast.Expr.And e) return e.getLeft();
+        if (expr instanceof Ast.Expr.Or e) return e.getLeft();
+        if (expr instanceof Ast.Expr.LT e) return e.getLeft();
+        if (expr instanceof Ast.Expr.LTE e) return e.getLeft();
+        if (expr instanceof Ast.Expr.GT e) return e.getLeft();
+        if (expr instanceof Ast.Expr.GTE e) return e.getLeft();
+        if (expr instanceof Ast.Expr.EQ e) return e.getLeft();
+        if (expr instanceof Ast.Expr.NEQ e) return e.getLeft();
+        return null;
+    }
+
+    private Ast.Expr.T getBinaryRight(Ast.Expr.T expr) {
+        if (expr instanceof Ast.Expr.Add e) return e.getRight();
+        if (expr instanceof Ast.Expr.Sub e) return e.getRight();
+        if (expr instanceof Ast.Expr.Mul e) return e.getRight();
+        if (expr instanceof Ast.Expr.Div e) return e.getRight();
+        if (expr instanceof Ast.Expr.Mod e) return e.getRight();
+        if (expr instanceof Ast.Expr.And e) return e.getRight();
+        if (expr instanceof Ast.Expr.Or e) return e.getRight();
+        if (expr instanceof Ast.Expr.LT e) return e.getRight();
+        if (expr instanceof Ast.Expr.LTE e) return e.getRight();
+        if (expr instanceof Ast.Expr.GT e) return e.getRight();
+        if (expr instanceof Ast.Expr.GTE e) return e.getRight();
+        if (expr instanceof Ast.Expr.EQ e) return e.getRight();
+        if (expr instanceof Ast.Expr.NEQ e) return e.getRight();
+        return null;
+    }
+
+    private boolean containsParamAddressOrReturn(String paramName, Ast.Expr.T expr) {
+        if (expr == null) return false;
+        if (expr instanceof Ast.Expr.AddressOf addr) {
+            return mentionsParam(paramName, addr.getOperand());
+        }
+        if (isBinaryOp(expr)) {
+            return containsParamAddressOrReturn(paramName, getBinaryLeft(expr)) || containsParamAddressOrReturn(paramName, getBinaryRight(expr));
+        }
+        if (expr instanceof Ast.Expr.Ternary ternary) {
+            return containsParamAddressOrReturn(paramName, ternary.getTrueExpr()) || containsParamAddressOrReturn(paramName, ternary.getFalseExpr());
+        }
+        return false;
+    }
+
+    private void collectVarDeclNames(List<Ast.Stmt.T> stmts, Set<String> names) {
         if (stmts == null) return;
         for (Ast.Stmt.T s : stmts) {
-            collectVarDeclNodes(s, decls);
+            collectVarDeclNames(s, names);
         }
     }
 
-    private void collectVarDeclNodes(Ast.Stmt.T stmt, Set<Ast.Declare.T> decls) {
+    private void collectVarDeclNames(Ast.Stmt.T stmt, Set<String> names) {
         if (stmt == null) return;
         if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
-            decls.add(varDecl.getDeclaration());
+            if (varDecl.getDeclaration() instanceof Ast.Declare.DeclareSingle d) {
+                names.add(d.getId());
+            }
         } else if (stmt instanceof Ast.Stmt.Block block) {
-            collectVarDeclNodes(block.getStmts(), decls);
+            collectVarDeclNames(block.getStmts(), names);
         } else if (stmt instanceof Ast.Stmt.If ifStmt) {
-            collectVarDeclNodes(ifStmt.getThenStmt(), decls);
-            collectVarDeclNodes(ifStmt.getElseStmt(), decls);
+            collectVarDeclNames(ifStmt.getThenStmt(), names);
+            collectVarDeclNames(ifStmt.getElseStmt(), names);
         } else if (stmt instanceof Ast.Stmt.While whileStmt) {
-            collectVarDeclNodes(whileStmt.getBody(), decls);
+            collectVarDeclNames(whileStmt.getBody(), names);
         } else if (stmt instanceof Ast.Stmt.For forStmt) {
-            collectVarDeclNodes(forStmt.getInit(), decls);
-            collectVarDeclNodes(forStmt.getBody(), decls);
+            collectVarDeclNames(forStmt.getInit(), names);
+            collectVarDeclNames(forStmt.getBody(), names);
         }
     }
     private IrInstruction.Op compoundAssignOp(site.ilemon.lexer.TokenKind op) {
