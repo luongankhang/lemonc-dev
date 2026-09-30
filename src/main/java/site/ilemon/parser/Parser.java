@@ -187,12 +187,16 @@ public class Parser {
 		ArrayList<Ast.ImportDecl> imports = parseImports();
 		ArrayList<Ast.Method.T> methods = new ArrayList<>();
 		ArrayList<Ast.ConstDecl> constants = new ArrayList<>();
-		while (isMethodStart() || isConstStart() || isStructStart()) {
+		structs.clear();
+		enums.clear();
+		while (isMethodStart() || isConstStart() || isStructStart() || isEnumStart()) {
 			try {
 				if (isConstStart()) {
 					constants.add(parseConstDecl());
 				} else if (isStructStart()) {
 					structs.add(parseStructDecl());
+				} else if (isEnumStart()) {
+					enums.add(parseEnumDecl());
 				} else {
 					methods.add(parseMethod());
 				}
@@ -209,11 +213,14 @@ public class Parser {
 		main.getImports().addAll(imports);
 		main.getConstants().addAll(constants);
 		main.getStructs().addAll(structs);
+		main.getEnums().addAll(enums);
 		return main;
 	}
 
 	/** Struct declarations parsed so far, consumed when the program node is built. */
 	private final ArrayList<Ast.StructDecl> structs = new ArrayList<>();
+	/** Enum declarations parsed so far, consumed when the program node is built. */
+	private final ArrayList<Ast.EnumDecl> enums = new ArrayList<>();
 
 	private boolean isStructStart() {
 		if (look == null) {
@@ -230,6 +237,27 @@ public class Parser {
 			Token third = lexer.lookahead(2);
 			Token fourth = lexer.lookahead(3);
 			return second != null && second.kind == TokenKind.Struct
+					&& third != null && third.kind == TokenKind.Id
+					&& fourth != null && fourth.kind == TokenKind.Lbrace;
+		}
+		return false;
+	}
+
+	private boolean isEnumStart() {
+		if (look == null) {
+			return false;
+		}
+		if (look.kind == TokenKind.Enum) {
+			Token second = lexer.lookahead(1);
+			Token third = lexer.lookahead(2);
+			return second != null && second.kind == TokenKind.Id
+					&& third != null && third.kind == TokenKind.Lbrace;
+		}
+		if (look.kind == TokenKind.Pub) {
+			Token second = lexer.lookahead(1);
+			Token third = lexer.lookahead(2);
+			Token fourth = lexer.lookahead(3);
+			return second != null && second.kind == TokenKind.Enum
 					&& third != null && third.kind == TokenKind.Id
 					&& fourth != null && fourth.kind == TokenKind.Lbrace;
 		}
@@ -284,6 +312,75 @@ public class Parser {
 		return decl;
 	}
 
+	// <enumDecl> -> [pub] enum id { <enumMember> (',' <enumMember>)* [,] } [;]
+	private Ast.EnumDecl parseEnumDecl() throws IOException {
+		Token startToken = look;
+		Ast.Visibility visibility = Ast.Visibility.PRIVATE;
+		if (look.kind == TokenKind.Pub) {
+			visibility = Ast.Visibility.PUBLIC;
+			move();
+		}
+		match(new Token(TokenKind.Enum));
+		if (look.kind != TokenKind.Id) {
+			error("expected an enum name after 'enum'");
+			return null;
+		}
+		String name = look.lexeme;
+		int lineNumber = look.lineNumber;
+		match(new Token(TokenKind.Id));
+		match("{");
+		ArrayList<Ast.EnumMember> members = new ArrayList<>();
+		int nextValue = 0;
+		while (look.kind == TokenKind.Id) {
+			Token memberToken = look;
+			String memberName = look.lexeme;
+			int memberLine = look.lineNumber;
+			move();
+			int memberVal = nextValue;
+			boolean hasExplicit = false;
+			if (look.kind == TokenKind.Assign) {
+				move();
+				boolean negative = false;
+				if (look.kind == TokenKind.Sub) {
+					negative = true;
+					move();
+				} else if (look.kind == TokenKind.Add) {
+					move();
+				}
+				if (look.kind != TokenKind.Num) {
+					error("expected integer literal for enum member value");
+					return null;
+				}
+				try {
+					int parsed = Integer.parseInt(look.lexeme);
+					memberVal = negative ? -parsed : parsed;
+					hasExplicit = true;
+				} catch (NumberFormatException e) {
+					error("invalid integer value for enum member: " + look.lexeme);
+					return null;
+				}
+				move();
+			}
+			Ast.EnumMember member = new Ast.EnumMember(memberName, memberVal, hasExplicit, memberLine);
+			member.setSpan(tokenSpan(memberToken));
+			members.add(member);
+			nextValue = memberVal + 1;
+
+			if (look.kind == TokenKind.Comma) {
+				move();
+			} else {
+				break;
+			}
+		}
+		match("}");
+		if (look.kind == TokenKind.Semicolon) {
+			match(";");
+		}
+		Ast.EnumDecl decl = new Ast.EnumDecl(name, members, visibility, lineNumber);
+		decl.setSpan(tokenSpan(startToken));
+		return decl;
+	}
+
 	private ArrayList<Ast.ImportDecl> parseImports() throws IOException {
 		ArrayList<Ast.ImportDecl> imports = new ArrayList<>();
 		while (look.kind == TokenKind.Import) {
@@ -322,12 +419,15 @@ public class Parser {
 		ArrayList<Ast.Method.T> methods = new ArrayList<>();
 		ArrayList<Ast.ConstDecl> constants = new ArrayList<>();
 		structs.clear();
-		while (isMethodStart() || isConstStart() || isStructStart()) {
+		enums.clear();
+		while (isMethodStart() || isConstStart() || isStructStart() || isEnumStart()) {
 			try {
 				if (isConstStart()) {
 					constants.add(parseConstDecl());
 				} else if (isStructStart()) {
 					structs.add(parseStructDecl());
+				} else if (isEnumStart()) {
+					enums.add(parseEnumDecl());
 				} else {
 					methods.add(parseMethod());
 				}
@@ -341,6 +441,7 @@ public class Parser {
 		mainClass = new Ast.MainClass.MainClassSingle(className,null,methods);
 		mainClass.getConstants().addAll(constants);
 		mainClass.getStructs().addAll(structs);
+		mainClass.getEnums().addAll(enums);
 		if (look.kind == TokenKind.Rbrace) {
 			match("}");
 		} else if (!diagnosticEngine.hasErrors()) {
@@ -356,15 +457,18 @@ public class Parser {
 		if (look == null) {
 			return false;
 		}
-		// `pub` starts a method unless it is `pub const` or `pub struct`.
+		// `pub` starts a method unless it is `pub const` or `pub struct` or `pub enum`.
 		if (look.kind == TokenKind.Pub) {
-			if (isConstStart() || isStructStart()) return false;
+			if (isConstStart() || isStructStart() || isEnumStart()) return false;
 			return true;
 		}
 		if (look.kind == TokenKind.Struct) {
 			// `struct Name fname(...)` starts a method; declarations (`struct
 			// Name {`) were already peeled off by isStructStart().
 			return !isStructStart();
+		}
+		if (look.kind == TokenKind.Enum) {
+			return !isEnumStart();
 		}
 		return look.kind == TokenKind.Void || look.kind == TokenKind.Int
 				|| look.kind == TokenKind.Float || look.kind == TokenKind.Double
@@ -496,7 +600,7 @@ public class Parser {
 	private int peekTypeEndOffset() {
 		if (look == null) return -1;
 		int offset = 0;
-		if (look.kind == TokenKind.Struct) {
+		if (look.kind == TokenKind.Struct || look.kind == TokenKind.Enum) {
 			Token next = lexer.lookahead(1);
 			if (next == null || next.kind != TokenKind.Id) return -1;
 			offset = 1;
@@ -665,7 +769,7 @@ public class Parser {
 	private boolean isTypeToken(TokenKind kind) {
 		return kind == TokenKind.Int || kind == TokenKind.Float
 				|| kind == TokenKind.Double || kind == TokenKind.Bool || kind == TokenKind.Byte || kind == TokenKind.Short || kind == TokenKind.Char || kind == TokenKind.Long || kind == TokenKind.String
-				|| kind == TokenKind.Struct;
+				|| kind == TokenKind.Struct || kind == TokenKind.Enum;
 	}
 
 
@@ -730,8 +834,27 @@ public class Parser {
 			}
 			type = new Ast.Type.Struct(name);
 		}
+		else if(look.kind == TokenKind.Enum){
+			move();
+			if (look.kind != TokenKind.Id) {
+				error("expected an enum name after 'enum'");
+				return null;
+			}
+			String name = look.lexeme;
+			move();
+			if (look.kind == TokenKind.Dot) {
+				move();
+				if (look.kind != TokenKind.Id) {
+					error("expected an enum name after '.'");
+					return null;
+				}
+				name = name + "." + look.lexeme;
+				move();
+			}
+			type = new Ast.Type.Enum(name);
+		}
 		else {
-			error("expected type keyword int, float, double, bool, byte, short, char, long, string, or void");
+			error("expected type keyword int, float, double, bool, byte, short, char, long, string, struct, enum, or void");
 			return null;
 		}
 		// C-like declarator stars: int* p / int** pp / int*** ppp. The star binds
@@ -1405,7 +1528,15 @@ public class Parser {
 					expr.setSpan(tokenSpan(temp));
 				} else if (importAliases.contains(baseName)) {
 					// Module-qualified read: alias.MEMBER -> alias_MEMBER
-					expr = new Ast.Expr.Id(baseName + "_" + member, lineNum);
+					// Or alias.Color.MEMBER -> alias_Color_MEMBER
+					if (look.kind == TokenKind.Dot && lexer.lookahead(1) != null && lexer.lookahead(1).kind == TokenKind.Id) {
+						move(); // consume '.'
+						String member2 = look.lexeme;
+						match(new Token(TokenKind.Id));
+						expr = new Ast.Expr.Id(baseName + "_" + member + "_" + member2, lineNum);
+					} else {
+						expr = new Ast.Expr.Id(baseName + "_" + member, lineNum);
+					}
 					expr.setSpan(tokenSpan(temp));
 				} else {
 					// Struct field access: parsed as a chain and validated by the

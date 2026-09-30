@@ -11,11 +11,15 @@ public final class CFunctionEmitter {
     private final CInstructionEmitter instructions;
 
     public CFunctionEmitter() {
-        this(java.util.Set.of(), java.util.Map.of());
+        this(java.util.Set.of(), java.util.Map.of(), java.util.Map.of());
     }
 
     public CFunctionEmitter(java.util.Set<String> constNames, java.util.Map<String, site.ilemon.ir.IrModule.IrStruct> structs) {
-        this.types = new CTypeEmitter(structs);
+        this(constNames, structs, java.util.Map.of());
+    }
+
+    public CFunctionEmitter(java.util.Set<String> constNames, java.util.Map<String, site.ilemon.ir.IrModule.IrStruct> structs, java.util.Map<String, site.ilemon.ir.IrModule.IrEnum> enums) {
+        this.types = new CTypeEmitter(structs, enums);
         this.instructions = new CInstructionEmitter(constNames);
     }
 

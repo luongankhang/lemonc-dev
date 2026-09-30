@@ -42,6 +42,7 @@ final class JvmTypeMapper {
             case DOUBLE -> "D";
             case VOID -> "V";
             case STRING -> "Ljava/lang/String;";
+            case ENUM -> "I";
             // A struct value is the reference to a synthesized nested class of
             // the program class: Main$Point. Fields and methods spell it as
             // LMain$Point; and every access stays a plain reference operation.
@@ -85,7 +86,7 @@ final class JvmTypeMapper {
     int slots(IrType type) {
         return switch (type.kind()) {
             case LONG, DOUBLE -> 2;
-            case ARRAY, STRING, BOOL, BYTE, SHORT, CHAR, INT, FLOAT -> 1;
+            case ARRAY, STRING, BOOL, BYTE, SHORT, CHAR, INT, FLOAT, ENUM -> 1;
             case POINTER, REFERENCE -> 1;
             case STRUCT -> 1; // struct values are references
             default -> 0;
@@ -95,7 +96,7 @@ final class JvmTypeMapper {
     /** True for types represented as JVM {@code int} values on the stack. */
     boolean isIntFamily(IrType type) {
         return switch (type.kind()) {
-            case BOOL, BYTE, SHORT, CHAR, INT -> true;
+            case BOOL, BYTE, SHORT, CHAR, INT, ENUM -> true;
             default -> false;
         };
     }

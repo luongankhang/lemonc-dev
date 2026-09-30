@@ -56,6 +56,7 @@ public class Lexer {
         KEYWORDS.put("import", TokenKind.Import);
         KEYWORDS.put("null", TokenKind.Null);
         KEYWORDS.put("struct", TokenKind.Struct);
+        KEYWORDS.put("enum", TokenKind.Enum);
     }
 
     public Lexer(File f) throws IOException {

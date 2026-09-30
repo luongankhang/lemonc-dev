@@ -28,6 +28,8 @@ public class AstOptimizer {
         optimized.getConstants().addAll(single.getConstants());
         optimized.getStructs().addAll(single.getStructs());
         optimized.getModuleStructs().putAll(single.getModuleStructs());
+        optimized.getEnums().addAll(single.getEnums());
+        optimized.getModuleEnums().putAll(single.getModuleEnums());
         return optimized;
     }
 

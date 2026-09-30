@@ -297,7 +297,7 @@ final class JvmInstructionEmitter {
                 int value = "true".equals(raw) ? 1 : "false".equals(raw) ? 0 : Integer.parseInt(raw);
                 pushIntConstant(value);
             }
-            case BYTE, SHORT, CHAR, INT -> pushIntConstant(Integer.parseInt(raw));
+            case BYTE, SHORT, CHAR, INT, ENUM -> pushIntConstant(Integer.parseInt(raw));
             case LONG -> code.ldc2w(pool.longConstant(Long.parseLong(raw)));
             case FLOAT -> code.ldc(pool.floatConstant(Float.parseFloat(raw)), 1);
             case DOUBLE -> code.ldc2w(pool.doubleConstant(Double.parseDouble(raw)));
@@ -915,7 +915,7 @@ final class JvmInstructionEmitter {
 
     private int arrayLoadOpcode(IrType elementType) {
         return switch (elementType.kind()) {
-            case INT -> IALOAD;
+            case INT, ENUM -> IALOAD;
             case BOOL, BYTE -> BALOAD;
             case SHORT -> SALOAD;
             case CHAR -> CALOAD;
@@ -930,7 +930,7 @@ final class JvmInstructionEmitter {
 
     private int arrayStoreOpcode(IrType elementType) {
         return switch (elementType.kind()) {
-            case INT -> IASTORE;
+            case INT, ENUM -> IASTORE;
             case BOOL, BYTE -> BASTORE;
             case SHORT -> SASTORE;
             case CHAR -> CASTORE;
@@ -950,7 +950,7 @@ final class JvmInstructionEmitter {
             case DOUBLE -> 7;
             case BYTE -> 8;
             case SHORT -> 9;
-            case INT -> 10;
+            case INT, ENUM -> 10;
             case LONG -> 11;
             default -> throw new CompilerException("no JVM newarray type for " + elementType.kind());
         };
@@ -1072,7 +1072,7 @@ final class JvmInstructionEmitter {
     private void emitPrintValue(IrValue value) {
         loadValue(value);
         switch (value.type().kind()) {
-            case BOOL, BYTE, SHORT, CHAR, INT -> emitPrintTail("(I)V", 1);
+            case BOOL, BYTE, SHORT, CHAR, INT, ENUM -> emitPrintTail("(I)V", 1);
             case FLOAT -> emitPrintTail("(F)V", 1);
             case LONG -> emitPrintTail("(J)V", 2);
             case DOUBLE -> emitPrintTail("(D)V", 2);

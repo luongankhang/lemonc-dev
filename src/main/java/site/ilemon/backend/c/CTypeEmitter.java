@@ -9,18 +9,52 @@ import java.util.Map;
 public final class CTypeEmitter {
     /** Struct layouts of the module being emitted; struct kinds map to real C typedefs. */
     private final Map<String, IrModule.IrStruct> structs;
+    private final Map<String, IrModule.IrEnum> enums;
 
     public CTypeEmitter() {
-        this(Map.of());
+        this(Map.of(), Map.of());
     }
 
     public CTypeEmitter(Map<String, IrModule.IrStruct> structs) {
+        this(structs, Map.of());
+    }
+
+    public CTypeEmitter(Map<String, IrModule.IrStruct> structs, Map<String, IrModule.IrEnum> enums) {
         this.structs = structs == null ? Map.of() : structs;
+        this.enums = enums == null ? Map.of() : enums;
     }
 
     /** C tag/typedef spelling for a struct type, e.g. {@code LemonC_Point}. */
     public static String cStructTypeName(String structName) {
         return "LemonC_" + structName;
+    }
+
+    /** C tag/typedef spelling for an enum type, e.g. {@code LemonC_Color}. */
+    public static String cEnumTypeName(String enumName) {
+        return "LemonC_" + enumName.replace('.', '_');
+    }
+
+    public static String cEnumMemberName(String enumName, String memberName) {
+        return "LemonC_" + enumName.replace('.', '_') + "_" + memberName;
+    }
+
+    /** Emits the typedef block for every declared enum. */
+    public static String emitEnumTypedefs(Map<String, IrModule.IrEnum> enums) {
+        StringBuilder out = new StringBuilder();
+        for (IrModule.IrEnum irEnum : enums.values()) {
+            out.append("typedef enum ").append(cEnumTypeName(irEnum.name())).append(" {\n");
+            for (int i = 0; i < irEnum.members().size(); i++) {
+                IrModule.IrEnumMember member = irEnum.members().get(i);
+                out.append("    ").append(cEnumMemberName(irEnum.name(), member.name()))
+                        .append(" = ").append(member.value());
+                if (i < irEnum.members().size() - 1) {
+                    out.append(",");
+                }
+                out.append("\n");
+            }
+            out.append("} ").append(cEnumTypeName(irEnum.name())).append(";\n");
+        }
+        return out.toString();
     }
 
     /** Emits the typedef block for every declared struct (fields embed by value). */
@@ -42,6 +76,9 @@ public final class CTypeEmitter {
         if (type.kind() == IrType.Kind.STRUCT && structs.containsKey(type.name())) {
             return cStructTypeName(type.name());
         }
+        if (type.kind() == IrType.Kind.ENUM) {
+            return type.name() != null ? cEnumTypeName(type.name()) : "int32_t";
+        }
         return switch (type.kind()) {
             case BOOL -> "bool";
             case CHAR -> "uint16_t";
@@ -56,7 +93,8 @@ public final class CTypeEmitter {
             case ARRAY -> "lemon_array*";
             case POINTER -> emit(type.elementType()) + "*";
             case REFERENCE -> emit(type.elementType()) + "*";
-            case STRUCT, ENUM -> "lemon_opaque_t";
+            case STRUCT -> "lemon_opaque_t";
+            case ENUM -> "int32_t";
         };
     }
 

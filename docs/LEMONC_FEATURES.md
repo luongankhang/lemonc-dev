@@ -147,6 +147,90 @@ Both backends agree: C emits a `LemonC_Point` typedef with plain member access
 per struct (`Main$Point`) with a zero constructor and a recursive copy
 constructor, and uses GETFIELD/PUTFIELD for member access.
 
+### Enum Declarations & Scoping
+
+LemonC supports strongly-typed nominal enumerations with module-level visibility control (`pub enum`):
+
+- **Declaration**: `[pub] enum Name { Member1, Member2 [= value], ... [,] } [;]`
+- **Values**:
+  - Automatically increment from `0`, or from `previous + 1`.
+  - Supports explicit integer values (positive, zero, and negative values e.g. `-1`).
+  - Optional trailing comma and optional semicolon.
+- **Type Safety**:
+  - Enums are distinct nominal types. Implicit conversions between `enum` and `int`, or between different enum types, are strictly rejected (`E3001 TYPE_ASSIGNMENT`).
+  - Arithmetic operations (`+`, `-`, `*`, `/`, `%`) and ordering comparisons (`<`, `>`, `<=`, `>=`) are rejected (`E3003 TYPE_OPERATOR`).
+  - Equality operators (`==`, `!=`) are supported between identical enum types.
+- **Member Access & Immutability**:
+  - Accessed via qualified `Enum.Member`, bare `Member` (within declaring module), or module-qualified `alias.Enum.Member` / `alias.Member`.
+  - Enum members are compile-time constants and immutable; assignment to an enum member triggers `SEM_CONST_IMMUTABLE`.
+- **Cross-Module Scoping**:
+  - `pub enum`: Exported and visible to importing modules.
+  - Private `enum`: Module-scoped. Accessing private enums from other modules or leaking them in public function signatures triggers `E2005 (SEM_INVALID_SCOPE)`.
+- **Structs & Pointers**:
+  - Enums can be used as struct fields (`struct Task { enum Priority priority; };`) and accessed via `.` or `->`.
+  - Pointers to enums (`enum Priority*`) and address-of operations (`&e`) are fully supported.
+- **Dual-Backend Parity & ARC**:
+  - Lowers through shared LemonIR (`IrType.Kind.ENUM`).
+  - C backend emits compatible `typedef enum LemonC_<name> { ... } LemonC_<name>;`.
+  - JVM backend emits scalar integer instructions (`I` descriptor, 1 slot, `ILOAD`, `ISTORE`, `IF_ICMPEQ`, `IF_ICMPNE`) without boxing or object overhead.
+  - ARC does not manage enums (treated as unmanaged scalars).
+  - Can be printed with `printf("%d\n", val)`.
+
+Example: [examples/enum_showcase.lemon](../examples/enum_showcase.lemon)
+
+```c
+enum Level {
+    DEBUG,
+    INFO = 10,
+    WARN,
+    ERROR = -1
+}
+
+enum Status {
+    PENDING,
+    ACTIVE,
+    COMPLETED
+}
+
+struct LogEntry {
+    int id;
+    enum Level level;
+    enum Status status;
+}
+
+void print_level(enum Level lvl) {
+    if (lvl == Level.DEBUG) {
+        printf("Level: DEBUG (%d)\n", lvl);
+    } else if (lvl == Level.INFO) {
+        printf("Level: INFO (%d)\n", lvl);
+    } else if (lvl == Level.WARN) {
+        printf("Level: WARN (%d)\n", lvl);
+    } else if (lvl == Level.ERROR) {
+        printf("Level: ERROR (%d)\n", lvl);
+    }
+}
+
+enum Status advance_status(enum Status s) {
+    if (s == Status.PENDING) {
+        return Status.ACTIVE;
+    }
+    return Status.COMPLETED;
+}
+
+void main() {
+    enum Level lvl = Level.INFO;
+    print_level(lvl);
+
+    struct LogEntry entry;
+    entry.id = 42;
+    entry.level = Level.INFO;
+    entry.status = Status.PENDING;
+
+    entry.status = advance_status(entry.status);
+    printf("Entry: id=%d, level=%d, status=%d\n", entry.id, entry.level, entry.status);
+}
+```
+
 ### Top-Level Functions & Program Entry
 
 Example: [examples/TopLevelFunctionsTest.lemon](../examples/TopLevelFunctionsTest.lemon)

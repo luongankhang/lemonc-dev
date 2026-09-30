@@ -20,6 +20,8 @@ public final class IrModule {
     private final Map<String, IrConstant> constants = new LinkedHashMap<>();
     /** Declared struct layouts, keyed by struct name, in declaration order. */
     private final Map<String, IrStruct> structs = new LinkedHashMap<>();
+    /** Declared enum layouts, keyed by enum name, in declaration order. */
+    private final Map<String, IrEnum> enums = new LinkedHashMap<>();
 
     /** Backend-neutral struct layout: name plus ordered typed fields. */
     public record IrStruct(String name, List<IrStructField> fields) {
@@ -40,6 +42,27 @@ public final class IrModule {
         }
     }
 
+    /** Backend-neutral enum layout: name plus ordered named integer members. */
+    public record IrEnumMember(String name, int value) {
+        public IrEnumMember {
+            if (name == null || name.isBlank()) throw new IllegalArgumentException("enum member name is empty");
+        }
+    }
+
+    public record IrEnum(String name, List<IrEnumMember> members) {
+        public IrEnum {
+            if (name == null || name.isBlank()) throw new IllegalArgumentException("enum name is empty");
+            members = List.copyOf(members == null ? List.of() : members);
+        }
+
+        public IrEnumMember member(String memberName) {
+            for (IrEnumMember m : members) {
+                if (m.name().equals(memberName)) return m;
+            }
+            return null;
+        }
+    }
+
     /** Registers a struct layout; the first declaration of a name wins. */
     public IrModule addStruct(IrStruct struct) {
         if (struct == null) throw new IllegalArgumentException("struct is null");
@@ -57,6 +80,25 @@ public final class IrModule {
 
     public Map<String, IrStruct> structsView() {
         return structs;
+    }
+
+    /** Registers an enum layout; the first declaration of a name wins. */
+    public IrModule addEnum(IrEnum irEnum) {
+        if (irEnum == null) throw new IllegalArgumentException("enum is null");
+        enums.putIfAbsent(irEnum.name(), irEnum);
+        return this;
+    }
+
+    public IrEnum irEnum(String name) {
+        return enums.get(name);
+    }
+
+    public boolean hasNoEnums() {
+        return enums.isEmpty();
+    }
+
+    public Map<String, IrEnum> enumsView() {
+        return enums;
     }
 
     public IrModule(String name) {

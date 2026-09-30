@@ -77,7 +77,8 @@ The same example also demonstrates constant folding, algebraic simplification, b
 
 | Category | Features |
 |---|---|
-| Types | `byte`, `short`, `char`, `int`, `long`, `float`, `double`, `bool`, `string`, `void` |
+| Types | `byte`, `short`, `char`, `int`, `long`, `float`, `double`, `bool`, `string`, `void`, `enum` |
+| Enums | `[pub] enum Name { A, B = 10, C };` declarations, sequential and explicit values, nominal typing, `Enum.A` / `A` / `mod.Enum.A` access, `==` / `!=` comparisons, parameter/return passing, struct fields, pointer to enum, cross-module visibility |
 | Structs | `struct Name { T field; ... };` declarations, value-typed fields (scalars, `bool`, nested structs, `struct*`), field access `obj.field` / `ptr->field`, field assignment, by-value assignment (`b = a`), pass-by-value parameters, struct returns, `&struct` addresses |
 | Pointers | `int*`, `int**`, scalar `T*`, `struct T*`, address-of `&`, dereference `*` (read & write), `null`, identity comparisons (`==`, `!=`), pointer parameters and returns |
 | Arrays | `int[]`, `byte[]`, `short[]`, `char[]`, `long[]`, `float[]`, `double[]`, `bool[]`, `string[]`, indexed access, indexed assignment, `.length`, ARC memory management |

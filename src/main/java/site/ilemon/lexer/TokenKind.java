@@ -85,5 +85,6 @@ public enum TokenKind {
 		Tilde,		// ~
 		Struct,				// struct keyword
 		Arrow,				// -> pointer field access
+		Enum,				// enum keyword
 
 	}

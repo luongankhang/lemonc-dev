@@ -85,6 +85,12 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     /** Declared structs of the current program, keyed by struct name. */
     private final HashMap<String, Ast.StructDecl> structTable = new HashMap<>();
+    /** Declared enums of the current program, keyed by enum name. */
+    private final HashMap<String, Ast.EnumDecl> enumTable = new HashMap<>();
+    private final HashMap<String, EnumMemberInfo> enumMemberTable = new HashMap<>();
+
+    public record EnumMemberInfo(String enumName, String memberName, int value, Ast.EnumDecl decl) {}
+
     private Ast.MainClass.MainClassSingle currentMainClass;
     private String currDeclaringModule;
 
@@ -223,6 +229,13 @@ public class SemanticVisitor implements ISemanticVisitor {
                     "cannot assign to constant '" + obj.getId().getId() + "': constants are immutable",
                     obj.getLineNum(), obj.getSpan(), "immutable constant",
                     "constants cannot be reassigned after declaration", null);
+            return;
+        }
+        if (!isLocalTarget && enumMemberTable.containsKey(obj.getId().getId())) {
+            semanticError(DiagnosticCodes.SEM_CONST_IMMUTABLE,
+                    "cannot assign to enum member '" + obj.getId().getId() + "': enum members are immutable",
+                    obj.getLineNum(), obj.getSpan(), "immutable enum member",
+                    "enum members cannot be reassigned", null);
             return;
         }
         if(obj.getExpr() instanceof Ast.Expr.T){
@@ -380,6 +393,25 @@ public class SemanticVisitor implements ISemanticVisitor {
                 this.currType = constant.getType();
                 return;
             }
+            EnumMemberInfo enumMember = enumMemberTable.get(obj.getId());
+            if (enumMember != null) {
+                if (enumMember.decl().getVisibility() == Ast.Visibility.PRIVATE) {
+                    if (enumMember.decl().getDeclaringModule() != null
+                            && !java.util.Objects.equals(this.currDeclaringModule, enumMember.decl().getDeclaringModule())) {
+                        semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                                "cannot access member '" + enumMember.memberName() + "' of private enum '" + enumMember.enumName() + "'",
+                                obj.getLineNum(), obj.getSpan(), "private enum member",
+                                "enum is private to its module", null);
+                        this.currType = unknownType();
+                        obj.setType(this.currType);
+                        return;
+                    }
+                }
+                Ast.Type.Enum enumType = new Ast.Type.Enum(enumMember.enumName());
+                obj.setType(enumType);
+                this.currType = enumType;
+                return;
+            }
             int separator = obj.getId().indexOf('_');
             if (separator > 0 && importedModuleNames.contains(obj.getId().substring(0, separator))) {
                 semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
@@ -441,6 +473,9 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         if (type.getKind() == TypeKind.STRUCT) {
             validateStructTypeReference(type, constant.getLineNum(), constant.getSpan(), "constant type");
+        }
+        if (type.getKind() == TypeKind.ENUM) {
+            validateEnumTypeReference(type, constant.getLineNum(), constant.getSpan(), "constant type");
         }
         Ast.Expr.T initializer = constant.getInitializer();
         if (!isLiteralInitializer(initializer)) {
@@ -652,9 +687,22 @@ public class SemanticVisitor implements ISemanticVisitor {
                 }
             }
         }
+        if (this.currDeclaringModule == null) {
+            for (Ast.EnumDecl e : mainClassSingle.getEnums()) {
+                if (e.getDeclaringModule() != null) {
+                    this.currDeclaringModule = e.getDeclaringModule();
+                    break;
+                }
+            }
+        }
         scopeManager = new ScopeManager();
         importedModuleNames.clear();
         structTable.clear();
+        enumTable.clear();
+        enumMemberTable.clear();
+        for (Ast.EnumDecl enumDecl : mainClassSingle.getEnums()) {
+            visitEnumDecl(enumDecl);
+        }
         for (Ast.ImportDecl importDecl : mainClassSingle.getImports()) {
             importedModuleNames.add(importDecl.getName());
             try {
@@ -771,12 +819,19 @@ public class SemanticVisitor implements ISemanticVisitor {
             return;
         }
         validateStructTypeReference(type, field.getLineNum(), field.getSpan(), "field type");
+        validateEnumTypeReference(type, field.getLineNum(), field.getSpan(), "field type");
         if (owner.getVisibility() == Ast.Visibility.PUBLIC && field.getVisibility() == Ast.Visibility.PUBLIC) {
             if (referencesPrivateStruct(type)) {
                 semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
                         "public struct '" + owner.getName() + "' cannot expose private struct in public field '" + field.getId() + "'",
                         field.getLineNum(), field.getSpan(), "private struct in public field",
                         "declare struct with 'pub' or make field private", null);
+            }
+            if (referencesPrivateEnum(type)) {
+                semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                        "public struct '" + owner.getName() + "' cannot expose private enum in public field '" + field.getId() + "'",
+                        field.getLineNum(), field.getSpan(), "private enum in public field",
+                        "declare enum with 'pub' or make field private", null);
             }
         }
         if (isPointerType(type) && !isLegalStructPointee(((Ast.Type.Pointer) type).getPointee())) {
@@ -798,8 +853,11 @@ public class SemanticVisitor implements ISemanticVisitor {
         if (pointee.getKind() == TypeKind.STRUCT) {
             return resolveStruct(((Ast.Type.Struct) pointee).getName()) != null;
         }
+        if (pointee.getKind() == TypeKind.ENUM) {
+            return resolveEnum(((Ast.Type.Enum) pointee).getName()) != null;
+        }
         return switch (pointee.getKind()) {
-            case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL, STRING -> true;
+            case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL, STRING, ENUM -> true;
             default -> isArrayType(pointee);
         };
     }
@@ -909,6 +967,145 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
     }
 
+    // ==================================================== enum declarations
+
+    /** Registers and validates one enum declaration. */
+    private void visitEnumDecl(Ast.EnumDecl enumDecl) {
+        if (enumDecl == null) {
+            return;
+        }
+        if (enumTable.containsKey(enumDecl.getName())) {
+            semanticError(DiagnosticCodes.SEM_DUPLICATE_DECLARATION,
+                    "duplicate enum declaration: " + enumDecl.getName(),
+                    enumDecl.getLineNum(), enumDecl.getSpan(), "duplicate enum",
+                    "the enum was declared earlier", null);
+            return;
+        }
+        enumTable.put(enumDecl.getName(), enumDecl);
+        if (enumDecl.getMembers() == null || enumDecl.getMembers().isEmpty()) {
+            error(enumDecl.getLineNum(), "enum '" + enumDecl.getName() + "' must declare at least one member");
+            return;
+        }
+        java.util.Set<String> memberNames = new java.util.HashSet<>();
+        for (Ast.EnumMember member : enumDecl.getMembers()) {
+            if (!memberNames.add(member.getName())) {
+                semanticError(DiagnosticCodes.SEM_DUPLICATE_DECLARATION,
+                        "duplicate member declaration in enum '" + enumDecl.getName() + "': " + member.getName(),
+                        member.getLineNum(), member.getSpan(), "duplicate enum member",
+                        "enum member name is already declared", null);
+                continue;
+            }
+            EnumMemberInfo info = new EnumMemberInfo(enumDecl.getName(), member.getName(), member.getValue(), enumDecl);
+            enumMemberTable.putIfAbsent(member.getName(), info);
+            enumMemberTable.put(enumDecl.getName() + "." + member.getName(), info);
+        }
+    }
+
+    /** Resolves an enum name to its declaration, or null when unknown. */
+    private Ast.EnumDecl resolveEnum(String name) {
+        if (name == null) return null;
+        Ast.EnumDecl decl = enumTable.get(name);
+        if (decl != null) return decl;
+        int dot = name.indexOf('.');
+        if (dot >= 0) {
+            String alias = name.substring(0, dot);
+            String simpleName = name.substring(dot + 1);
+            if (currentMainClass != null && currentMainClass.getModuleEnums().containsKey(alias)) {
+                for (Ast.EnumDecl e : currentMainClass.getModuleEnums().get(alias)) {
+                    if (e.getName().equals(simpleName)) {
+                        return e;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean referencesPrivateEnum(Ast.Type.T type) {
+        if (type == null) return false;
+        if (isPointerType(type)) return referencesPrivateEnum(((Ast.Type.Pointer) type).getPointee());
+        if (type.getKind() != TypeKind.ENUM) return false;
+        Ast.EnumDecl decl = resolveEnum(((Ast.Type.Enum) type).getName());
+        return decl != null && decl.getVisibility() == Ast.Visibility.PRIVATE;
+    }
+
+    private void validateEnumTypeReference(Ast.Type.T type, int line, site.ilemon.util.SourceSpan span, String context) {
+        if (type == null) return;
+        if (isPointerType(type)) {
+            validateEnumTypeReference(((Ast.Type.Pointer) type).getPointee(), line, span, context);
+            return;
+        }
+        if (type.getKind() != TypeKind.ENUM) {
+            return;
+        }
+        Ast.Type.Enum enumType = (Ast.Type.Enum) type;
+        String alias = enumType.getModuleAlias();
+        String simpleName = enumType.getSimpleName();
+
+        if (alias != null) {
+            if (!importedModuleNames.contains(alias) && scopeManager.resolveImport(alias) == null) {
+                semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                        "module import '" + alias + "' is not visible in this scope",
+                        line, span, "import is out of scope", "declare the import in this lexical scope", null);
+                return;
+            }
+            java.util.List<Ast.EnumDecl> modEnums = currentMainClass != null ? currentMainClass.getModuleEnums().get(alias) : null;
+            Ast.EnumDecl targetEnum = null;
+            if (modEnums != null) {
+                for (Ast.EnumDecl e : modEnums) {
+                    if (e.getName().equals(simpleName)) {
+                        targetEnum = e;
+                        break;
+                    }
+                }
+            }
+            if (targetEnum == null) {
+                semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                        "module import '" + alias + "' has no enum '" + simpleName + "'",
+                        line, span, "unknown enum", "enum is not declared in module '" + alias + "'", null);
+                return;
+            }
+            if (targetEnum.getVisibility() == Ast.Visibility.PRIVATE) {
+                semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                        "cannot access private enum '" + simpleName + "' from module '" + alias + "'",
+                        line, span, "private enum", "enum is private to module '" + alias + "'", null);
+                return;
+            }
+        } else {
+            Ast.EnumDecl targetEnum = enumTable.get(simpleName);
+            if (targetEnum != null) {
+                if (targetEnum.getVisibility() == Ast.Visibility.PRIVATE) {
+                    if (targetEnum.getDeclaringModule() != null
+                            && !java.util.Objects.equals(this.currDeclaringModule, targetEnum.getDeclaringModule())) {
+                        semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                                "cannot access private enum '" + simpleName + "'",
+                                line, span, "private enum", "enum is private to its module", null);
+                    }
+                }
+                return;
+            }
+            if (currentMainClass != null) {
+                for (Map.Entry<String, java.util.ArrayList<Ast.EnumDecl>> entry : currentMainClass.getModuleEnums().entrySet()) {
+                    for (Ast.EnumDecl e : entry.getValue()) {
+                        if (e.getName().equals(simpleName) && e.getVisibility() == Ast.Visibility.PRIVATE) {
+                            if (e.getDeclaringModule() != null
+                                    && java.util.Objects.equals(this.currDeclaringModule, e.getDeclaringModule())) {
+                                return;
+                            }
+                            semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                                    "cannot access private enum '" + simpleName + "' from module '" + entry.getKey() + "'",
+                                    line, span, "private enum", "enum is private to module '" + entry.getKey() + "'", null);
+                            return;
+                        }
+                    }
+                }
+            }
+            semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                    "unknown enum type: " + simpleName,
+                    line, span, "unknown enum", "declare the enum before using it as a " + context, null);
+        }
+    }
+
     /** True when the type mentions a struct that is not declared. */
     private boolean referencesUnknownStruct(Ast.Type.T type) {
         if (type == null) {
@@ -979,21 +1176,35 @@ public class SemanticVisitor implements ISemanticVisitor {
         this.typeOfMethodDeclared = obj.getRetType();
 
         validateStructTypeReference(obj.getRetType(), obj.getLineNum(), obj.getSpan(), "return type");
+        validateEnumTypeReference(obj.getRetType(), obj.getLineNum(), obj.getSpan(), "return type");
         if (obj.getVisibility() == Ast.Visibility.PUBLIC && referencesPrivateStruct(obj.getRetType())) {
             semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
                     "public function '" + obj.getId() + "' cannot expose private struct in return type",
                     obj.getLineNum(), obj.getSpan(), "private struct in public signature",
                     "declare struct with 'pub' or make function private", null);
         }
+        if (obj.getVisibility() == Ast.Visibility.PUBLIC && referencesPrivateEnum(obj.getRetType())) {
+            semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                    "public function '" + obj.getId() + "' cannot expose private enum in return type",
+                    obj.getLineNum(), obj.getSpan(), "private enum in public signature",
+                    "declare enum with 'pub' or make function private", null);
+        }
         if (obj.getFormals() != null) {
             for (Ast.Declare.T formal : obj.getFormals()) {
                 if (formal instanceof Ast.Declare.DeclareSingle single) {
                     validateStructTypeReference(single.getType(), single.getLineNum(), single.getSpan(), "parameter");
+                    validateEnumTypeReference(single.getType(), single.getLineNum(), single.getSpan(), "parameter");
                     if (obj.getVisibility() == Ast.Visibility.PUBLIC && referencesPrivateStruct(single.getType())) {
                         semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
                                 "public function '" + obj.getId() + "' cannot expose private struct in parameter '" + single.getId() + "'",
                                 single.getLineNum(), single.getSpan(), "private struct in public signature",
                                 "declare struct with 'pub' or make function private", null);
+                    }
+                    if (obj.getVisibility() == Ast.Visibility.PUBLIC && referencesPrivateEnum(single.getType())) {
+                        semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                                "public function '" + obj.getId() + "' cannot expose private enum in parameter '" + single.getId() + "'",
+                                single.getLineNum(), single.getSpan(), "private enum in public signature",
+                                "declare enum with 'pub' or make function private", null);
                     }
                 }
             }
@@ -1002,6 +1213,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             for (Ast.Declare.T local : obj.getLocals()) {
                 if (local instanceof Ast.Declare.DeclareSingle single) {
                     validateStructTypeReference(single.getType(), single.getLineNum(), single.getSpan(), "variable declaration");
+                    validateEnumTypeReference(single.getType(), single.getLineNum(), single.getSpan(), "variable declaration");
                 }
             }
         }
@@ -1063,6 +1275,8 @@ public class SemanticVisitor implements ISemanticVisitor {
             this.currType = new Ast.Type.Char();
         }else if(obj.getType() instanceof Ast.Type.Double){
             this.currType = new Ast.Type.Double();
+        }else if(obj.getType() instanceof Ast.Type.Enum){
+            this.currType = obj.getType();
         }else{
             // Unsupported numeric type
             error(obj.getLineNum(), "unsupported numeric type: " + typeName(obj.getType()));
@@ -1121,7 +1335,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             Ast.Expr.T expr = obj.getExprs().get(i);
             this.visit(expr);
             char placeholder = placeholders.get(i);
-            if (placeholder == 'd' && !isIntegerLike(this.currType)) {
+            if (placeholder == 'd' && !isIntegerLike(this.currType) && (this.currType == null || this.currType.getKind() != TypeKind.ENUM)) {
                 typeError(DiagnosticCodes.TYPE_FORMAT, "int or byte", typeName(this.currType), expressionName(expr),
                         expr.getLineNum(), expr.getSpan(), "printf %d argument", null);
             }
@@ -1194,6 +1408,57 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Expr.Field obj) {
+        if (obj.getReceiver() instanceof Ast.Expr.Id id) {
+            Ast.EnumDecl enumDecl = resolveEnum(id.getId());
+            if (enumDecl != null) {
+                if (obj.isPointerBase()) {
+                    semanticError(DiagnosticCodes.SEM_GENERAL,
+                            "'->' cannot be used with enum '" + id.getId() + "'",
+                            obj.getLineNum(), obj.getSpan(), "invalid enum member access",
+                            "use '.' to access enum members", null);
+                    this.currType = unknownType();
+                    return;
+                }
+                if (obj.getPath().size() != 1) {
+                    semanticError(DiagnosticCodes.SEM_GENERAL,
+                            "invalid enum member access chain on '" + id.getId() + "'",
+                            obj.getLineNum(), obj.getSpan(), "invalid enum member access",
+                            "enum members are accessed as Enum.Member", null);
+                    this.currType = unknownType();
+                    return;
+                }
+                String memberName = obj.getPath().get(0);
+                Ast.EnumMember foundMember = null;
+                for (Ast.EnumMember m : enumDecl.getMembers()) {
+                    if (m.getName().equals(memberName)) {
+                        foundMember = m;
+                        break;
+                    }
+                }
+                if (foundMember == null) {
+                    semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                            "enum '" + id.getId() + "' has no member '" + memberName + "'",
+                            obj.getLineNum(), obj.getSpan(), "unknown enum member",
+                            "check the member name in enum '" + id.getId() + "'", null);
+                    this.currType = unknownType();
+                    return;
+                }
+                if (enumDecl.getVisibility() == Ast.Visibility.PRIVATE) {
+                    if (enumDecl.getDeclaringModule() != null
+                            && !java.util.Objects.equals(this.currDeclaringModule, enumDecl.getDeclaringModule())) {
+                        semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                                "cannot access member of private enum '" + enumDecl.getName() + "'",
+                                obj.getLineNum(), obj.getSpan(), "private enum",
+                                "enum is private to its module", null);
+                        this.currType = unknownType();
+                        return;
+                    }
+                }
+                Ast.Type.Enum enumType = new Ast.Type.Enum(enumDecl.getName());
+                this.currType = enumType;
+                return;
+            }
+        }
         // Resolve the receiver chain down to the struct value that holds the
         // first named field, then walk the field path typing each link.
         this.visit(obj.getReceiver());
@@ -1277,6 +1542,14 @@ public class SemanticVisitor implements ISemanticVisitor {
             root = f.getReceiver();
         }
         if (root instanceof Ast.Expr.Id rootId) {
+            if (resolveEnum(rootId.getId()) != null) {
+                String memberName = obj.getTarget().getPath().isEmpty() ? "" : obj.getTarget().getPath().get(0);
+                semanticError(DiagnosticCodes.SEM_CONST_IMMUTABLE,
+                        "cannot assign to enum member '" + rootId.getId() + "." + memberName + "': enum members are immutable",
+                        obj.getLineNum(), obj.getSpan(), "immutable enum member",
+                        "enum members cannot be reassigned", null);
+                return;
+            }
             MethodVarTable assignTable = this.methodVarTable.get(currMethodName);
             boolean isLocal = assignTable != null && assignTable.get(rootId.getId()) != null;
             if (!isLocal && resolveConst(rootId.getId()) != null) {
@@ -1757,7 +2030,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             return false;
         }
         return switch (type.getKind()) {
-            case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL -> true;
+            case BYTE, SHORT, CHAR, INT, LONG, FLOAT, DOUBLE, BOOL, ENUM -> true;
             case STRUCT -> resolveStruct(((Ast.Type.Struct) type).getName()) != null;
             default -> false;
         };
@@ -1786,6 +2059,9 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         if (leftPointee.getKind() == TypeKind.STRUCT && rightPointee.getKind() == TypeKind.STRUCT) {
             return ((Ast.Type.Struct) leftPointee).getSimpleName().equals(((Ast.Type.Struct) rightPointee).getSimpleName());
+        }
+        if (leftPointee.getKind() == TypeKind.ENUM && rightPointee.getKind() == TypeKind.ENUM) {
+            return ((Ast.Type.Enum) leftPointee).getSimpleName().equals(((Ast.Type.Enum) rightPointee).getSimpleName());
         }
         return leftPointee.getKind() == rightPointee.getKind();
     }
@@ -1880,7 +2156,22 @@ public class SemanticVisitor implements ISemanticVisitor {
         if(target.getKind() == curr.getKind()){
             // Struct values match only when they name the same struct.
             if (target.getKind() == TypeKind.STRUCT) {
-                return ((Ast.Type.Struct) target).getSimpleName().equals(((Ast.Type.Struct) curr).getSimpleName());
+                Ast.Type.Struct tStruct = (Ast.Type.Struct) target;
+                Ast.Type.Struct cStruct = (Ast.Type.Struct) curr;
+                if (tStruct.getModuleAlias() != null && cStruct.getModuleAlias() != null
+                        && !tStruct.getModuleAlias().equals(cStruct.getModuleAlias())) {
+                    return false;
+                }
+                return tStruct.getSimpleName().equals(cStruct.getSimpleName());
+            }
+            if (target.getKind() == TypeKind.ENUM) {
+                Ast.Type.Enum tEnum = (Ast.Type.Enum) target;
+                Ast.Type.Enum cEnum = (Ast.Type.Enum) curr;
+                if (tEnum.getModuleAlias() != null && cEnum.getModuleAlias() != null
+                        && !tEnum.getModuleAlias().equals(cEnum.getModuleAlias())) {
+                    return false;
+                }
+                return tEnum.getSimpleName().equals(cEnum.getSimpleName());
             }
             return true;
         }
@@ -2351,6 +2642,7 @@ public class SemanticVisitor implements ISemanticVisitor {
 
         Ast.Type.T declType = declareSingle.getType();
         validateStructTypeReference(declType, declareSingle.getLineNum(), declareSingle.getSpan(), "variable declaration");
+        validateEnumTypeReference(declType, declareSingle.getLineNum(), declareSingle.getSpan(), "variable declaration");
         validatePointerDeclarations(List.of(declareSingle));
 
         Ast.Expr.T initExp = declareSingle.getInitExp();

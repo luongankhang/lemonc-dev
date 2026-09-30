@@ -1,0 +1,73 @@
+enum Level {
+    DEBUG,
+    INFO = 10,
+    WARN,
+    ERROR = -1
+}
+
+enum Status {
+    PENDING,
+    ACTIVE,
+    COMPLETED
+}
+
+struct LogEntry {
+    int id;
+    enum Level level;
+    enum Status status;
+}
+
+void print_level(enum Level lvl) {
+    if (lvl == Level.DEBUG) {
+        printf("Level: DEBUG (%d)\n", lvl);
+    } else if (lvl == Level.INFO) {
+        printf("Level: INFO (%d)\n", lvl);
+    } else if (lvl == Level.WARN) {
+        printf("Level: WARN (%d)\n", lvl);
+    } else if (lvl == Level.ERROR) {
+        printf("Level: ERROR (%d)\n", lvl);
+    }
+}
+
+enum Status advance_status(enum Status s) {
+    if (s == Status.PENDING) {
+        return Status.ACTIVE;
+    }
+    return Status.COMPLETED;
+}
+
+void upgrade_entry(struct LogEntry* entry) {
+    if (entry->status != Status.COMPLETED) {
+        entry->status = advance_status(entry->status);
+    }
+    if (entry->level == Level.INFO) {
+        entry->level = Level.WARN;
+    }
+}
+
+void main() {
+    printf("=== LemonC Enum Showcase ===\n");
+
+    enum Level lvl = Level.INFO;
+    print_level(lvl);
+
+    lvl = Level.ERROR;
+    print_level(lvl);
+
+    struct LogEntry entry;
+    entry.id = 42;
+    entry.level = Level.INFO;
+    entry.status = Status.PENDING;
+
+    printf("Initial log entry: id=%d, level=%d, status=%d\n", entry.id, entry.level, entry.status);
+
+    upgrade_entry(&entry);
+    printf("After upgrade 1: id=%d, level=%d, status=%d\n", entry.id, entry.level, entry.status);
+
+    upgrade_entry(&entry);
+    printf("After upgrade 2: id=%d, level=%d, status=%d\n", entry.id, entry.level, entry.status);
+
+    if (entry.status == Status.COMPLETED) {
+        printf("Log entry reached COMPLETED state.\n");
+    }
+}

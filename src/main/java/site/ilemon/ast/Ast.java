@@ -116,6 +116,9 @@ public class Ast {
             /** Top-level struct declarations in declaration order. */
             private ArrayList<StructDecl> structs = new ArrayList<>();
             private java.util.Map<String, ArrayList<StructDecl>> moduleStructs = new java.util.LinkedHashMap<>();
+            /** Top-level enum declarations in declaration order. */
+            private ArrayList<EnumDecl> enums = new ArrayList<>();
+            private java.util.Map<String, ArrayList<EnumDecl>> moduleEnums = new java.util.LinkedHashMap<>();
             public ArrayList<Ast.Method.T> getMethods() { return this.methods; }
             public void setMethods(ArrayList<Ast.Method.T> methods) { this.methods = methods; }
             public ArrayList<ImportDecl> getImports() { return this.imports; }
@@ -123,6 +126,10 @@ public class Ast {
             public void setConstants(ArrayList<ConstDecl> constants) { this.constants = constants; }
             public ArrayList<StructDecl> getStructs() { return this.structs; }
             public java.util.Map<String, ArrayList<StructDecl>> getModuleStructs() { return this.moduleStructs; }
+            public ArrayList<EnumDecl> getEnums() { return this.enums; }
+            public void setEnums(ArrayList<EnumDecl> enums) { this.enums = enums; }
+            public java.util.Map<String, ArrayList<EnumDecl>> getModuleEnums() { return this.moduleEnums; }
+            public void setModuleEnums(java.util.Map<String, ArrayList<EnumDecl>> moduleEnums) { this.moduleEnums = moduleEnums; }
 
             public MainClassSingle(String classId, ArrayList<Declare.T> fields, ArrayList<Ast.Method.T> methods) {
                 this.classId = classId;
@@ -586,7 +593,7 @@ public class Ast {
             INT, FLOAT, DOUBLE, BOOL, CHAR, BYTE, SHORT, LONG, STRING, VOID,
             INT_ARRAY, FLOAT_ARRAY, DOUBLE_ARRAY, BOOL_ARRAY, STRING_ARRAY, BYTE_ARRAY, SHORT_ARRAY, CHAR_ARRAY, LONG_ARRAY,
             POINTER, NULL,
-            STRUCT
+            STRUCT, ENUM
         }
 
         public sealed abstract static class T{
@@ -910,6 +917,40 @@ public class Ast {
             @Override
             public void accept(ISemanticVisitor v) { v.visit(this); }
         }
+
+        /**
+         * Named enum type: {@code enum Color}.
+         * The name is resolved to an {@link EnumDecl} by semantic analysis.
+         */
+        public non-sealed static class Enum extends T {
+            private final String name;
+
+            public Enum(String name) {
+                if (name == null || name.isBlank()) throw new IllegalArgumentException("enum type name is empty");
+                this.name = name;
+            }
+
+            public String getName() { return name; }
+
+            public String getSimpleName() {
+                int dot = name.indexOf('.');
+                return dot >= 0 ? name.substring(dot + 1) : name;
+            }
+
+            public String getModuleAlias() {
+                int dot = name.indexOf('.');
+                return dot >= 0 ? name.substring(0, dot) : null;
+            }
+
+            @Override
+            public TypeKind getKind() { return TypeKind.ENUM; }
+
+            @Override
+            public String toString() { return "@enum " + name; }
+
+            @Override
+            public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
     }
 
     /**
@@ -966,6 +1007,70 @@ public class Ast {
         public Type.T fieldType(String fieldName) {
             Declare.DeclareSingle f = getField(fieldName);
             return f == null ? null : f.getType();
+        }
+    }
+
+    public static class EnumMember {
+        private final String name;
+        private final int value;
+        private final boolean hasExplicitValue;
+        private final int lineNum;
+        private SourceSpan span;
+
+        public EnumMember(String name, int value, boolean hasExplicitValue, int lineNum) {
+            this.name = name;
+            this.value = value;
+            this.hasExplicitValue = hasExplicitValue;
+            this.lineNum = lineNum;
+        }
+
+        public String getName() { return name; }
+        public int getValue() { return value; }
+        public boolean hasExplicitValue() { return hasExplicitValue; }
+        public int getLineNum() { return lineNum; }
+        public SourceSpan getSpan() { return span; }
+        public void setSpan(SourceSpan span) { this.span = span; }
+    }
+
+    public static class EnumDecl {
+        private final String name;
+        private final ArrayList<EnumMember> members;
+        private final int lineNum;
+        private SourceSpan span;
+        private Visibility visibility = Visibility.PRIVATE;
+        private String declaringModule = null;
+
+        public EnumDecl(String name, ArrayList<EnumMember> members, Visibility visibility, int lineNum) {
+            this.name = name;
+            this.members = members;
+            this.visibility = visibility;
+            this.lineNum = lineNum;
+        }
+
+        public EnumDecl(String name, ArrayList<EnumMember> members, int lineNum) {
+            this(name, members, Visibility.PRIVATE, lineNum);
+        }
+
+        public String getName() { return name; }
+        public ArrayList<EnumMember> getMembers() { return members; }
+        public int getLineNum() { return lineNum; }
+        public SourceSpan getSpan() { return span; }
+        public void setSpan(SourceSpan span) { this.span = span; }
+        public Visibility getVisibility() { return visibility; }
+        public void setVisibility(Visibility visibility) { this.visibility = visibility; }
+        public String getDeclaringModule() { return declaringModule; }
+        public void setDeclaringModule(String declaringModule) { this.declaringModule = declaringModule; }
+
+        public EnumMember getMember(String memberName) {
+            if (members == null) return null;
+            for (EnumMember m : members) {
+                if (m.getName().equals(memberName)) return m;
+            }
+            return null;
+        }
+
+        public boolean hasMember(String memberName) {
+            return getMember(memberName) != null;
         }
     }
 

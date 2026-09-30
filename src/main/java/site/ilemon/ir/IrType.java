@@ -15,8 +15,8 @@ public record IrType(Kind kind, IrType elementType, int addressSpace, String nam
         Objects.requireNonNull(kind, "kind");
         if (kind == Kind.ARRAY && elementType == null) throw new IllegalArgumentException("array element type is required");
         if ((kind == Kind.POINTER || kind == Kind.REFERENCE) && elementType == null) throw new IllegalArgumentException("pointee type is required");
-        if (kind == Kind.STRUCT && (name == null || name.isBlank())) throw new IllegalArgumentException("struct type requires a name");
-        if (kind != Kind.STRUCT && name != null) throw new IllegalArgumentException("only struct types carry a name");
+        if ((kind == Kind.STRUCT || kind == Kind.ENUM) && (name == null || name.isBlank())) throw new IllegalArgumentException("struct or enum type requires a name");
+        if (kind != Kind.STRUCT && kind != Kind.ENUM && name != null) throw new IllegalArgumentException("only struct and enum types carry a name");
         if (addressSpace < 0) throw new IllegalArgumentException("address space cannot be negative");
     }
     public static IrType scalar(Kind kind) { return new IrType(kind, null, 0, null); }
@@ -25,4 +25,6 @@ public record IrType(Kind kind, IrType elementType, int addressSpace, String nam
     public static IrType reference(IrType target) { return new IrType(Kind.REFERENCE, target, 0, null); }
     /** Named struct value type. */
     public static IrType structType(String name) { return new IrType(Kind.STRUCT, null, 0, name); }
+    /** Named enum value type. */
+    public static IrType enumType(String name) { return new IrType(Kind.ENUM, null, 0, name); }
 }

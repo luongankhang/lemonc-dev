@@ -31,6 +31,9 @@ public final class ModuleLoader {
         for (Ast.StructDecl s : main.getStructs()) {
             s.setDeclaringModule(normalizedOwner.toString());
         }
+        for (Ast.EnumDecl e : main.getEnums()) {
+            e.setDeclaringModule(normalizedOwner.toString());
+        }
         for (Ast.Method.T m : main.getMethods()) {
             if (m instanceof Ast.Method.MethodSingle method) {
                 method.setDeclaringModule(normalizedOwner.toString());
@@ -158,6 +161,73 @@ public final class ModuleLoader {
                 owner.getStructs().add(exported);
             }
         }
+
+        // Re-export public enum members as constants so importing module can read them
+        for (Ast.EnumDecl enumDecl : imported.getEnums()) {
+            if (enumDecl.getVisibility() == Ast.Visibility.PUBLIC) {
+                for (Ast.EnumMember m : enumDecl.getMembers()) {
+                    String exported1 = importDecl.getName() + "_" + m.getName();
+                    if (!existingConst(owner).contains(exported1)) {
+                        Ast.Type.Enum enumType = new Ast.Type.Enum(importDecl.getName() + "." + enumDecl.getName());
+                        Ast.ConstDecl c1 = new Ast.ConstDecl(
+                                enumType,
+                                exported1,
+                                new Ast.Expr.Number(enumType, m.getValue(), m.getLineNum()),
+                                Ast.Visibility.PUBLIC, m.getLineNum());
+                        c1.setResolvedValue(String.valueOf(m.getValue()));
+                        c1.setSpan(m.getSpan());
+                        owner.getConstants().add(c1);
+                    }
+                    String exported2 = importDecl.getName() + "_" + enumDecl.getName() + "_" + m.getName();
+                    if (!existingConst(owner).contains(exported2)) {
+                        Ast.Type.Enum enumType = new Ast.Type.Enum(importDecl.getName() + "." + enumDecl.getName());
+                        Ast.ConstDecl c2 = new Ast.ConstDecl(
+                                enumType,
+                                exported2,
+                                new Ast.Expr.Number(enumType, m.getValue(), m.getLineNum()),
+                                Ast.Visibility.PUBLIC, m.getLineNum());
+                        c2.setResolvedValue(String.valueOf(m.getValue()));
+                        c2.setSpan(m.getSpan());
+                        owner.getConstants().add(c2);
+                    }
+                }
+            }
+        }
+
+        // Track all enums in the imported module for alias lookups and visibility enforcement
+        ArrayList<Ast.EnumDecl> modEnums = owner.getModuleEnums().computeIfAbsent(importDecl.getName(), k -> new ArrayList<>());
+        for (Ast.EnumDecl e : imported.getEnums()) {
+            e.setDeclaringModule(importedPath.toString());
+            boolean found = false;
+            for (Ast.EnumDecl existingE : modEnums) {
+                if (existingE.getName().equals(e.getName())) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                modEnums.add(e);
+            }
+        }
+
+        // Re-export all enums into owner so they are available for code generation
+        for (Ast.EnumDecl enumDecl : imported.getEnums()) {
+            if (!existingEnum(owner).contains(enumDecl.getName())) {
+                Ast.EnumDecl exported = new Ast.EnumDecl(
+                        enumDecl.getName(), enumDecl.getMembers(), enumDecl.getVisibility(), enumDecl.getLineNum());
+                exported.setSpan(enumDecl.getSpan());
+                exported.setDeclaringModule(importedPath.toString());
+                owner.getEnums().add(exported);
+            }
+        }
+    }
+
+    private static Set<String> existingEnum(Ast.MainClass.MainClassSingle owner) {
+        Set<String> names = new HashSet<>();
+        for (Ast.EnumDecl enumDecl : owner.getEnums()) {
+            names.add(enumDecl.getName());
+        }
+        return names;
     }
 
     private static Set<String> existingStruct(Ast.MainClass.MainClassSingle owner) {
@@ -198,6 +268,9 @@ public final class ModuleLoader {
             Path normalized = path.toAbsolutePath().normalize();
             for (Ast.StructDecl s : module.getStructs()) {
                 s.setDeclaringModule(normalized.toString());
+            }
+            for (Ast.EnumDecl e : module.getEnums()) {
+                e.setDeclaringModule(normalized.toString());
             }
             for (Ast.Method.T m : module.getMethods()) {
                 if (m instanceof Ast.Method.MethodSingle method) {

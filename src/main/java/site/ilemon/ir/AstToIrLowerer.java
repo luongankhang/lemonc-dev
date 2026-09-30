@@ -63,6 +63,19 @@ public final class AstToIrLowerer {
                 }
             }
         }
+        // Register enum layouts so both backends can resolve enum types/members.
+        if (main.getEnums() != null) {
+            for (Ast.EnumDecl enumDecl : main.getEnums()) {
+                module.addEnum(toIrEnum(enumDecl));
+            }
+        }
+        if (main.getModuleEnums() != null) {
+            for (var list : main.getModuleEnums().values()) {
+                for (Ast.EnumDecl enumDecl : list) {
+                    module.addEnum(toIrEnum(enumDecl));
+                }
+            }
+        }
         programConsts = main.getConstants() == null ? List.of() : main.getConstants();
         for (Ast.ConstDecl constant : programConsts) {
             registerConstant(module, constant);
@@ -238,6 +251,30 @@ public final class AstToIrLowerer {
             }
         }
         return new IrModule.IrStruct(structDecl.getName(), fields);
+    }
+
+    /** Converts a declared enum into a backend-neutral layout. */
+    private IrModule.IrEnum toIrEnum(Ast.EnumDecl enumDecl) {
+        List<IrModule.IrEnumMember> members = new ArrayList<>();
+        if (enumDecl.getMembers() != null) {
+            for (Ast.EnumMember member : enumDecl.getMembers()) {
+                members.add(new IrModule.IrEnumMember(member.getName(), member.getValue()));
+            }
+        }
+        return new IrModule.IrEnum(enumDecl.getName(), members);
+    }
+
+    private record IrEnumMemberInfo(String enumName, String memberName, int value) {}
+
+    private IrEnumMemberInfo findEnumMember(String name) {
+        for (IrModule.IrEnum e : module.enumsView().values()) {
+            for (IrModule.IrEnumMember m : e.members()) {
+                if (m.name().equals(name)) {
+                    return new IrEnumMemberInfo(e.name(), m.name(), m.value());
+                }
+            }
+        }
+        return null;
     }
 
     /** Adds a resolved AST constant to the module's backend-neutral table. */
@@ -661,6 +698,20 @@ public final class AstToIrLowerer {
      */
     private IrValue lowerFieldLoad(Ast.Expr.Field field, MethodLoweringContext ctx) {
         Ast.Expr.T receiverExpr = field.getReceiver();
+        if (receiverExpr instanceof Ast.Expr.Id id) {
+            IrModule.IrEnum irEnum = module.irEnum(id.getId());
+            if (irEnum != null && field.getPath().size() == 1) {
+                String memberName = field.getPath().get(0);
+                IrModule.IrEnumMember member = irEnum.member(memberName);
+                if (member != null) {
+                    IrType eType = IrType.enumType(irEnum.name());
+                    IrValue res = ctx.newTemp(eType);
+                    ctx.emit(new IrInstruction(IrInstruction.Op.CONST, res,
+                            List.of(new IrValue(String.valueOf(member.value()), eType)), null));
+                    return res;
+                }
+            }
+        }
         if (!(receiverExpr instanceof Ast.Expr.Id id)) {
             throw new CompilerException("field access requires a named struct receiver");
         }
@@ -835,6 +886,14 @@ public final class AstToIrLowerer {
                 IrValue res = ctx.newTemp(cType);
                 ctx.emit(new IrInstruction(IrInstruction.Op.CONST, res,
                         List.of(new IrValue(constant.getId(), cType)), null));
+                return res;
+            }
+            IrEnumMemberInfo enumMember = findEnumMember(id.getId());
+            if (enumMember != null) {
+                IrType eType = IrType.enumType(enumMember.enumName);
+                IrValue res = ctx.newTemp(eType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.CONST, res,
+                        List.of(new IrValue(String.valueOf(enumMember.value), eType)), null));
                 return res;
             }
             t = IrType.scalar(IrType.Kind.INT);
@@ -1204,6 +1263,7 @@ public final class AstToIrLowerer {
         }
         if (type instanceof Ast.Type.Null) return IrType.pointer(IrType.scalar(IrType.Kind.VOID), 0);
         if (type instanceof Ast.Type.Struct structType) return IrType.structType(structType.getSimpleName());
+        if (type instanceof Ast.Type.Enum enumType) return IrType.enumType(enumType.getSimpleName());
 
         if (type instanceof Ast.Type.IntArray) return IrType.array(IrType.scalar(IrType.Kind.INT));
         if (type instanceof Ast.Type.ByteArray) return IrType.array(IrType.scalar(IrType.Kind.BYTE));

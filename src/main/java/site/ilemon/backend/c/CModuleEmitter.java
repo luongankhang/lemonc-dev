@@ -9,7 +9,7 @@ import java.util.Map;
 public final class CModuleEmitter {
 
     public String emit(IrModule module) {
-        CTypeEmitter types = new CTypeEmitter(module.structsView());
+        CTypeEmitter types = new CTypeEmitter(module.structsView(), module.enumsView());
         StringBuilder out = new StringBuilder();
         out.append("#include <stdbool.h>\n");
         out.append("#include <stdint.h>\n");
@@ -19,6 +19,11 @@ public final class CModuleEmitter {
         out.append("#include <limits.h>\n");
         out.append("#include \"lemon_runtime.h\"\n\n");
         out.append("typedef struct { unsigned char _opaque; } lemon_opaque_t;\n\n");
+
+        // Enum typedefs: one C enum per declared LemonC enum.
+        if (!module.enumsView().isEmpty()) {
+            out.append(CTypeEmitter.emitEnumTypedefs(module.enumsView())).append('\n');
+        }
 
         // Struct typedefs: one C struct per declared LemonC struct. Fields use
         // the plain LemonIR→C type mapping (nested structs embed by value).
@@ -56,7 +61,7 @@ public final class CModuleEmitter {
         }
         out.append("\n");
 
-        CFunctionEmitter functions = new CFunctionEmitter(module.constants().keySet(), module.structsView());
+        CFunctionEmitter functions = new CFunctionEmitter(module.constants().keySet(), module.structsView(), module.enumsView());
         module.functions().forEach(function -> out.append(functions.emit(function)).append('\n'));
         return out.toString();
     }
