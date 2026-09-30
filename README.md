@@ -11,7 +11,7 @@ LemonC 是一个面向实际编译器工程实践的 C-like 编译器。它不�
 </p>
 
 ```text
-Java 21 | Maven | LemonIR → JVM or C backend | 445 tests passing | 95 examples | MIT License
+Java 21 | Maven | LemonIR → JVM or C backend | 501 tests passing | 96 examples | MIT License
 ```
 
 ## Why LemonC
@@ -92,6 +92,7 @@ The same example also demonstrates constant folding, algebraic simplification, b
 | Output | `printf`, `printLine`, `%d` (including `byte`, `short`, `char`, `int`, `long`, `bool`), `%f`, `\n`, `\t` |
 | Optimization | constant folding, boolean folding, algebraic simplification, constant branch simplification |
 | Memory (ARC) | Automatic Reference Counting for managed heap objects (arrays and strings), ownership analysis, `--arc` verification |
+| Null Safety & Flow Analysis | Flow-sensitive null analysis (`NullFlowAnalyzer`), condition narrowing (`if (p != null)`), short-circuit narrowing, early return pruning, runtime null check elision for proven non-null dereferences, and deterministic traps on unproven null dereferences |
 | Diagnostics | compiler diagnostic engine with error codes (`E0001` - `E4001`, `E8001` - `E8006`), primary/secondary spans, labels, and suggestions |
 
 For the complete feature list with source code and real outputs, read [docs/LEMONC_FEATURES.md](docs/LEMONC_FEATURES.md).
@@ -158,6 +159,7 @@ flowchart TB
     subgraph MiddleEnd
         O["site.ilemon.optimizer<br/>AST optimizer"]
         A["site.ilemon.arc<br/>ownership / ARC analysis"]
+        F["site.ilemon.flow<br/>null flow analysis & narrowing"]
         IR["site.ilemon.ir<br/>AstToIrLowerer → LemonIR<br/>(shared, backend-neutral CFG)"]
     end
 
@@ -166,7 +168,7 @@ flowchart TB
         C["site.ilemon.backend.c<br/>CBackend → C source<br/>→ gcc/clang → native"]
     end
 
-    L --> P --> S --> O --> A --> IR
+    L --> P --> S --> O --> A --> F --> IR
     IR --> J
     IR --> C
 ```
@@ -181,6 +183,7 @@ LemonIR is the single abstraction shared by both backends. It is not shaped afte
 | `site.ilemon.semantic` | `SemanticVisitor`, `MethodVarTable`, `Symbol` | Type checking, declaration checks, assignment checks, return checks |
 | `site.ilemon.optimizer` | `AstOptimizer` | Perform safe AST-level simplifications |
 | `site.ilemon.arc` | `OwnershipAnalyzer`, `RefcountSimulator`, `OwnershipIr` | Shared ownership/ARC analysis for managed values (used before lowering) |
+| `site.ilemon.flow` | `NullFlowAnalyzer`, `Nullability`, `NullFlowResult` | Flow-sensitive null analysis, condition narrowing, safe dereference proof |
 | `site.ilemon.ir` | `AstToIrLowerer`, `IrModule`, `IrVerifier`, `IrPrinter` | Lower the optimized AST to the backend-neutral LemonIR CFG |
 | `site.ilemon.backend` | `Backend`, `BackendOptions`, `BackendResult` | Backend-neutral contract implemented by every backend |
 | `site.ilemon.backend.jvm` | `JvmBackend`, `JvmClassWriter`, `JvmMethodEmitter`, `JvmInstructionEmitter`, `JvmStackTracker`, `JvmTypeMapper` | Lower LemonIR directly to JVM bytecode and write `.class` files (no Jasmin) |
@@ -246,8 +249,8 @@ mvn test
 Current coverage:
 
 ```text
-Tests run: 478, Failures: 0, Errors: 0, Skipped: 0
-95+ example programs verified across backends
+Tests run: 501, Failures: 0, Errors: 0, Skipped: 0
+96+ example programs verified across backends
 ```
 
 ## More Real Examples
@@ -452,6 +455,7 @@ void main() {
 | Test class | Purpose |
 |---|---|
 | `AllExamplesJvmTest` | Compile every root example to `.class` via the JVM backend, run it, compare stdout against the manifest |
+| `NullSafetyFlowTest` | Flow-sensitive null analysis, condition narrowing, dereference check elision, and deterministic runtime traps across JVM and C |
 | `PointerMultiBackendTest`, `PointerTest`, `PointerShowcaseTest` | Pointer semantics, multi-level indirection, address-of, dereferencing, dual-backend verification |
 | `LocalVarDeclTest` | Flexible declaration placement, initializers, block scoping, and semantic diagnostics |
 | `FullFeatureMatrixTest`, `MultiBackendTest` | Cross-backend integration tests asserting byte-for-byte output parity between JVM and C |
@@ -501,7 +505,7 @@ LemonC intentionally focuses on a clean, robust, and verifiable language core:
 | Local Address Escaping | Functions cannot return the address of their own local stack variables (`return &local;` rejected with `E2008`). |
 | String Types | `string` is supported in literals, `printf`, and `string[]` arrays; standalone scalar string variable assignments (`string s = ...`) are not supported. |
 | Object Model | Top-level function and module language; no class instantiation (`new Class()`), inheritance, or methods on structs. |
-| Whole Array Copies | Direct assignment of entire arrays (`a = b;`) is disallowed; element-by-element iteration is required. |
+| Whole Array Copies | Direct assignment of entire arrays (`a = b;`) is disallowed; element-by-element iteration is required. Assigning `arr = null;` is supported and safely releases the array reference via ARC. |
 
 ## Roadmap
 

@@ -1,0 +1,67 @@
+// null_safety.lemon: Demonstration of LemonC flow-sensitive null safety,
+// condition narrowing, struct pointer null elision, and memory safety.
+
+struct Point {
+    int x;
+    int y;
+};
+
+int safeRead(int* ptr) {
+    // Flow analysis recognizes early return:
+    // after this check, ptr is guaranteed non-null!
+    if (ptr == null) {
+        return 0;
+    }
+    return *ptr;
+}
+
+void checkArray(int a[]) {
+    if (a == null) {
+        printf("Array is null\n");
+    } else {
+        printf("Array is not null, element 0: %d\n", a[0]);
+    }
+}
+
+void main() {
+    int a = 42;
+    int* p = &a;
+
+    // 1. Condition narrowing: inside if (p != null), p is proven non-null
+    if (p != null) {
+        *p = 100;
+        printf("Non-null deref: %d\n", *p);
+    }
+
+    // 2. Early return narrowing via safeRead
+    int val = safeRead(p);
+    printf("Safe read: %d\n", val);
+
+    // 3. Short-circuit null protection
+    int* nullPtr = null;
+    if (nullPtr != null && *nullPtr > 0) {
+        printf("Unreachable\n");
+    } else {
+        printf("Short-circuit protected against null dereference\n");
+    }
+
+    // 4. Struct pointer narrowing (-> access)
+    struct Point pt;
+    pt.x = 10;
+    pt.y = 20;
+    struct Point* pPt = &pt;
+    if (pPt != null) {
+        pPt->x = 55;
+        pPt->y = 66;
+        printf("Point: (%d, %d)\n", pPt->x, pPt->y);
+    }
+
+    // 5. Array null safety and reassignment
+    int list[3];
+    list[0] = 777;
+    checkArray(list);
+
+    // Reassignment to null correctly releases previous managed array without leaks
+    list = null;
+    checkArray(list);
+}

@@ -920,9 +920,66 @@ LemonC implements an optional compile-time ARC verification and lowering pass in
 
 ---
 
-## 17. Integration Examples
+## 17. Null Safety, Flow Analysis & Deterministic Traps
 
-### 17.1. Pointer Showcase (`examples/pointer_showcase/pointer_showcase.lemon`)
+LemonC implements an intraprocedural, flow-sensitive null safety analysis pass (`site.ilemon.flow.NullFlowAnalyzer`), prioritizing memory safety and program correctness before performance optimization.
+
+### 17.1. Flow-Sensitive Nullability Lattice
+
+Every pointer (`T*`, `struct T*`) and managed array/reference (`int[]`, `string[]`) variable is tracked across the control-flow graph through a 3-state lattice:
+
+- `NON_NULL`: Statically proven to reference valid memory or an allocated instance.
+- `NULL`: Statically proven to evaluate to `null`.
+- `UNKNOWN`: Nullability cannot be statically determined (e.g. function pointer parameters, conditional joins without dominating checks).
+
+At control-flow join points (branches, merges, loop headers), environments are combined using a conservative meet operator:
+$$\text{merge}(\text{NON\_NULL}, \text{NON\_NULL}) = \text{NON\_NULL}$$
+$$\text{merge}(\text{NULL}, \text{NULL}) = \text{NULL}$$
+$$\text{merge}(\text{state}_1, \text{state}_2) = \text{UNKNOWN} \quad (\text{if } \text{state}_1 \neq \text{state}_2)$$
+
+### 17.2. Condition Fact Extraction & Flow Narrowing
+
+The analyzer extracts definite facts from boolean conditional guards:
+
+1. **Equality / Inequality with `null`**:
+   - `if (p != null)`: Narrows `p` to `NON_NULL` in the `then` branch and `NULL` in the `else` branch.
+   - `if (p == null)`: Narrows `p` to `NULL` in the `then` branch and `NON_NULL` in the `else` branch.
+2. **Boolean Connectives (`&&`, `||`, `!`)**:
+   - Short-circuit conjunctions (`p != null && *p == 42`): The right operand is evaluated in the true-context of the left operand, guaranteeing `p` is `NON_NULL` during `*p`.
+   - Short-circuit disjunctions (`p == null || *p == 42`): The right operand is evaluated in the false-context of the left operand, ensuring `p` is `NON_NULL` during `*p`.
+   - Inversion (`!`): Conditions like `!(p == null)` and `!(p != null)` are mapped to their duals.
+3. **Early Returns & Terminal Control Flow**:
+   - If a branch terminates (e.g. `if (p == null) { return; }`), the fallthrough execution path inherits the facts from the un-taken path, proving `p` is `NON_NULL` for all subsequent statements.
+4. **Loop Invariants & Fixed-Point Iteration**:
+   - In `while (p != null) { ... }`, fixed-point iteration verifies loop-carried facts and maintains `p` as `NON_NULL` across all iterations unless explicitly modified.
+5. **Post-Dereference Promotion**:
+   - In LemonC semantics, dereferencing `*p` or `p->field` traps if `p == null`. Therefore, once an unproven dereference executes, all subsequent statements in the same basic block know `p` is `NON_NULL`.
+
+### 17.3. Zero-Cost Elision vs Deterministic Runtime Traps
+
+The AST-to-IR lowerer (`AstToIrLowerer`) queries `NullFlowResult` for every dereference (`*p`), dereference assignment (`*p = val`), field load (`p->field`), and field store (`p->field = val`).
+
+- **When Proven `NON_NULL` (Zero-Cost Elision)**:
+  - **C Backend**: Elides runtime check `lemon_require_ptr(p)` and emits raw dereference `*(p)` / `p->field`.
+  - **JVM Backend**: Elides bytecode guard `emitNullDerefGuard()` and executes direct memory fetch/store.
+- **When NOT Proven `NON_NULL` (Deterministic Trap)**:
+  - When the compiler cannot statically prove non-nullity, it emits deterministic runtime traps instead of allowing undefined behavior.
+  - **Parity**: Both the C runtime (`lemon_require_ptr`) and the JVM backend guard write:
+    ```text
+    Lemon runtime error: null pointer dereference
+    ```
+    to standard error and terminate the process with exit code 1.
+
+### 17.4. Array Null Checking & ARC Lifetime Safety
+
+- **Null Comparisons**: Arrays support direct equality checks with `null` (`arr == null` / `arr != null`).
+- **Managed Null Reassignment**: Assigning `arr = null;` automatically invokes `lemon_release` on the previous heap buffer, preventing memory leaks while safely clearing the reference.
+
+---
+
+## 18. Integration Examples
+
+### 18.1. Pointer Showcase (`examples/pointer_showcase/pointer_showcase.lemon`)
 
 ```c
 void setValue(int* p, int value) {
@@ -960,7 +1017,7 @@ final_x=40
 larger=50
 ```
 
-### 17.2. Mixed String, Byte, and Long Arrays (`examples/StringByteLongArrays.lemon`)
+### 18.2. Mixed String, Byte, and Long Arrays (`examples/StringByteLongArrays.lemon`)
 
 ```c
 int lengths(string names[], byte bytes[], long values[]) {
@@ -988,7 +1045,7 @@ Output:
 array-lengths=6
 ```
 
-### 17.3. C-like Syntax Operators Showcase (`examples/operator/OperatorShowcase.lemon`)
+### 18.3. C-like Syntax Operators Showcase (`examples/operator/OperatorShowcase.lemon`)
 
 Demonstrates prefix/postfix increment and decrement, compound assignment with single evaluation of LHS, unary operators (`+`, `-`, `!`, `~`), ternary operators, and for-loop stepping:
 
@@ -1075,9 +1132,91 @@ for-loop sum=10
 
 Verified with byte-for-byte output equivalence across both JVM direct bytecode and C99 native targets.
 
+### 18.4. Null Safety & Flow Analysis Showcase (`examples/null_safety.lemon`)
+
+Demonstrates condition narrowing, early return fact propagation, short-circuit guard protection, struct pointer field access narrowing, and array null assignment with automatic reference counting release:
+
+```c
+struct Point {
+    int x;
+    int y;
+};
+
+int safeRead(int* ptr) {
+    // Flow analysis recognizes early return:
+    // after this check, ptr is guaranteed non-null!
+    if (ptr == null) {
+        return 0;
+    }
+    return *ptr;
+}
+
+void checkArray(int a[]) {
+    if (a == null) {
+        printf("Array is null\n");
+    } else {
+        printf("Array is not null, element 0: %d\n", a[0]);
+    }
+}
+
+void main() {
+    int a = 42;
+    int* p = &a;
+
+    // 1. Condition narrowing: inside if (p != null), p is proven non-null
+    if (p != null) {
+        *p = 100;
+        printf("Non-null deref: %d\n", *p);
+    }
+
+    // 2. Early return narrowing via safeRead
+    int val = safeRead(p);
+    printf("Safe read: %d\n", val);
+
+    // 3. Short-circuit null protection
+    int* nullPtr = null;
+    if (nullPtr != null && *nullPtr > 0) {
+        printf("Unreachable\n");
+    } else {
+        printf("Short-circuit protected against null dereference\n");
+    }
+
+    // 4. Struct pointer narrowing (-> access)
+    struct Point pt;
+    pt.x = 10;
+    pt.y = 20;
+    struct Point* pPt = &pt;
+    if (pPt != null) {
+        pPt->x = 55;
+        pPt->y = 66;
+        printf("Point: (%d, %d)\n", pPt->x, pPt->y);
+    }
+
+    // 5. Array null safety and reassignment
+    int list[3];
+    list[0] = 777;
+    checkArray(list);
+
+    // Reassignment to null correctly releases previous managed array without leaks
+    list = null;
+    checkArray(list);
+}
+```
+
+Output:
+
+```text
+Non-null deref: 100
+Safe read: 100
+Short-circuit protected against null dereference
+Point: (55, 66)
+Array is not null, element 0: 777
+Array is null
+```
+
 ---
 
-## 18. Compiler Diagnostics & Error Codes
+## 19. Compiler Diagnostics & Error Codes
 
 LemonC includes a standardized diagnostic reporting engine ([`DiagnosticEngine`](file:///d:/ps1dev/lemonc-dev/src/main/java/site/ilemon/diagnostic/DiagnosticEngine.java)) inspired by modern industrial compilers (Rust, Clang):
 
@@ -1125,7 +1264,7 @@ LemonC includes a standardized diagnostic reporting engine ([`DiagnosticEngine`]
 
 ---
 
-## 19. Test Suite & Verification Baseline
+## 20. Test Suite & Verification Baseline
 
 Every change to the compiler is validated against a comprehensive automated test suite:
 
@@ -1134,13 +1273,13 @@ mvn clean test
 ```
 
 Current Test Baseline:
-- **478 Automated Tests Passing** (0 failures, 0 errors, 0 skipped).
-- **95+ Root & Integration Example Programs** compiled to `.class` files by the JVM backend, executed on a real JVM, and verified byte-for-byte against `examples/example-output-manifest.tsv`.
-- **Dual-Backend Parity Tests** (`OperatorTest`, `PointerMultiBackendTest`, `NativeEndToEndTest`): LemonIR -> JVM and LemonIR -> C produce 100% identical outputs.
+- **501 Automated Tests Passing** (0 failures, 0 errors, 0 skipped).
+- **96+ Root & Integration Example Programs** compiled to `.class` files by the JVM backend, executed on a real JVM, and verified byte-for-byte against `examples/example-output-manifest.tsv`.
+- **Dual-Backend Parity Tests** (`NullSafetyFlowTest`, `OperatorTest`, `PointerMultiBackendTest`, `NativeEndToEndTest`): LemonIR -> JVM and LemonIR -> C produce 100% identical outputs.
 
 ---
 
-## 20. Current Language Boundaries
+## 21. Current Language Boundaries
 
 The following limitations are deliberate architectural boundaries for LemonC:
 
@@ -1150,5 +1289,5 @@ The following limitations are deliberate architectural boundaries for LemonC:
 | Pointers | Unmanaged scalar stack addresses. Pointer arithmetic (`p + 1`) is forbidden (`E3014`). Returning the address of a local stack variable is prevented at compile time (`E2008`). Reassigning through double dereferences (`*pp = p`) is forbidden (`E3015`). |
 | Memory Management | Heap arrays are managed via ARC (`--arc`) or GC on JVM; raw pointers are unmanaged stack addresses. |
 | Array Dimensions | Statically sized 1-dimensional arrays only; multi-dimensional arrays (`int[][]`) are not supported. |
-| Whole Array Copies | Direct assignment of entire arrays (`a = b;`) is disallowed; element-by-element iteration is required. |
+| Whole Array Copies | Direct assignment of entire arrays (`a = b;`) is disallowed; element-by-element iteration is required. Assigning `arr = null;` is supported and safely releases the array reference via ARC. |
 | Format Specifiers | `printf` supports `%d` (integers, bools) and `%f` (floats, doubles). String formatting (`%s`) is unsupported. |

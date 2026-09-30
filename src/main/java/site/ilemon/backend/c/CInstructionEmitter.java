@@ -136,6 +136,9 @@ public final class CInstructionEmitter {
                     if ("length".equals(instruction.target())) {
                         yield result + "(int32_t)(" + args[0] + "->length);";
                     }
+                    if (instruction.nonNull()) {
+                        yield result + "*(" + args[0] + ");";
+                    }
                     // Pointer dereference: null dereference is a defined
                     // runtime error (diagnosed, then abort), never UB.
                     yield result + "*(lemon_require_ptr(" + args[0] + "), " + args[0] + ");";
@@ -146,6 +149,9 @@ public final class CInstructionEmitter {
             case STORE -> {
                 if (args.length <= 2) {
                     // Pointer store: guarded against null, like the LOAD path.
+                    if (instruction.nonNull()) {
+                        yield "*(" + args[0] + ") = " + args[1] + ";";
+                    }
                     yield "*(lemon_require_ptr(" + args[0] + "), " + args[0] + ") = " + args[1] + ";";
                 }
                 String elemType = instruction.operands().size() > 2 ? types.emit(instruction.operands().get(2).type()) : "int32_t";
@@ -216,7 +222,11 @@ public final class CInstructionEmitter {
         String[] links = path.isEmpty() ? new String[0] : path.split("\\.", -1);
         StringBuilder expr = new StringBuilder();
         if (throughPointer) {
-            expr.append("(lemon_require_ptr(").append(root).append("), ").append(root).append(")");
+            if (instruction.nonNull()) {
+                expr.append(root);
+            } else {
+                expr.append("(lemon_require_ptr(").append(root).append("), ").append(root).append(")");
+            }
         } else {
             expr.append(root);
         }

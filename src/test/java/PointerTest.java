@@ -111,7 +111,13 @@ public class PointerTest {
         File source = new File("examples/pointer/pointer_basic.lemon");
         String c = new CBackend().generate(lowerFile(source));
         assertTrue(c, c.contains("= &(value);"));
-        assertTrue(c, c.contains("lemon_require_ptr(ptr), ptr)"));
+        // Flow analysis proves ptr is non-null after &value, eliding redundant check:
+        assertTrue(c, c.contains("*(ptr);"));
+
+        // Unproven parameter dereference retains lemon_require_ptr for memory safety:
+        File fnSource = new File("examples/pointer/pointer_functions.lemon");
+        String cFn = new CBackend().generate(lowerFile(fnSource));
+        assertTrue(cFn, cFn.contains("lemon_require_ptr(q), q)"));
 
         File nullSource = new File("examples/pointer/pointer_null.lemon");
         String cNull = new CBackend().generate(lowerFile(nullSource));

@@ -3,7 +3,11 @@ package site.ilemon.ir;
 import java.util.List;
 
 /** Minimal target-independent instruction vocabulary; target lowering is a later phase. */
-public record IrInstruction(Op op, IrValue result, List<IrValue> operands, String target) {
+public record IrInstruction(Op op, IrValue result, List<IrValue> operands, String target, boolean nonNull) {
+    public IrInstruction(Op op, IrValue result, List<IrValue> operands, String target) {
+        this(op, result, operands, target, false);
+    }
+
     public enum Op {
         CONST, ADD, SUB, MUL, DIV, REM, AND, OR, XOR, CMP, CONVERT, LOAD, STORE, ALLOC, ADDRESS_OF,
         CALL, RETURN, BRANCH, COND_BRANCH, PHI, BOUNDS_CHECK, EXTERNAL_CALL, BIT_NOT,

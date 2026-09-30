@@ -139,8 +139,9 @@ public final class AstToIrLowerer {
         blocks.add(entry);
 
         List<Ast.ConstDecl> methodConsts = method.getModuleConsts() != null ? method.getModuleConsts() : programConsts;
+        site.ilemon.flow.NullFlowResult nullFlow = site.ilemon.flow.NullFlowAnalyzer.analyze(method);
         MethodLoweringContext ctx = new MethodLoweringContext(
-                irFunc, blocks, entry, variableTypes, isMain, returnType, methodConsts
+                irFunc, blocks, entry, variableTypes, isMain, returnType, methodConsts, nullFlow
         );
         LexicalScope methodScope = ctx.pushScope(ScopeKind.METHOD);
 
@@ -385,8 +386,8 @@ public final class AstToIrLowerer {
                     if (!rhsVal.name().startsWith("_t")) {
                         ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(rhsVal), "lemon_retain"));
                     }
-                    ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(new IrValue(targetId, targetType)), "lemon_release"));
                 }
+                ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(new IrValue(targetId, targetType)), "lemon_release"));
                 ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(targetId, targetType), List.of(rhsVal), null));
             } else {
                 if (rhsVal.type().kind() != targetType.kind()) {
@@ -402,13 +403,14 @@ public final class AstToIrLowerer {
             }
             ctx.cleanupStatementTemporaries();
         } else if (stmt instanceof Ast.Stmt.FieldAssign fieldAssign) {
+            boolean isSafe = fieldAssign.getTarget().isPointerBase() && ctx.nullFlow != null && ctx.nullFlow.isSafe(fieldAssign);
             IrValue value = lowerExpr(fieldAssign.getExpr(), ctx);
             IrInstruction.Op binOp = compoundAssignOp(fieldAssign.getOp());
             if (binOp != null) {
                 IrValue oldVal = lowerFieldLoad(fieldAssign.getTarget(), ctx);
                 value = applyBinaryOp(binOp, oldVal, value, ctx);
             }
-            lowerFieldStore(fieldAssign.getTarget(), value, ctx);
+            lowerFieldStore(fieldAssign.getTarget(), value, isSafe, ctx);
             ctx.cleanupStatementTemporaries();
         } else if (stmt instanceof Ast.Stmt.DerefAssign derefAssign) {
             lowerDerefAssign(derefAssign, ctx);
@@ -673,8 +675,9 @@ public final class AstToIrLowerer {
         boolean throughPointer = field.isPointerBase() && isPointerKind(rootType);
         IrType resultType = fieldPathType(rootType, field.getPath(), throughPointer);
         IrValue loaded = ctx.newTemp(resultType);
+        boolean isSafe = throughPointer && ctx.nullFlow != null && ctx.nullFlow.isSafe(field);
         ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_LOAD, loaded,
-                List.of(new IrValue(id.getId(), rootType)), String.join(".", field.getPath())));
+                List.of(new IrValue(id.getId(), rootType)), String.join(".", field.getPath()), isSafe));
         return loaded;
     }
 
@@ -712,6 +715,10 @@ public final class AstToIrLowerer {
      * the field directly in the storage the root designates.
      */
     private void lowerFieldStore(Ast.Expr.Field target, IrValue value, MethodLoweringContext ctx) {
+        lowerFieldStore(target, value, false, ctx);
+    }
+
+    private void lowerFieldStore(Ast.Expr.Field target, IrValue value, boolean isSafe, MethodLoweringContext ctx) {
         Ast.Expr.T receiverExpr = target.getReceiver();
         if (!(receiverExpr instanceof Ast.Expr.Id id)) {
             throw new CompilerException("field store requires a named struct root");
@@ -730,7 +737,7 @@ public final class AstToIrLowerer {
         if (isManaged(fieldType)) {
             IrValue oldField = ctx.newTemp(fieldType);
             ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_LOAD, oldField,
-                    List.of(new IrValue(id.getId(), rootType)), String.join(".", target.getPath())));
+                    List.of(new IrValue(id.getId(), rootType)), String.join(".", target.getPath()), isSafe));
             emitRetain(stored, ctx);
             ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(oldField), "lemon_release"));
         } else if (fieldType.kind() == IrType.Kind.STRUCT && !getManagedPaths(fieldType).isEmpty()) {
@@ -749,7 +756,7 @@ public final class AstToIrLowerer {
         }
         ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_STORE, null,
                 List.of(new IrValue(id.getId(), rootType), stored),
-                String.join(".", target.getPath())));
+                String.join(".", target.getPath()), isSafe));
     }
 
     /**
@@ -778,9 +785,10 @@ public final class AstToIrLowerer {
         IrType elemType = address.type().elementType();
         IrValue value = lowerExpr(statement.getExpr(), ctx);
         IrInstruction.Op binOp = compoundAssignOp(statement.getOp());
+        boolean isSafe = ctx.nullFlow != null && ctx.nullFlow.isSafe(statement);
         if (binOp != null) {
             IrValue oldVal = ctx.newTemp(elemType);
-            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, oldVal, List.of(address), null));
+            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, oldVal, List.of(address), null, isSafe));
             value = applyBinaryOp(binOp, oldVal, value, ctx);
         }
         if (value.type().kind() != elemType.kind()) {
@@ -788,7 +796,7 @@ public final class AstToIrLowerer {
             ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(value), null));
             value = converted;
         }
-        ctx.emit(new IrInstruction(IrInstruction.Op.STORE, null, List.of(address, value), null));
+        ctx.emit(new IrInstruction(IrInstruction.Op.STORE, null, List.of(address, value), null, isSafe));
     }
 
     private IrValue lowerExpr(Ast.Expr.T expr, MethodLoweringContext ctx) {
@@ -878,7 +886,8 @@ public final class AstToIrLowerer {
                     ? pointer.type().elementType()
                     : IrType.scalar(IrType.Kind.INT);
             IrValue res = ctx.newTemp(pointee);
-            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, res, List.of(pointer), null));
+            boolean isSafe = ctx.nullFlow != null && ctx.nullFlow.isSafe(deref);
+            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, res, List.of(pointer), null, isSafe));
             return res;
         } else if (expr instanceof Ast.Expr.Null nullExpr) {
             IrType nullType = IrType.pointer(IrType.scalar(IrType.Kind.VOID), 0);
@@ -1060,7 +1069,7 @@ public final class AstToIrLowerer {
      */
     private IrValue lowerBooleanOperator(boolean isAnd, Ast.Expr.T leftExpr, Ast.Expr.T rightExpr,
                                          MethodLoweringContext ctx) {
-        if (!exprContainsCall(leftExpr) && !exprContainsCall(rightExpr)) {
+        if (!exprMustShortCircuit(leftExpr) && !exprMustShortCircuit(rightExpr)) {
             IrValue left = lowerExpr(leftExpr, ctx);
             IrValue right = lowerExpr(rightExpr, ctx);
             IrValue res = ctx.newTemp(IrType.scalar(IrType.Kind.BOOL));
@@ -1100,56 +1109,36 @@ public final class AstToIrLowerer {
         return res;
     }
 
-    /** True when evaluating the expression could run a function call. */
-    private boolean exprContainsCall(Ast.Expr.T expr) {
-        if (expr instanceof Ast.Expr.Call) {
+    /** True when evaluating the expression has side-effects, potential faults (null deref, div-by-zero, bounds), or calls. */
+    private boolean exprMustShortCircuit(Ast.Expr.T expr) {
+        if (expr == null) return false;
+        if (expr instanceof Ast.Expr.Call
+                || expr instanceof Ast.Expr.Deref
+                || expr instanceof Ast.Expr.ArrayAccess
+                || expr instanceof Ast.Expr.Div
+                || expr instanceof Ast.Expr.Mod
+                || expr instanceof Ast.Expr.PreInc
+                || expr instanceof Ast.Expr.PostInc
+                || expr instanceof Ast.Expr.PreDec
+                || expr instanceof Ast.Expr.PostDec
+                || expr instanceof Ast.Expr.Ternary) {
             return true;
         }
-        if (expr instanceof Ast.Expr.Add a) {
-            return exprContainsCall(a.getLeft()) || exprContainsCall(a.getRight());
+        if (expr instanceof Ast.Expr.Field f && f.isPointerBase()) {
+            return true;
         }
-        if (expr instanceof Ast.Expr.Sub s) {
-            return exprContainsCall(s.getLeft()) || exprContainsCall(s.getRight());
-        }
-        if (expr instanceof Ast.Expr.Mul m) {
-            return exprContainsCall(m.getLeft()) || exprContainsCall(m.getRight());
-        }
-        if (expr instanceof Ast.Expr.Div d) {
-            return exprContainsCall(d.getLeft()) || exprContainsCall(d.getRight());
-        }
-        if (expr instanceof Ast.Expr.Mod mo) {
-            return exprContainsCall(mo.getLeft()) || exprContainsCall(mo.getRight());
-        }
-        if (expr instanceof Ast.Expr.And an) {
-            return exprContainsCall(an.getLeft()) || exprContainsCall(an.getRight());
-        }
-        if (expr instanceof Ast.Expr.Or or) {
-            return exprContainsCall(or.getLeft()) || exprContainsCall(or.getRight());
-        }
-        if (expr instanceof Ast.Expr.Not n) {
-            return exprContainsCall(n.getExpr());
-        }
-        if (expr instanceof Ast.Expr.GT gt) {
-            return exprContainsCall(gt.getLeft()) || exprContainsCall(gt.getRight());
-        }
-        if (expr instanceof Ast.Expr.LT lt) {
-            return exprContainsCall(lt.getLeft()) || exprContainsCall(lt.getRight());
-        }
-        if (expr instanceof Ast.Expr.GTE ge) {
-            return exprContainsCall(ge.getLeft()) || exprContainsCall(ge.getRight());
-        }
-        if (expr instanceof Ast.Expr.LTE le) {
-            return exprContainsCall(le.getLeft()) || exprContainsCall(le.getRight());
-        }
-        if (expr instanceof Ast.Expr.EQ eq) {
-            return exprContainsCall(eq.getLeft()) || exprContainsCall(eq.getRight());
-        }
-        if (expr instanceof Ast.Expr.NEQ ne) {
-            return exprContainsCall(ne.getLeft()) || exprContainsCall(ne.getRight());
-        }
-        if (expr instanceof Ast.Expr.ArrayAccess aa) {
-            return exprContainsCall(aa.getIndex());
-        }
+        if (expr instanceof Ast.Expr.Add a) return exprMustShortCircuit(a.getLeft()) || exprMustShortCircuit(a.getRight());
+        if (expr instanceof Ast.Expr.Sub s) return exprMustShortCircuit(s.getLeft()) || exprMustShortCircuit(s.getRight());
+        if (expr instanceof Ast.Expr.Mul m) return exprMustShortCircuit(m.getLeft()) || exprMustShortCircuit(m.getRight());
+        if (expr instanceof Ast.Expr.And an) return exprMustShortCircuit(an.getLeft()) || exprMustShortCircuit(an.getRight());
+        if (expr instanceof Ast.Expr.Or or) return exprMustShortCircuit(or.getLeft()) || exprMustShortCircuit(or.getRight());
+        if (expr instanceof Ast.Expr.Not n) return exprMustShortCircuit(n.getExpr());
+        if (expr instanceof Ast.Expr.GT gt) return exprMustShortCircuit(gt.getLeft()) || exprMustShortCircuit(gt.getRight());
+        if (expr instanceof Ast.Expr.LT lt) return exprMustShortCircuit(lt.getLeft()) || exprMustShortCircuit(lt.getRight());
+        if (expr instanceof Ast.Expr.GTE ge) return exprMustShortCircuit(ge.getLeft()) || exprMustShortCircuit(ge.getRight());
+        if (expr instanceof Ast.Expr.LTE le) return exprMustShortCircuit(le.getLeft()) || exprMustShortCircuit(le.getRight());
+        if (expr instanceof Ast.Expr.EQ eq) return exprMustShortCircuit(eq.getLeft()) || exprMustShortCircuit(eq.getRight());
+        if (expr instanceof Ast.Expr.NEQ ne) return exprMustShortCircuit(ne.getLeft()) || exprMustShortCircuit(ne.getRight());
         return false;
     }
 
@@ -1344,10 +1333,12 @@ public final class AstToIrLowerer {
         final Deque<LoopContext> loopStack = new ArrayDeque<>();
         final Deque<LexicalScope> scopeStack = new ArrayDeque<>();
         final List<Ast.ConstDecl> consts;
+        final site.ilemon.flow.NullFlowResult nullFlow;
 
         MethodLoweringContext(IrFunction function, List<BasicBlock> blocks, BasicBlock currentBlock,
                               Map<String, IrType> variableTypes,
-                              boolean isMain, IrType returnType, List<Ast.ConstDecl> consts) {
+                              boolean isMain, IrType returnType, List<Ast.ConstDecl> consts,
+                              site.ilemon.flow.NullFlowResult nullFlow) {
             this.function = function;
             this.blocks = blocks;
             this.currentBlock = currentBlock;
@@ -1355,6 +1346,7 @@ public final class AstToIrLowerer {
             this.isMain = isMain;
             this.returnType = returnType;
             this.consts = consts;
+            this.nullFlow = nullFlow;
         }
 
         LexicalScope pushScope(ScopeKind kind) {
@@ -1767,7 +1759,8 @@ public final class AstToIrLowerer {
             }
             type = address.type().elementType();
             oldValLoc = ctx.newTemp(type);
-            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, oldValLoc, List.of(address), null));
+            boolean isSafe = ctx.nullFlow != null && ctx.nullFlow.isSafe(deref);
+            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, oldValLoc, List.of(address), null, isSafe));
         } else {
             throw new IllegalArgumentException("invalid target for increment/decrement");
         }
@@ -1782,11 +1775,13 @@ public final class AstToIrLowerer {
         if (target instanceof Ast.Expr.Id id) {
             ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, new IrValue(id.getId(), type), List.of(newVal), null));
         } else if (target instanceof Ast.Expr.Field field) {
-            lowerFieldStore(field, newVal, ctx);
+            boolean isSafe = field.isPointerBase() && ctx.nullFlow != null && ctx.nullFlow.isSafe(field);
+            lowerFieldStore(field, newVal, isSafe, ctx);
         } else if (target instanceof Ast.Expr.ArrayAccess) {
             ctx.emit(new IrInstruction(IrInstruction.Op.STORE, null, List.of(arrVal, idxVal, newVal), null));
-        } else if (target instanceof Ast.Expr.Deref) {
-            ctx.emit(new IrInstruction(IrInstruction.Op.STORE, null, List.of(address, newVal), null));
+        } else if (target instanceof Ast.Expr.Deref deref) {
+            boolean isSafe = ctx.nullFlow != null && ctx.nullFlow.isSafe(deref);
+            ctx.emit(new IrInstruction(IrInstruction.Op.STORE, null, List.of(address, newVal), null, isSafe));
         }
 
         return isPost ? oldValCached : newVal;

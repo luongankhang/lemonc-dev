@@ -243,10 +243,12 @@ public class SemanticVisitor implements ISemanticVisitor {
                 this.localAddrTaint.add(obj.getId().getId());
             }
             if (isArrayType(this.currType) || isArrayType(exprType)) {
-                typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(targetType), typeName(exprType),
-                        expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(),
-                        "array assignment", "arrays cannot be assigned as whole values");
-                return;
+                if (!(isArrayType(this.currType) && exprType != null && exprType.getKind() == TypeKind.NULL)) {
+                    typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(targetType), typeName(exprType),
+                            expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(),
+                            "array assignment", "arrays cannot be assigned as whole values");
+                    return;
+                }
             }
             // Struct values copy field-by-field (by-value semantics); pointer
             // alias taint from exprMayPointToLocal is irrelevant for structs.
@@ -1865,6 +1867,10 @@ public class SemanticVisitor implements ISemanticVisitor {
             if (isPointerType(target) && isPointerType(curr)) {
                 return pointerTypesEqual(target, curr);
             }
+            if ((isArrayType(target) && curr.getKind() == TypeKind.NULL)
+                    || (target.getKind() == TypeKind.NULL && isArrayType(curr))) {
+                return true;
+            }
             // null is compatible with any pointer type, on either side; two
             // nulls are also mutually compatible.
             return (isPointerType(target) && curr.getKind() == TypeKind.NULL)
@@ -2056,8 +2062,12 @@ public class SemanticVisitor implements ISemanticVisitor {
         Ast.Type.T leftType = this.currType;
         this.visit(right);
         if (isArrayType(leftType) || isArrayType(this.currType)) {
-            error(lineNum, String.format("comparison operator '%s' does not support array operands: left is %s, right is %s",
-                    op, typeName(leftType), typeName(this.currType)));
+            boolean leftNull = leftType != null && leftType.getKind() == TypeKind.NULL;
+            boolean rightNull = this.currType != null && this.currType.getKind() == TypeKind.NULL;
+            if (!(leftNull || rightNull)) {
+                error(lineNum, String.format("comparison operator '%s' does not support array operands: left is %s, right is %s",
+                        op, typeName(leftType), typeName(this.currType)));
+            }
         }
         if (promoteNumeric(leftType, this.currType) == null && !isMatch(leftType, this.currType)) {
             typeError(DiagnosticCodes.TYPE_OPERATOR, typeName(leftType), typeName(this.currType), "comparison expression",

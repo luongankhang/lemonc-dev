@@ -390,8 +390,9 @@ final class JvmInstructionEmitter {
         String symbol = instruction.target() == null ? "==" : instruction.target();
         IrType operandType = left.type();
 
-        if (operandType.kind() == IrType.Kind.POINTER || operandType.kind() == IrType.Kind.REFERENCE) {
-            // Pointer equality/inequality compares the cell references.
+        if (operandType.kind() == IrType.Kind.POINTER || operandType.kind() == IrType.Kind.REFERENCE
+                || operandType.kind() == IrType.Kind.ARRAY || right.type().kind() == IrType.Kind.ARRAY) {
+            // Pointer or array equality/inequality compares the object/cell references.
             loadValue(left);
             loadValue(right);
             int opcode = switch (symbol) {
@@ -540,6 +541,10 @@ final class JvmInstructionEmitter {
         if (from.kind() == to.kind()) {
             return;
         }
+        if ((from.kind() == IrType.Kind.POINTER || from.kind() == IrType.Kind.REFERENCE || from.kind() == IrType.Kind.ARRAY)
+                && (to.kind() == IrType.Kind.POINTER || to.kind() == IrType.Kind.REFERENCE || to.kind() == IrType.Kind.ARRAY)) {
+            return;
+        }
         boolean fromInt = mapper.isIntFamily(from);
         boolean toInt = mapper.isIntFamily(to);
         if (fromInt && toInt) {
@@ -612,7 +617,9 @@ final class JvmInstructionEmitter {
             // dereference is a defined runtime error (diagnosed and thrown),
             // never a raw NPE.
             loadValue(operands.get(0));
-            emitNullDerefGuard();
+            if (!instruction.nonNull()) {
+                emitNullDerefGuard();
+            }
             code.simple(ICONST_0);
             code.simple(arrayLoadOpcode(result.type()));
             store(result);
@@ -629,7 +636,9 @@ final class JvmInstructionEmitter {
         if (operands.size() == 2) {
             // Pointer store: *(p) = v, guarded like the dereference load.
             loadValue(operands.get(0));
-            emitNullDerefGuard();
+            if (!instruction.nonNull()) {
+                emitNullDerefGuard();
+            }
             code.simple(ICONST_0);
             loadValue(operands.get(1));
             code.simple(arrayStoreOpcode(operands.get(1).type()));
@@ -735,7 +744,9 @@ final class JvmInstructionEmitter {
             // p->f: null-guard the cell, load the struct object from cell[0],
             // then navigate the field chain by reference.
             loadValue(root);
-            emitNullDerefGuard();
+            if (!instruction.nonNull()) {
+                emitNullDerefGuard();
+            }
             pushIntConstant(0);
             code.simple(AALOAD);
         } else {
@@ -765,7 +776,9 @@ final class JvmInstructionEmitter {
         if (rootType.kind() == IrType.Kind.POINTER) {
             // Null-guard the cell, then continue on the pointee object.
             loadValue(root);
-            emitNullDerefGuard();
+            if (!instruction.nonNull()) {
+                emitNullDerefGuard();
+            }
             pushIntConstant(0);
             code.simple(AALOAD);
         } else {
