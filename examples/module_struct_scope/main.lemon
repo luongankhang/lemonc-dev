@@ -1,0 +1,66 @@
+import user = @import("user.lemon");
+import prod = @import("product.lemon");
+
+void printUser(struct User u) {
+    printf("User[id=%d, age=%d, score=%d]\n", u.id, u.age, u.score);
+}
+
+void printProduct(struct Product p) {
+    printf("Product[sku=%d, price=%d, stock=%d]\n", p.sku, p.price, p.stock);
+}
+
+void main() {
+    // 1. Create structs via module constructor functions (return-by-value)
+    struct User u1 = user.createUser(101, 25, 500);
+    struct Product p1 = prod.createProduct(9001, 50, 20);
+
+    // 2. Read fields
+    printf("Created user: id=%d, age=%d, score=%d\n", u1.id, u1.age, u1.score);
+    printf("Created product: sku=%d, price=%d, stock=%d\n", p1.sku, p1.price, p1.stock);
+
+    // 3. Independent value assignment & modification
+    struct User u2 = u1;
+    u2.id = 102;
+    u2.age = 26;
+    u2.score = 650;
+
+    struct Product p2 = p1;
+    p2.sku = 9002;
+    p2.price = 80;
+    p2.stock = 15;
+
+    // Verify u1 was not modified by u2 assignment (by-value semantics)
+    printf("After copy - u1 score: %d, u2 score: %d\n", u1.score, u2.score);
+    printf("After copy - p1 price: %d, p2 price: %d\n", p1.price, p2.price);
+
+    // 4. Pass by value to helper functions
+    printUser(u2);
+    printProduct(p2);
+
+    // 5. Pass pointer to function using struct* and ->
+    struct User* uPtr = &u1;
+    user.updateUserScore(uPtr, 150);
+    printf("Updated u1 score via pointer: %d\n", u1.score);
+
+    struct Product* pPtr = &p1;
+    prod.applyDiscount(pPtr, 10);
+    printf("Updated p1 price via pointer: %d\n", p1.price);
+
+    // 6. Direct pointer access with ->
+    uPtr->age = 30;
+    pPtr->stock = 25;
+    printf("Direct arrow access - u1 age: %d, p1 stock: %d\n", uPtr->age, pPtr->stock);
+
+    // 7. Calculate results across both modules
+    int finalUserScore = user.getUserScore(u1);
+    int totalInventory = prod.getInventoryValue(p1);
+    printf("Calculations - user score: %d, inventory value: %d\n", finalUserScore, totalInventory);
+
+    // 8. Array of values with ARC
+    int report[4];
+    report[0] = u1.id;
+    report[1] = u1.score;
+    report[2] = p1.sku;
+    report[3] = p1.price;
+    printf("Report summary: %d, %d, %d, %d\n", report[0], report[1], report[2], report[3]);
+}

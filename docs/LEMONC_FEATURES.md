@@ -116,7 +116,7 @@ void main() {
 }
 ```
 
-Cross-Module Example: [examples/modules_structs](../examples/modules_structs)
+Cross-Module Examples: [examples/modules_structs](../examples/modules_structs) and [examples/module_struct_scope](../examples/module_struct_scope)
 
 ```c
 // geometry.lemon
@@ -1214,6 +1214,137 @@ Array is not null, element 0: 777
 Array is null
 ```
 
+### 18.5. Multi-Module Struct Scoping (`examples/module_struct_scope`)
+
+Demonstrates distinct struct definitions from multiple imported modules (`user.lemon` and `product.lemon`) coexisting in `main.lemon`, ensuring complete type isolation, field protection, pointer arrow access (`->`), value copying, and dual-backend parity:
+
+```c
+// user.lemon
+pub struct User {
+    pub int id;
+    pub int age;
+    pub int score;
+};
+
+// Module-private struct: must not be accessible outside user.lemon
+struct UserSecret {
+    int pinCode;
+};
+
+pub struct User createUser(int id, int age, int score) {
+    struct User u;
+    u.id = id;
+    u.age = age;
+    u.score = score;
+    return u;
+}
+
+pub void updateUserScore(struct User* u, int delta) {
+    u->score = u->score + delta;
+}
+
+pub int getUserScore(struct User u) {
+    return u.score;
+}
+```
+
+```c
+// product.lemon
+pub struct Product {
+    pub int sku;
+    pub int price;
+    pub int stock;
+};
+
+// Module-private struct: must not be accessible outside product.lemon
+struct ProductInternalTag {
+    int warehouseCode;
+};
+
+pub struct Product createProduct(int sku, int price, int stock) {
+    struct Product p;
+    p.sku = sku;
+    p.price = price;
+    p.stock = stock;
+    return p;
+}
+
+pub void applyDiscount(struct Product* p, int discount) {
+    p->price = p->price - discount;
+}
+
+pub int getInventoryValue(struct Product p) {
+    return p.price * p.stock;
+}
+```
+
+```c
+// main.lemon
+import user = @import("user.lemon");
+import prod = @import("product.lemon");
+
+void printUser(struct User u) {
+    printf("User[id=%d, age=%d, score=%d]\n", u.id, u.age, u.score);
+}
+
+void printProduct(struct Product p) {
+    printf("Product[sku=%d, price=%d, stock=%d]\n", p.sku, p.price, p.stock);
+}
+
+void main() {
+    struct User u1 = user.createUser(101, 25, 500);
+    struct Product p1 = prod.createProduct(9001, 50, 20);
+
+    struct User u2 = u1;
+    u2.id = 102;
+    u2.age = 26;
+    u2.score = 650;
+
+    struct Product p2 = p1;
+    p2.sku = 9002;
+    p2.price = 80;
+    p2.stock = 15;
+
+    printUser(u2);
+    printProduct(p2);
+
+    struct User* uPtr = &u1;
+    user.updateUserScore(uPtr, 150);
+
+    struct Product* pPtr = &p1;
+    prod.applyDiscount(pPtr, 10);
+
+    uPtr->age = 30;
+    pPtr->stock = 25;
+
+    int finalUserScore = user.getUserScore(u1);
+    int totalInventory = prod.getInventoryValue(p1);
+
+    int report[4];
+    report[0] = u1.id;
+    report[1] = u1.score;
+    report[2] = p1.sku;
+    report[3] = p1.price;
+    printf("Report summary: %d, %d, %d, %d\n", report[0], report[1], report[2], report[3]);
+}
+```
+
+Output:
+
+```text
+Created user: id=101, age=25, score=500
+Created product: sku=9001, price=50, stock=20
+After copy - u1 score: 500, u2 score: 650
+After copy - p1 price: 50, p2 price: 80
+User[id=102, age=26, score=650]
+Product[sku=9002, price=80, stock=15]
+Updated u1 score via pointer: 650
+Updated p1 price via pointer: 40
+Direct arrow access - u1 age: 30, p1 stock: 25
+Calculations - user score: 650, inventory value: 1000
+Report summary: 101, 650, 9001, 40
+```
+
 ---
 
 ## 19. Compiler Diagnostics & Error Codes
@@ -1273,9 +1404,9 @@ mvn clean test
 ```
 
 Current Test Baseline:
-- **501 Automated Tests Passing** (0 failures, 0 errors, 0 skipped).
+- **513 Automated Tests Passing** (0 failures, 0 errors, 0 skipped).
 - **96+ Root & Integration Example Programs** compiled to `.class` files by the JVM backend, executed on a real JVM, and verified byte-for-byte against `examples/example-output-manifest.tsv`.
-- **Dual-Backend Parity Tests** (`NullSafetyFlowTest`, `OperatorTest`, `PointerMultiBackendTest`, `NativeEndToEndTest`): LemonIR -> JVM and LemonIR -> C produce 100% identical outputs.
+- **Dual-Backend Parity Tests** (`ModuleStructScopeTest`, `NullSafetyFlowTest`, `OperatorTest`, `PointerMultiBackendTest`, `NativeEndToEndTest`): LemonIR -> JVM and LemonIR -> C produce 100% identical outputs.
 
 ---
 

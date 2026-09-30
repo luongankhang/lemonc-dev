@@ -1,0 +1,31 @@
+pub struct User {
+    pub int id;
+    pub int age;
+    pub int score;
+};
+
+// Module-private struct: must not be accessible outside user.lemon
+struct UserSecret {
+    int pinCode;
+};
+
+// Module-private function: must not be accessible outside user.lemon
+int internalUserHash(int x) {
+    return x * 17 + 3;
+}
+
+pub struct User createUser(int id, int age, int score) {
+    struct User u;
+    u.id = id;
+    u.age = age;
+    u.score = score;
+    return u;
+}
+
+pub void updateUserScore(struct User* u, int delta) {
+    u->score = u->score + delta;
+}
+
+pub int getUserScore(struct User u) {
+    return u.score;
+}

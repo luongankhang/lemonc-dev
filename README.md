@@ -11,7 +11,7 @@ LemonC 是一个面向实际编译器工程实践的 C-like 编译器。它不�
 </p>
 
 ```text
-Java 21 | Maven | LemonIR → JVM or C backend | 501 tests passing | 96 examples | MIT License
+Java 21 | Maven | LemonIR → JVM or C backend | 513 tests passing | 96 examples | MIT License
 ```
 
 ## Why LemonC
@@ -139,7 +139,7 @@ void main() {
 }
 ```
 
-Complete examples are available under [examples/modules](examples/modules) and [examples/modules_structs](examples/modules_structs).
+Complete examples are available under [examples/modules](examples/modules), [examples/modules_structs](examples/modules_structs), and [examples/module_struct_scope](examples/module_struct_scope).
 Imports are compile-time bindings, resolved relative to the importing file and rejected with diagnostics when:
 - A module is missing, cyclic, or duplicated.
 - A non-public function or non-public struct is accessed from another module (`E2005`).
@@ -249,7 +249,7 @@ mvn test
 Current coverage:
 
 ```text
-Tests run: 501, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 513, Failures: 0, Errors: 0, Skipped: 0
 96+ example programs verified across backends
 ```
 
@@ -464,7 +464,7 @@ void main() {
 | `CompilerTest` | End-to-end compiler tests across arithmetic, control flow, functions, and arrays |
 | `GlobalConstTest` | Compile-time constants, expressions, immutability, and scoping |
 | `ArcCliTest`, `ArcOwnershipTest`, `ImportScopeArcTest`, `ArcControlFlowTest` | Ownership/ARC analysis, refcount simulation, and import scoping |
-| `LemonIrTest`, `ModuleSystemTest`, `LemonCCliTest` | LemonIR lowering/verification, module imports, CLI flags |
+| `LemonIrTest`, `ModuleSystemTest`, `ModuleStructScopeTest`, `LemonCCliTest` | LemonIR lowering/verification, module imports, multi-module struct scoping, CLI flags |
 | `LexerTest`, `ParserTest`, `ParserRecoveryTest`, `ErrorTest`, `SemanticTest`, `AstOptimizerTest` | Frontend parsing, semantic type rules, and AST optimizations |
 | `ByteCompilerTest`, `LongCompilerTest`, `ShortArrayCompilerTest`, … | Per-type JVM codegen, ranges, and diagnostics |
 

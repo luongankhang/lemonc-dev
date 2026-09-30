@@ -1,0 +1,31 @@
+pub struct Product {
+    pub int sku;
+    pub int price;
+    pub int stock;
+};
+
+// Module-private struct: must not be accessible outside product.lemon
+struct ProductInternalTag {
+    int warehouseCode;
+};
+
+// Module-private function: must not be accessible outside product.lemon
+int internalDiscountFormula(int p) {
+    return p - 5;
+}
+
+pub struct Product createProduct(int sku, int price, int stock) {
+    struct Product p;
+    p.sku = sku;
+    p.price = price;
+    p.stock = stock;
+    return p;
+}
+
+pub void applyDiscount(struct Product* p, int discount) {
+    p->price = p->price - discount;
+}
+
+pub int getInventoryValue(struct Product p) {
+    return p.price * p.stock;
+}
