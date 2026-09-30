@@ -71,6 +71,9 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     private int loopDepth = 0;
 
+    /** Nesting depth of switch statements; break is legal inside loop or switch. */
+    private int switchDepth = 0;
+
     private HashMap<String,Ast.Method.MethodSingle> methodMap;
 
     /** Global constants visible in the current program (incl. re-exported {@code alias_NAME} copies). */
@@ -1793,14 +1796,168 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     @Override
     public void visit(Ast.Stmt.Break obj) {
-        if (loopDepth <= 0)
-            error(obj.getLineNum(), "break statement must be inside a loop");
+        if (loopDepth <= 0 && switchDepth <= 0)
+            error(obj.getLineNum(), "break statement must be inside a loop or switch");
     }
 
     @Override
     public void visit(Ast.Stmt.Continue obj) {
         if (loopDepth <= 0)
             error(obj.getLineNum(), "continue statement must be inside a loop");
+    }
+
+    @Override
+    public void visit(Ast.Stmt.Switch obj) {
+        MethodVarTable mTable = this.methodVarTable.get(currMethodName);
+        if (mTable != null) mTable.enterScope();
+        HashSet<String> before = new HashSet<>(this.currMethodLocalVar);
+
+        // Subject type: integer-like (byte/short/char/int/long) or enum.
+        this.visit(obj.getSubject());
+        Ast.Type.T subjectType = this.currType;
+        boolean subjectIsEnum = subjectType != null && subjectType.getKind() == TypeKind.ENUM;
+        boolean subjectIsInt = isIntegerLike(subjectType);
+        if (!subjectIsEnum && !subjectIsInt) {
+            typeError(DiagnosticCodes.TYPE_CONDITION, "integer or enum",
+                    typeName(subjectType), expressionName(obj.getSubject()),
+                    obj.getSubject().getLineNum(), obj.getSubject().getSpan(),
+                    "switch subject", "switch requires an integer or enum value");
+        }
+
+        java.util.Set<Long> seenValues = new java.util.HashSet<>();
+        java.util.Set<String> seenEnumMembers = new java.util.HashSet<>();
+        boolean seenDefault = false;
+        ArrayList<Ast.Stmt.CaseClause> clauses = obj.getClauses() == null
+                ? new ArrayList<>() : obj.getClauses();
+
+        for (Ast.Stmt.CaseClause clause : clauses) {
+            if (clause.isDefault()) {
+                if (seenDefault) {
+                    semanticError(DiagnosticCodes.SEM_DUPLICATE_DECLARATION,
+                            "duplicate 'default' clause in switch; at most one default is allowed",
+                            clause.getLineNum(), clause.getSpan(), "duplicate default",
+                            "the switch already has a default clause",
+                            "remove the extra 'default' clause");
+                    continue;
+                }
+                seenDefault = true;
+            } else {
+                Ast.Expr.T label = clause.getLabel();
+                this.visit(label);
+                Ast.Type.T labelType = this.currType;
+                SwitchLabel resolved = resolveSwitchCaseLabel(label);
+                if (subjectIsEnum) {
+                    // Case label must be a constant member of the subject's enum.
+                    if (resolved == null || resolved.enumName() == null) {
+                        semanticError(DiagnosticCodes.SEM_INVALID_SYMBOL_USAGE,
+                                "case label must be an enum member constant, but found " + typeName(labelType),
+                                label.getLineNum(), label.getSpan(), "invalid case label",
+                                "switch on an enum requires case labels of its own members",
+                                "use a member of " + ((Ast.Type.Enum) subjectType).getSimpleName()
+                                        + " as the case label");
+                        continue;
+                    }
+                    if (!seenEnumMembers.add(resolved.enumName() + "." + resolved.memberName())) {
+                        semanticError(DiagnosticCodes.SEM_DUPLICATE_DECLARATION,
+                                "duplicate case in switch: " + resolved.memberName() + " already handled",
+                                clause.getLineNum(), clause.getSpan(), "duplicate case",
+                                "the case value was already handled by an earlier case",
+                                "remove the duplicate case");
+                        continue;
+                    }
+                } else {
+                    // Integer switch: label must resolve to a compile-time integer.
+                    // An enum member is not an integer constant here, even though
+                    // its declared value is an int.
+                    Long value = resolved == null || resolved.enumName() != null
+                            ? null : resolved.intValue();
+                    if (value == null) {
+                        semanticError(DiagnosticCodes.SEM_INVALID_SYMBOL_USAGE,
+                                "case label must be a constant integer, but found " + typeName(labelType),
+                                label.getLineNum(), label.getSpan(), "non-constant case label",
+                                "case labels must be integer literals, enum members, or constants",
+                                "use a compile-time integer constant as the case label");
+                        continue;
+                    }
+                    if (!seenValues.add(value)) {
+                        semanticError(DiagnosticCodes.SEM_DUPLICATE_DECLARATION,
+                                "duplicate case in switch: " + value + " already handled",
+                                clause.getLineNum(), clause.getSpan(), "duplicate case",
+                                "the case value was already handled by an earlier case",
+                                "remove the duplicate case");
+                        continue;
+                    }
+                }
+            }
+            // Case body: scoped to this clause (locals declared here do not
+            // leak into sibling clauses); break inside is legal and targets
+            // this switch (or the innermost enclosing loop).
+            HashSet<String> clauseBefore = new HashSet<>(this.currMethodLocalVar);
+            this.currMethodLocalVar = new HashSet<>(clauseBefore);
+            switchDepth++;
+            if (clause.getBody() != null) {
+                for (Ast.Stmt.T stmt : clause.getBody()) {
+                    this.visit(stmt);
+                }
+            }
+            switchDepth--;
+            this.currMethodLocalVar = clauseBefore;
+        }
+
+        this.currMethodLocalVar = before;
+        if (mTable != null) mTable.exitScope();
+    }
+
+    /** Resolved switch case label: an enum member, or a compile-time integer. */
+    private record SwitchLabel(String enumName, String memberName, Long intValue) {}
+
+    /**
+     * Resolves a case label directly from its AST shape: integer literals
+     * (including negative forms), enum members ({@code Enum.MEMBER}), or named
+     * constants of integer type. Returns null when the label is not a valid
+     * compile-time constant.
+     */
+    private SwitchLabel resolveSwitchCaseLabel(Ast.Expr.T label) {
+        if (label == null) {
+            return null;
+        }
+        // Negative literal forms: -N / 0-N (parser-generated shapes).
+        Long direct = integralLiteralValue(label);
+        if (direct != null) {
+            return new SwitchLabel(null, null, direct);
+        }
+        // Enum member: Color.RED, or a bare member name (ADD_OP) resolved
+        // through the enum member table.
+        if (label instanceof Ast.Expr.Field field
+                && field.getReceiver() instanceof Ast.Expr.Id receiver
+                && field.getPath().size() == 1) {
+            Ast.EnumDecl enumDecl = resolveEnum(receiver.getId());
+            if (enumDecl != null) {
+                String memberName = field.getPath().get(0);
+                Ast.EnumMember member = enumDecl.getMember(memberName);
+                if (member == null) {
+                    return null;
+                }
+                return new SwitchLabel(enumDecl.getName(), memberName, (long) member.getValue());
+            }
+        }
+        if (label instanceof Ast.Expr.Id id) {
+            // Bare enum member (no enum prefix).
+            EnumMemberInfo info = enumMemberTable.get(id.getId());
+            if (info != null) {
+                return new SwitchLabel(info.enumName(), info.memberName(), (long) info.value());
+            }
+            // Named constant of integer type.
+            Ast.ConstDecl constant = resolveConst(id.getId());
+            if (constant != null && constant.getType() != null && isIntegerLike(constant.getType())) {
+                try {
+                    return new SwitchLabel(null, null, Long.parseLong(String.valueOf(constant.getResolvedValue())));
+                } catch (NumberFormatException ignored) {
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     @Override
@@ -1847,6 +2004,10 @@ public class SemanticVisitor implements ISemanticVisitor {
         if (statement instanceof Ast.Stmt.Return) {
             return new FlowResult(false, true);
         }
+        if (statement instanceof Ast.Stmt.Break || statement instanceof Ast.Stmt.Continue) {
+            // break/continue end the normal flow of the enclosing construct.
+            return new FlowResult(false, false);
+        }
         if (statement instanceof Ast.Stmt.Block) {
             return flowOfStatements(((Ast.Stmt.Block) statement).getStmts());
         }
@@ -1860,6 +2021,59 @@ public class SemanticVisitor implements ISemanticVisitor {
             return new FlowResult(
                     thenFlow.canCompleteNormally || elseFlow.canCompleteNormally,
                     thenFlow.mustReturn && elseFlow.mustReturn);
+        }
+        if (statement instanceof Ast.Stmt.Switch switchStmt) {
+            // A switch returns on all paths only when every case body returns
+            // (or ends in a terminator) AND a default clause exists. An empty
+            // case body falls through into the next clause, so it terminates
+            // when the next clause does.
+            ArrayList<Ast.Stmt.CaseClause> clauses = switchStmt.getClauses();
+            if (clauses == null || clauses.isEmpty()) {
+                return new FlowResult(true, false);
+            }
+            boolean seenDefault = false;
+            // Compute per-clause termination from the clause end.
+            boolean[] clauseTerminates = new boolean[clauses.size()];
+            for (int i = clauses.size() - 1; i >= 0; i--) {
+                Ast.Stmt.CaseClause clause = clauses.get(i);
+                if (clause.isDefault()) {
+                    seenDefault = true;
+                }
+                if (clause.getBody() == null || clause.getBody().isEmpty()) {
+                    // Fallthrough: inherits the next clause's termination; the
+                    // last empty clause falls to the switch exit (no return).
+                    clauseTerminates[i] = i + 1 < clauses.size() && clauseTerminates[i + 1];
+                } else {
+                    FlowResult bodyFlow = flowOfStatements(clause.getBody());
+                    if (bodyFlow.mustReturn) {
+                        clauseTerminates[i] = true;
+                    } else if (!bodyFlow.canCompleteNormally) {
+                        // Body terminated via break/continue: falls through or
+                        // exits the switch — never returns by itself.
+                        clauseTerminates[i] = false;
+                    } else {
+                        // Body completes normally without a terminator: the
+                        // flow falls into the next clause; the clause returns
+                        // only when the next clause does.
+                        clauseTerminates[i] = i + 1 < clauses.size() && clauseTerminates[i + 1];
+                    }
+                }
+            }
+            // Without a default the subject may match no case, so the switch
+            // can complete normally; with a default and all case bodies
+            // terminating, the switch must return.
+            boolean allTerminate = true;
+            for (boolean ct : clauseTerminates) {
+                if (!ct) {
+                    allTerminate = false;
+                    break;
+                }
+            }
+            boolean mustReturn = allTerminate && seenDefault;
+            // canCompleteNormally is the negation only for the must-return
+            // case; a switch without a default always can complete normally,
+            // even when every clause body terminates.
+            return new FlowResult(!mustReturn, mustReturn);
         }
         return new FlowResult(true, false);
     }

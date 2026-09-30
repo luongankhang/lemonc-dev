@@ -198,6 +198,21 @@ public final class MethodCallRewriter implements ISemanticVisitor {
     public void visit(Ast.Stmt.Break obj) { }
 
     @Override
+    public void visit(Ast.Stmt.Switch obj) {
+        visit(obj.getSubject());
+        if (obj.getClauses() != null) {
+            for (Ast.Stmt.CaseClause clause : obj.getClauses()) {
+                if (clause.getLabel() != null) visit(clause.getLabel());
+                if (clause.getBody() != null) {
+                    for (Ast.Stmt.T stmt : clause.getBody()) {
+                        visit(stmt);
+                    }
+                }
+            }
+        }
+    }
+
+    @Override
     public void visit(Ast.Stmt.Continue obj) { }
 
     @Override

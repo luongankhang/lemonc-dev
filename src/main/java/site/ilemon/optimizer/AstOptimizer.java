@@ -117,6 +117,25 @@ public class AstOptimizer {
             Ast.Stmt.T body = optimizeStmt(forStmt.getBody());
             return new Ast.Stmt.For(init, condition, update, body, forStmt.getLineNum());
         }
+        if (stmt instanceof Ast.Stmt.Switch switchStmt) {
+            Ast.Expr.T subject = optimizeExpr(switchStmt.getSubject());
+            ArrayList<Ast.Stmt.CaseClause> clauses = new ArrayList<>();
+            if (switchStmt.getClauses() != null) {
+                for (Ast.Stmt.CaseClause clause : switchStmt.getClauses()) {
+                    Ast.Expr.T label = clause.getLabel() == null ? null : optimizeExpr(clause.getLabel());
+                    ArrayList<Ast.Stmt.T> body = new ArrayList<>();
+                    if (clause.getBody() != null) {
+                        for (Ast.Stmt.T s : clause.getBody()) {
+                            body.add(optimizeStmt(s));
+                        }
+                    }
+                    Ast.Stmt.CaseClause optimized = new Ast.Stmt.CaseClause(label, body, clause.getLineNum());
+                    optimized.setSpan(clause.getSpan());
+                    clauses.add(optimized);
+                }
+            }
+            return new Ast.Stmt.Switch(subject, clauses, switchStmt.getLineNum());
+        }
         if (stmt instanceof Ast.Stmt.Return ret) {
             return new Ast.Stmt.Return(optimizeExpr(ret.getExpr()), ret.getLineNum());
         }

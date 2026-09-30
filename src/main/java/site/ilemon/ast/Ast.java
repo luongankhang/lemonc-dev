@@ -168,6 +168,58 @@ public class Ast {
             public void accept(ISemanticVisitor v) { v.visit(this); }
         }
 
+        /**
+         * One {@code case <label>: <body>} clause inside a switch. A null
+         * {@code label} marks the {@code default} clause.
+         */
+        public static class CaseClause {
+            private Expr.T label;
+            private ArrayList<T> body;
+            private int lineNum;
+            private SourceSpan span;
+
+            public CaseClause(Expr.T label, ArrayList<T> body, int lineNum) {
+                this.label = label;
+                this.body = body;
+                this.lineNum = lineNum;
+            }
+
+            /** Case label expression, or null for {@code default}. */
+            public Expr.T getLabel() { return this.label; }
+            public void setLabel(Expr.T label) { this.label = label; }
+            public ArrayList<T> getBody() { return this.body; }
+            public void setBody(ArrayList<T> body) { this.body = body; }
+            public int getLineNum() { return this.lineNum; }
+            public void setLineNum(int lineNum) { this.lineNum = lineNum; }
+            public SourceSpan getSpan() { return this.span; }
+            public void setSpan(SourceSpan span) { this.span = span; }
+
+            public boolean isDefault() { return label == null; }
+        }
+
+        /**
+         * {@code switch (subject) { case ...: ... default: ... }}.
+         * Labelled integer/enum dispatch; {@code break} exits the switch.
+         */
+        public static class Switch extends T {
+            private Expr.T subject;
+            private ArrayList<CaseClause> clauses;
+
+            public Switch(Expr.T subject, ArrayList<CaseClause> clauses, int lineNum) {
+                this.subject = subject;
+                this.clauses = clauses;
+                this.setLineNum(lineNum);
+            }
+
+            public Expr.T getSubject() { return this.subject; }
+            public void setSubject(Expr.T subject) { this.subject = subject; }
+            public ArrayList<CaseClause> getClauses() { return this.clauses; }
+            public void setClauses(ArrayList<CaseClause> clauses) { this.clauses = clauses; }
+
+            @Override
+            public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
         public static class Continue extends T {
             public Continue(int lineNum) { this.setLineNum(lineNum); }
             @Override

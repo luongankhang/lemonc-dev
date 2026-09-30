@@ -353,15 +353,57 @@ public final class OwnershipAnalyzer {
             }
 
             ctx.currentBlock = exitBlock;
+        } else if (stmt instanceof Ast.Stmt.Switch switchStmt) {
+            int id = labelCounter++;
+            OwnershipBlock exitBlock = new OwnershipBlock("switch.exit_" + id);
+
+            ctx.func.addBlock(exitBlock);
+
+            // Switch body: case clauses are visited inline (the shared IR
+            // already models the dispatch CFG; here we only track ownership
+            // through the clause bodies). The exit block collects fallthrough.
+            ctx.pushSwitch(exitBlock);
+            if (switchStmt.getSubject() != null) {
+                emitStatement(new Ast.Stmt.ExprStmt(switchStmt.getSubject(), switchStmt.getLineNum()), ctx);
+            }
+            if (switchStmt.getClauses() != null) {
+                for (Ast.Stmt.CaseClause clause : switchStmt.getClauses()) {
+                    if (clause.getLabel() != null) {
+                        emitStatement(new Ast.Stmt.ExprStmt(clause.getLabel(), clause.getLineNum()), ctx);
+                    }
+                    if (clause.getBody() != null) {
+                        for (Ast.Stmt.T s : clause.getBody()) {
+                            emitStatement(s, ctx);
+                        }
+                    }
+                }
+            }
+            ctx.popSwitch();
+
+            // Merge any unterminated fallthrough into the exit block.
+            if (ctx.currentBlock != null && !ctx.currentBlock.isTerminated()) {
+                ctx.currentBlock.addSuccessor(exitBlock);
+                ctx.currentBlock.setTerminatorType(OwnershipBlock.TerminatorType.JUMP);
+            }
+            ctx.currentBlock = exitBlock;
         } else if (stmt instanceof Ast.Stmt.Break) {
+            OwnershipBlock breakTarget = null;
             LoopScope loop = ctx.currentLoop();
             if (loop != null) {
+                breakTarget = loop.breakTarget;
                 // Release loop-local variables
                 for (String local : loop.scopeLocals) {
                     MemoryOp releaseOp = new MemoryOp(MemoryOp.Kind.RELEASE, local, line, span);
                     ctx.recordOp(releaseOp);
                 }
-                ctx.currentBlock.addSuccessor(loop.breakTarget);
+            } else {
+                OwnershipBlock switchExit = ctx.currentSwitchExit();
+                if (switchExit != null) {
+                    breakTarget = switchExit;
+                }
+            }
+            if (breakTarget != null) {
+                ctx.currentBlock.addSuccessor(breakTarget);
                 ctx.currentBlock.setTerminatorType(OwnershipBlock.TerminatorType.JUMP);
             }
             OwnershipBlock unreachable = new OwnershipBlock("unreachable_" + labelCounter++);
@@ -530,6 +572,22 @@ public final class OwnershipAnalyzer {
         private final Set<String> activeManagedLocals;
         private final Deque<Set<String>> scopeStack = new ArrayDeque<>();
         private final Deque<LoopScope> loopStack = new ArrayDeque<>();
+        /** Open switch exit blocks; break targets the nearest loop or switch. */
+        private final Deque<OwnershipBlock> switchStack = new ArrayDeque<>();
+
+        private void pushSwitch(OwnershipBlock exitBlock) {
+            switchStack.push(exitBlock);
+        }
+
+        private void popSwitch() {
+            if (!switchStack.isEmpty()) {
+                switchStack.pop();
+            }
+        }
+
+        private OwnershipBlock currentSwitchExit() {
+            return switchStack.peek();
+        }
         private final ScopeManager scopeManager = new ScopeManager();
         private final Map<String, Ast.Type.T> varTypes = new HashMap<>();
         private OwnershipBlock currentBlock;

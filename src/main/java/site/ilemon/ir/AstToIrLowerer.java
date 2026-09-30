@@ -36,6 +36,9 @@ public final class AstToIrLowerer {
 
     private record LoopContext(BasicBlock breakTarget, BasicBlock continueTarget, LexicalScope forScope, LexicalScope bodyScope) {}
 
+    /** Open switch statements; break inside a switch targets the nearest loop or switch. */
+    private final Deque<BasicBlock> switchStack = new ArrayDeque<>();
+
     private final Map<String, IrType> methodReturnTypes = new HashMap<>();
     private final Map<String, List<IrType>> methodParamTypes = new HashMap<>();
     private IrModule module;
@@ -609,11 +612,37 @@ public final class AstToIrLowerer {
             ctx.startBlock(exitBlock);
             ctx.releaseScope(forScope);
             ctx.popScope();
+        } else if (stmt instanceof Ast.Stmt.Switch switchStmt) {
+            lowerSwitch(switchStmt, ctx);
         } else if (stmt instanceof Ast.Stmt.Break) {
-            if (!ctx.loopStack.isEmpty()) {
+            // Innermost breakable construct wins: a break inside a switch
+            // nested in a loop exits the switch, not the loop.
+            BasicBlock breakTarget = null;
+            LexicalScope releaseTargetScope = null;
+            if (!switchStack.isEmpty()) {
+                boolean loopInsideSwitch = !ctx.loopStack.isEmpty()
+                        && ctx.loopStack.peek().breakTarget == switchStack.peek();
+                if (!loopInsideSwitch) {
+                    breakTarget = switchStack.peek();
+                    releaseTargetScope = ctx.currentScope();
+                }
+            }
+            if (breakTarget == null && !ctx.loopStack.isEmpty()) {
                 LoopContext loop = ctx.loopStack.peek();
-                ctx.releaseScopesUpTo(loop.bodyScope);
-                ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), loop.breakTarget.name()));
+                breakTarget = loop.breakTarget;
+                releaseTargetScope = loop.bodyScope;
+            }
+            if (breakTarget == null && !switchStack.isEmpty()) {
+                // Loop ended before the switch in the stack: the innermost
+                // switch is the target (loop popped, switch still open).
+                breakTarget = switchStack.peek();
+                releaseTargetScope = ctx.currentScope();
+            }
+            if (breakTarget != null) {
+                if (releaseTargetScope != null) {
+                    ctx.releaseScopesUpTo(releaseTargetScope);
+                }
+                ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), breakTarget.name()));
             }
         } else if (stmt instanceof Ast.Stmt.Continue) {
             if (!ctx.loopStack.isEmpty()) {
@@ -683,6 +712,162 @@ public final class AstToIrLowerer {
             }
             ctx.cleanupStatementTemporaries();
         }
+    }
+
+    /**
+     * Lowers {@code switch (subject) { case V: body ... default: body }} to a
+     * comparison-dispatch CFG using only shared opcodes (CMP/COND_BRANCH/
+     * BRANCH).
+     *
+     * <p>Layout order is fixed: every dispatch block first, then the default
+     * body, then the remaining case bodies, then the exit block. Each dispatch
+     * block compares the subject against one case constant and branches
+     * ({@code COND_BRANCH}) to that case's body on match; on mismatch the
+     * physical fall-through continues into the next dispatch block (or the
+     * default body after the last dispatch). Case bodies end with an explicit
+     * {@code BRANCH}: to the next case body on fallthrough, to
+     * {@code switch_exit} on {@code break}, or to {@code switch_exit} when the
+     * clause is last.</p>
+     */
+    private void lowerSwitch(Ast.Stmt.Switch switchStmt, MethodLoweringContext ctx) {
+        LexicalScope switchScope = ctx.pushScope(ScopeKind.BLOCK);
+        IrValue subjectVal = lowerExpr(switchStmt.getSubject(), ctx);
+
+        BasicBlock exitBlock = ctx.createBlock("switch_exit");
+        ArrayList<Ast.Stmt.CaseClause> clauses = switchStmt.getClauses() == null
+                ? new ArrayList<>() : switchStmt.getClauses();
+        if (clauses.isEmpty()) {
+            ctx.startBlock(exitBlock);
+            ctx.releaseScope(switchScope);
+            ctx.popScope();
+            return;
+        }
+
+        // Pre-create all blocks so dispatch/body/fallthrough can reference them.
+        List<BasicBlock> bodyBlocks = new ArrayList<>();
+        for (int i = 0; i < clauses.size(); i++) {
+            bodyBlocks.add(ctx.createBlock(clauses.get(i).isDefault() ? "switch_default" : "switch_case"));
+        }
+        List<BasicBlock> dispatchBlocks = new ArrayList<>();
+        for (int i = 0; i < clauses.size(); i++) {
+            dispatchBlocks.add(clauses.get(i).isDefault() ? null : ctx.createBlock("switch_dispatch"));
+        }
+
+        // Emit dispatch blocks in layout order. The fall-through between them
+        // is physical (the next block in the function's block list); only the
+        // match edge is a COND_BRANCH.
+        // Capture the subject block first: the dispatch loop reassigns
+        // currentBlock, and the splice below must move the subject block.
+        BasicBlock subjectBlock = ctx.currentBlock;
+        for (int i = 0; i < clauses.size(); i++) {
+            BasicBlock dispatchBlock = dispatchBlocks.get(i);
+            if (dispatchBlock == null) {
+                continue;
+            }
+            ctx.startBlock(dispatchBlock);
+            IrValue caseVal = lowerExpr(clauses.get(i).getLabel(), ctx);
+            // Comparison through the shared binary path: enum/byte/short
+            // operands are promoted/converted exactly like an == expression.
+            IrValue eq = lowerEqForSwitch(subjectVal, caseVal, ctx);
+            ctx.emit(new IrInstruction(IrInstruction.Op.COND_BRANCH, null, List.of(eq), bodyBlocks.get(i).name()));
+        }
+
+        // Entry into the chain: the current block already holds the lowered
+        // subject code; splice it before the dispatch blocks so the layout is
+        // [entry+subject, dispatches..., default, bodies..., exit].
+        BasicBlock entryTarget = dispatchBlocks.get(0) != null
+                ? dispatchBlocks.get(0) : bodyBlocks.get(0);
+        List<BasicBlock> blocks = ctx.blocks;
+        // subjectBlock aliases subjectBlock; kept local for splice clarity.
+        if (dispatchBlocks.get(0) != null) {
+            // The fall-through from the subject block must reach the first
+            // dispatch block; splice the subject block before it in the list.
+            blocks.remove(subjectBlock);
+            int insertAt = 0;
+            for (int i = 0; i < blocks.size(); i++) {
+                if (blocks.get(i) == dispatchBlocks.get(0)) {
+                    insertAt = i;
+                    break;
+                }
+            }
+            blocks.add(insertAt, subjectBlock);
+            if (!ctx.isTerminated(subjectBlock)) {
+                // startBlock would add the branch to the (now-relocated)
+                // subject block; emit directly to keep it at the block end.
+                subjectBlock.add(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), entryTarget.name()));
+            }
+        } else if (!ctx.isTerminated(subjectBlock)) {
+            // No dispatch: the default body follows physically; nothing to splice.
+            ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), entryTarget.name()));
+        }
+
+        switchStack.push(exitBlock);
+        // Emit case bodies in layout order: default first, then the rest.
+        for (int i = 0; i < clauses.size(); i++) {
+            if (dispatchBlocks.get(i) == null) {
+                emitCaseBody(clauses.get(i), bodyBlocks.get(i), exitBlock, (i + 1 < clauses.size()) ? bodyBlocks.get(i + 1) : null, ctx);
+            }
+        }
+        for (int i = 0; i < clauses.size(); i++) {
+            if (dispatchBlocks.get(i) != null) {
+                emitCaseBody(clauses.get(i), bodyBlocks.get(i), exitBlock, (i + 1 < clauses.size()) ? bodyBlocks.get(i + 1) : null, ctx);
+            }
+        }
+        switchStack.pop();
+
+        ctx.startBlock(exitBlock);
+        ctx.releaseScope(switchScope);
+        ctx.popScope();
+    }
+
+    /**
+     * Lowers one case/default body: statements, then an explicit BRANCH —
+     * to the next case body on fallthrough, or to the switch exit when the
+     * clause is last or the body already terminated (break/return).
+     */
+    private void emitCaseBody(Ast.Stmt.CaseClause clause, BasicBlock bodyBlock, BasicBlock exitBlock,
+                              BasicBlock nextBody, MethodLoweringContext ctx) {
+        ctx.startBlock(bodyBlock);
+        LexicalScope caseScope = ctx.pushScope(ScopeKind.BLOCK);
+        if (clause.getBody() != null) {
+            for (Ast.Stmt.T s : clause.getBody()) {
+                lowerStmt(s, ctx);
+            }
+        }
+        ctx.releaseScope(caseScope);
+        ctx.popScope();
+        if (!ctx.isTerminated(ctx.currentBlock)) {
+            BasicBlock next = nextBody != null ? nextBody : exitBlock;
+            ctx.emit(new IrInstruction(IrInstruction.Op.BRANCH, null, List.of(), next.name()));
+        }
+    }
+
+    /**
+     * Equality comparison for switch dispatch, reusing the shared binary path
+     * ({@code applyBinaryOp}) so enum/byte/short operands are promoted and
+     * converted exactly like a hand-written {@code ==} expression. This keeps
+     * the C backend free of signedness mismatches (e.g. {@code int32_t} vs
+     * {@code LemonC_Op}) and the JVM backend identical.
+     */
+    private IrValue lowerEqForSwitch(IrValue left, IrValue right, MethodLoweringContext ctx) {
+        IrType leftType = left.type();
+        IrType rightType = right.type();
+        boolean leftEnum = leftType.kind() == IrType.Kind.ENUM;
+        boolean rightEnum = rightType.kind() == IrType.Kind.ENUM;
+        if (leftEnum != rightEnum) {
+            // Mixed enum/int: convert the enum side to INT, matching the
+            // conversion an explicit == expression would emit.
+            if (leftEnum) {
+                IrValue converted = ctx.newTemp(IrType.scalar(IrType.Kind.INT));
+                ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(left), null));
+                left = converted;
+            } else {
+                IrValue converted = ctx.newTemp(IrType.scalar(IrType.Kind.INT));
+                ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(right), null));
+                right = converted;
+            }
+        }
+        return applyBinaryOp(IrInstruction.Op.CMP, left, right, ctx);
     }
 
     // ==================================================== struct lowering

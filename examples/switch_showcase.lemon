@@ -1,0 +1,82 @@
+enum Level {
+    DEBUG,
+    INFO = 10,
+    WARN,
+    ERROR = -1
+}
+
+enum State {
+    OFF,
+    ON = 5
+}
+
+void print_level(enum Level lvl) {
+    switch (lvl) {
+        case Level.DEBUG: printf("Level: DEBUG (%d)\n", lvl); break;
+        case Level.INFO: printf("Level: INFO (%d)\n", lvl); break;
+        case Level.WARN: printf("Level: WARN (%d)\n", lvl); break;
+        case Level.ERROR: printf("Level: ERROR (%d)\n", lvl); break;
+    }
+}
+
+int classify(int n) {
+    switch (n) {
+        case 0: return 0;
+        case 1:
+        case 2:
+        case 3: return 1;
+        default: return 2;
+    }
+}
+
+void main() {
+    printf("=== LemonC Switch Showcase ===\n");
+
+    // Integer switch with break
+    int x = 2;
+    switch (x) {
+        case 1: printf("x is one\n"); break;
+        case 2: printf("x is two\n"); break;
+        default: printf("x is something else\n");
+    }
+
+    // Enum switch
+    enum Level lvl = Level.INFO;
+    print_level(lvl);
+    lvl = Level.ERROR;
+    print_level(lvl);
+
+    // Fallthrough: case 1 falls into case 2's body
+    switch (x) {
+        case 1: printf("fall: one\n");
+        case 2: printf("fall: two\n");
+        default: printf("fall: other\n");
+    }
+
+    // Switch inside a loop
+    int i = 0;
+    while (i < 3) {
+        switch (i) {
+            case 0: printf("iter: zero\n"); break;
+            case 1: printf("iter: one\n"); break;
+            default: printf("iter: two\n");
+        }
+        i = i + 1;
+    }
+
+    // Nested switch
+    switch (x) {
+        case 2:
+            switch (x / 2) {
+                case 1: printf("nested: x/2 == 1\n"); break;
+                default: printf("nested: x/2 != 1\n");
+            }
+            break;
+        default: printf("nested: x != 2\n");
+    }
+
+    // Grouped case labels (fallthrough of empty cases)
+    printf("classify(0)=%d\n", classify(0));
+    printf("classify(2)=%d\n", classify(2));
+    printf("classify(9)=%d\n", classify(9));
+}

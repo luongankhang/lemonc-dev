@@ -892,6 +892,7 @@ public class Parser {
 				|| look.kind == TokenKind.If || look.kind == TokenKind.While || look.kind == TokenKind.For
 				|| look.kind == TokenKind.Lbrace || look.kind == TokenKind.Id
 				|| look.kind == TokenKind.Break || look.kind == TokenKind.Continue
+				|| look.kind == TokenKind.Switch
 				|| look.kind == TokenKind.Return
 				|| look.kind == TokenKind.Mul
 				|| look.kind == TokenKind.Inc || look.kind == TokenKind.Dec
@@ -958,6 +959,9 @@ public class Parser {
 			match(new Token(TokenKind.Break));
 			match(new Token(TokenKind.Semicolon));
 			stmt = new Ast.Stmt.Break(lineNumber);
+		}
+		else if( look.kind == TokenKind.Switch ){
+			stmt = parseSwitchStmt();
 		}
 		else if( look.kind == TokenKind.Continue ){
 			int lineNumber = look.lineNumber;
@@ -1207,6 +1211,90 @@ public class Parser {
 			stmt = new Ast.Stmt.If(condition, thenStmt, elseStmt, lineNumber);
 		}
 		return stmt;
+	}
+
+	// <switchStmt> -> "switch" "(" <expr> ")" "{" ( "case" <constExpr> ":" <stmts> | "default" ":" <stmts> )* "}"
+	private Ast.Stmt.T parseSwitchStmt() throws IOException {
+		Token switchToken = look;
+		int lineNumber = look.lineNumber;
+		match(new Token(TokenKind.Switch));
+		match(new Token(TokenKind.Lparen));
+		Ast.Expr.T subject = parseExpr();
+		match(new Token(TokenKind.Rparen));
+		if (look.kind != TokenKind.Lbrace) {
+			error("expected '{' after switch (...) clause");
+			return null;
+		}
+		match(new Token(TokenKind.Lbrace));
+		ArrayList<Ast.Stmt.CaseClause> clauses = new ArrayList<>();
+		while (look != null && look.kind != TokenKind.Rbrace && look.kind != TokenKind.EOF) {
+			if (look.kind == TokenKind.Case) {
+				int caseLine = look.lineNumber;
+				Token caseToken = look;
+				match(new Token(TokenKind.Case));
+				Ast.Expr.T label = parseExpr();
+				if (look.kind != TokenKind.Colon) {
+					error("expected ':' after case label");
+					synchronizeToStatementBoundary();
+					continue;
+				}
+				match(new Token(TokenKind.Colon));
+				ArrayList<Ast.Stmt.T> body = parseSwitchCaseBody();
+				Ast.Stmt.CaseClause clause = new Ast.Stmt.CaseClause(label, body, caseLine);
+				clause.setLineNum(caseLine);
+				clauses.add(clause);
+				clause.setSpan(tokenSpan(caseToken));
+			} else if (look.kind == TokenKind.Default) {
+				int defaultLine = look.lineNumber;
+				Token defaultToken = look;
+				match(new Token(TokenKind.Default));
+				if (look.kind != TokenKind.Colon) {
+					error("expected ':' after 'default'");
+					synchronizeToStatementBoundary();
+					continue;
+				}
+				match(new Token(TokenKind.Colon));
+				ArrayList<Ast.Stmt.T> body = parseSwitchCaseBody();
+				Ast.Stmt.CaseClause clause = new Ast.Stmt.CaseClause(null, body, defaultLine);
+				clause.setLineNum(defaultLine);
+				clauses.add(clause);
+				clause.setSpan(tokenSpan(defaultToken));
+			} else {
+				error("expected 'case' or 'default' inside switch body");
+				synchronizeToStatementBoundary();
+			}
+		}
+		if (look != null && look.kind == TokenKind.Rbrace) {
+			match(new Token(TokenKind.Rbrace));
+		}
+		Ast.Stmt.Switch switchStmt = new Ast.Stmt.Switch(subject, clauses, lineNumber);
+		switchStmt.setSpan(tokenSpan(switchToken));
+		return switchStmt;
+	}
+
+	/**
+	 * Parses statements of one case/default clause. Case bodies share the
+	 * brace-free statement-list shape: statements run until the next
+	 * 'case'/'default'/'}' token.
+	 */
+	private ArrayList<Ast.Stmt.T> parseSwitchCaseBody() throws IOException {
+		ArrayList<Ast.Stmt.T> body = new ArrayList<>();
+		while (look != null && look.kind != TokenKind.EOF
+				&& look.kind != TokenKind.Rbrace
+				&& look.kind != TokenKind.Case
+				&& look.kind != TokenKind.Default) {
+			if (isStatementStart()) {
+				try {
+					body.add(parseStmt());
+				} catch (ParseException failure) {
+					synchronizeToStatementBoundary();
+				}
+			} else {
+				error("unexpected token in switch case body: '" + look.lexeme + "'");
+				synchronizeToStatementBoundary();
+			}
+		}
+		return body;
 	}
 
 	private Ast.Stmt.T parseSimpleStmtWithoutTerminator() throws IOException {

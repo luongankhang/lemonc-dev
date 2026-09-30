@@ -271,6 +271,36 @@ public class NullFlowAnalyzer {
             return NullEnv.UNREACHABLE;
         }
 
+        if (stmt instanceof Ast.Stmt.Switch switchStmt) {
+            NullEnv subjectEnv = switchStmt.getSubject() != null
+                    ? analyzeExpr(switchStmt.getSubject(), env)
+                    : env;
+            if (switchStmt.getClauses() == null || switchStmt.getClauses().isEmpty()) {
+                return subjectEnv;
+            }
+            // Case exits merge (a case without break falls through or reaches
+            // the switch exit normally); a switch without default must also
+            // merge the subject-exit path.
+            NullEnv merged = subjectEnv;
+            boolean seenDefault = false;
+            for (Ast.Stmt.CaseClause clause : switchStmt.getClauses()) {
+                if (clause.isDefault()) {
+                    seenDefault = true;
+                }
+                NullEnv clauseExit = subjectEnv;
+                if (clause.getBody() != null) {
+                    for (Ast.Stmt.T s : clause.getBody()) {
+                        clauseExit = analyzeStmt(s, clauseExit);
+                    }
+                }
+                merged = merged.merge(clauseExit);
+            }
+            if (!seenDefault) {
+                return merged;
+            }
+            return merged;
+        }
+
         if (stmt instanceof Ast.Stmt.Call call) {
             if (call.getInputParams() != null) {
                 for (Ast.Expr.T param : call.getInputParams()) {

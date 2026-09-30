@@ -149,6 +149,26 @@ public final class AstPrinter {
             line(depth, "Break");
         } else if (stmt instanceof Ast.Stmt.Continue) {
             line(depth, "Continue");
+        } else if (stmt instanceof Ast.Stmt.Switch node) {
+            line(depth, "Switch");
+            line(depth + 1, "Subject");
+            expr(node.getSubject(), depth + 2);
+            if (node.getClauses() != null) {
+                for (Ast.Stmt.CaseClause clause : node.getClauses()) {
+                    if (clause.isDefault()) {
+                        line(depth + 1, "Case default");
+                    } else {
+                        line(depth + 1, "Case");
+                        expr(clause.getLabel(), depth + 2);
+                    }
+                    line(depth + 1, "Body");
+                    if (clause.getBody() != null) {
+                        for (Ast.Stmt.T s : clause.getBody()) {
+                            stmt(s, depth + 2);
+                        }
+                    }
+                }
+            }
         } else if (stmt instanceof Ast.Stmt.VarDecl node) {
             if (node.getDeclaration() instanceof Ast.Declare.DeclareSingle decl) {
                 line(depth, "VarDecl " + type(decl.getType()) + " " + decl.getId());
