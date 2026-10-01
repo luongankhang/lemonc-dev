@@ -385,7 +385,9 @@ public class EnumTest {
     }
 
     @Test
-    public void rejectsComparingEnumWithInt() throws Exception {
+    public void allowsComparingEnumWithInt() throws Exception {
+        // Enum↔int comparison is allowed because enums are stored as ints internally,
+        // enabling patterns like comparing struct enum fields with int array values.
         String source = """
                 enum Color { RED, GREEN }
                 void main() {
@@ -396,10 +398,7 @@ public class EnumTest {
                 }
                 """;
         SemanticVisitor visitor = runSemantic(source);
-        assertFalse(visitor.passOrNot());
-        boolean hasOpError = visitor.getDiagnostics().stream()
-                .anyMatch(d -> DiagnosticCodes.TYPE_OPERATOR.equals(d.code()));
-        assertTrue("Comparing enum with int should fail with TYPE_OPERATOR", hasOpError);
+        assertTrue(visitor.passOrNot());
     }
 
     @Test

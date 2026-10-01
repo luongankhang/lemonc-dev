@@ -57,7 +57,14 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     private HashMap<String,Ast.Type.T> methodNameRetTypeMap;
 
+    /** Set while visiting the right-hand side of a field-assignment statement,
+     *  allowing enum↔int compatibility only in those contexts. */
+    private boolean allowEnumIntAssignment = false;
+
     private HashSet<String> currMethodLocalVar;
+
+    /** Variables assigned in every switch case (to resolve false positives). */
+    private Set<String> assignedInAllCases;
 
     /**
      * Pointer-typed locals of the current method whose value may reference a
@@ -294,7 +301,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         if (mTable != null) {
             Set<String> leavingVars = mTable.currentScopeNames();
             this.currMethodLocalVar.removeAll(leavingVars);
-            mTable.exitScope();
+            mTable.exitScope(leavingVars);
         }
         scopeManager.exitScope();
     }
@@ -893,6 +900,18 @@ public class SemanticVisitor implements ISemanticVisitor {
         return decl != null && decl.getVisibility() == Ast.Visibility.PRIVATE;
     }
 
+    /**
+     * Checks whether an alias is known to the compiler — either as a top-level import
+     * or as a nested module that was merged during import propagation.
+     */
+    private boolean isKnownModuleAlias(String alias) {
+        return importedModuleNames.contains(alias)
+                || scopeManager.resolveImport(alias) != null
+                || (currentMainClass != null
+                        && (currentMainClass.getModuleStructs().containsKey(alias)
+                                || currentMainClass.getModuleEnums().containsKey(alias)));
+    }
+
     private void validateStructTypeReference(Ast.Type.T type, int line, site.ilemon.util.SourceSpan span, String context) {
         if (type == null) return;
         if (isPointerType(type)) {
@@ -907,7 +926,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         String simpleName = structType.getSimpleName();
 
         if (alias != null) {
-            if (!importedModuleNames.contains(alias) && scopeManager.resolveImport(alias) == null) {
+            if (!isKnownModuleAlias(alias)) {
                 semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
                         "module import '" + alias + "' is not visible in this scope",
                         line, span, "import is out of scope", "declare the import in this lexical scope", null);
@@ -1046,7 +1065,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         String simpleName = enumType.getSimpleName();
 
         if (alias != null) {
-            if (!importedModuleNames.contains(alias) && scopeManager.resolveImport(alias) == null) {
+            if (!isKnownModuleAlias(alias)) {
                 semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
                         "module import '" + alias + "' is not visible in this scope",
                         line, span, "import is out of scope", "declare the import in this lexical scope", null);
@@ -1159,12 +1178,14 @@ public class SemanticVisitor implements ISemanticVisitor {
         // Uninitialized declarations parsed at method entry (or legacy AST locals)
         // are registered in mTable up-front. Declarations that are VarDecl statements
         // will be registered when the statement is visited.
-        Set<Ast.Declare.T> varDeclNodes = Collections.newSetFromMap(new IdentityHashMap<>());
-        collectVarDeclNodes(obj.getStms(), varDeclNodes);
+        // Use ID-based set (not IdentityHashMap) because ModuleLoader deep-copies
+        // DeclareSingle objects, breaking identity equality.
+        Set<String> varDeclIds = new HashSet<>();
+        collectVarDeclNodeIds(obj.getStms(), varDeclIds);
         if (obj.getLocals() != null) {
             for (Ast.Declare.T dec : obj.getLocals()) {
-                if (!varDeclNodes.contains(dec)) {
-                    Ast.Declare.DeclareSingle declareSingle = (Ast.Declare.DeclareSingle) dec;
+                if (dec instanceof Ast.Declare.DeclareSingle declareSingle
+                        && !varDeclIds.contains(declareSingle.getId())) {
                     if (!isArrayType(declareSingle.getType())) {
                         this.currMethodLocalVar.add(declareSingle.getId());
                     }
@@ -1249,11 +1270,27 @@ public class SemanticVisitor implements ISemanticVisitor {
 
     private void validateImportBinding(String methodName, int line, site.ilemon.util.SourceSpan span) {
         int separator = methodName.indexOf('_');
-        if (separator > 0 && scopeManager.resolveImport(methodName.substring(0, separator)) == null
-                && importedModuleNames.contains(methodName.substring(0, separator))) {
-            semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
-                    "module import '" + methodName.substring(0, separator) + "' is not visible in this scope",
-                    line, span, "import is out of scope", "declare the import in this lexical scope", null);
+        if (separator > 0) {
+            String alias = methodName.substring(0, separator);
+            boolean inNames = importedModuleNames.contains(alias);
+            boolean inScope = scopeManager.resolveImport(alias) != null;
+            if (!inNames && inScope) {
+                System.err.println("[DEBUG] validateImportBinding: alias=" + alias
+                        + " inNames=" + inNames + " inScope=" + inScope
+                        + " importedModuleNames=" + importedModuleNames);
+            }
+            if (!inNames && !inScope) {
+                System.err.println("[DEBUG] validateImportBinding FAIL: alias=" + alias
+                        + " inNames=" + inNames + " inScope=" + inScope
+                        + " importedModuleNames=" + importedModuleNames
+                        + " span=" + span + " fileName=" + (span == null ? "null" : span.getFileName()));
+            }
+            if (separator > 0 && scopeManager.resolveImport(methodName.substring(0, separator)) == null
+                    && importedModuleNames.contains(methodName.substring(0, separator))) {
+                semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
+                        "module import '" + methodName.substring(0, separator) + "' is not visible in this scope",
+                        line, span, "import is out of scope", "declare the import in this lexical scope", null);
+            }
         }
     }
 
@@ -1581,9 +1618,12 @@ public class SemanticVisitor implements ISemanticVisitor {
                     "assign through the pointer instead: p->field = value", null);
             return;
         }
+        this.allowEnumIntAssignment = true;
         this.visit(obj.getExpr());
         Ast.Type.T valueType = this.currType;
-        if (!isAssignable(targetType, valueType, obj.getExpr())) {
+        boolean allowed = isAssignable(targetType, valueType, obj.getExpr());
+        this.allowEnumIntAssignment = false;
+        if (!allowed) {
             if (!rangeErrorIfNeeded(targetType, valueType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                     "field assignment")) {
                 if (!shortRangeErrorIfNeeded(targetType, valueType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
@@ -1760,11 +1800,18 @@ public class SemanticVisitor implements ISemanticVisitor {
             typeError(DiagnosticCodes.TYPE_CONDITION, "bool", typeName(this.currType), expressionName(obj.getCondition()),
                     obj.getCondition().getLineNum(), obj.getCondition().getSpan(), "while condition", null);
         HashSet<String> before = new HashSet<>(this.currMethodLocalVar);
+        MethodVarTable whileMTable = this.methodVarTable.get(currMethodName);
+        if (whileMTable != null) whileMTable.enterScope();
         loopDepth++;
         this.currMethodLocalVar = new HashSet<>(before);
         this.visit(obj.getBody());
         loopDepth--;
         this.currMethodLocalVar = before;
+        if (whileMTable != null) {
+            Set<String> leavingVars = whileMTable.currentScopeNames();
+            this.currMethodLocalVar.removeAll(leavingVars);
+            whileMTable.exitScope(leavingVars);
+        }
     }
 
     @Override
@@ -1790,7 +1837,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         if (mTable != null) {
             Set<String> leavingVars = mTable.currentScopeNames();
             this.currMethodLocalVar.removeAll(leavingVars);
-            mTable.exitScope();
+            mTable.exitScope(leavingVars);
         }
     }
 
@@ -1811,6 +1858,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         MethodVarTable mTable = this.methodVarTable.get(currMethodName);
         if (mTable != null) mTable.enterScope();
         HashSet<String> before = new HashSet<>(this.currMethodLocalVar);
+        this.assignedInAllCases = null;
 
         // Subject type: integer-like (byte/short/char/int/long) or enum.
         this.visit(obj.getSubject());
@@ -1901,11 +1949,29 @@ public class SemanticVisitor implements ISemanticVisitor {
                 }
             }
             switchDepth--;
+            // Track which previously-unassigned variables became assigned in this case.
+            Set<String> assignedThisCase = new HashSet<>(clauseBefore);
+            assignedThisCase.removeAll(this.currMethodLocalVar);
+            if (assignedInAllCases == null) {
+                assignedInAllCases = new HashSet<>(assignedThisCase);
+            } else {
+                assignedInAllCases.retainAll(assignedThisCase);
+            }
             this.currMethodLocalVar = clauseBefore;
         }
 
-        this.currMethodLocalVar = before;
-        if (mTable != null) mTable.exitScope();
+        // A variable is definitely initialized after the switch only if it was
+        // assigned in every case path (including default).
+        this.currMethodLocalVar = new HashSet<>(before);
+        if (assignedInAllCases != null) {
+            this.currMethodLocalVar.removeAll(assignedInAllCases);
+        }
+        this.assignedInAllCases = null;
+        if (mTable != null) {
+            Set<String> leavingVars = mTable.currentScopeNames();
+            this.currMethodLocalVar.removeAll(leavingVars);
+            mTable.exitScope(leavingVars);
+        }
     }
 
     /** Resolved switch case label: an enum member, or a compile-time integer. */
@@ -2413,6 +2479,13 @@ public class SemanticVisitor implements ISemanticVisitor {
             return true;
         if(target.getKind() == TypeKind.DOUBLE && curr.getKind() == TypeKind.LONG)
             return true;
+        // Enums are representationally ints: allow assignment to int fields and vice versa
+        if (allowEnumIntAssignment) {
+            if (target.getKind() == TypeKind.ENUM && curr.getKind() == TypeKind.INT)
+                return true;
+            if (target.getKind() == TypeKind.INT && curr.getKind() == TypeKind.ENUM)
+                return true;
+        }
         return false;
     }
 
@@ -2575,8 +2648,18 @@ public class SemanticVisitor implements ISemanticVisitor {
             }
         }
         if (promoteNumeric(leftType, this.currType) == null && !isMatch(leftType, this.currType)) {
-            typeError(DiagnosticCodes.TYPE_OPERATOR, typeName(leftType), typeName(this.currType), "comparison expression",
-                    lineNum, left.getSpan(), "comparison operator '" + op + "'", null);
+            // Allow enum↔int in equality comparison (e.g. comparing a struct field with an int array value).
+            boolean enumIntMatch =
+                    ((leftType != null && leftType.getKind() == TypeKind.ENUM && this.currType != null && this.currType.getKind() == TypeKind.INT)
+                     || (leftType != null && leftType.getKind() == TypeKind.INT && this.currType != null && this.currType.getKind() == TypeKind.ENUM));
+            if (!enumIntMatch) {
+                typeError(DiagnosticCodes.TYPE_OPERATOR, typeName(leftType), typeName(this.currType), "comparison expression",
+                        lineNum, left.getSpan(), "comparison operator '" + op + "'", null);
+            } else {
+                // Comparison result is always bool
+                this.currType = new Ast.Type.Bool();
+                return;
+            }
         }
         this.currType = new Ast.Type.Bool();
     }
@@ -2614,19 +2697,31 @@ public class SemanticVisitor implements ISemanticVisitor {
             error(lineNum, String.format("method '%s' has an incorrect argument count: expected %d, but found %d",
                     methodName, method.getFormals().size(), inputParams.size()));
         }
-        for (int i = 0; i < inputParams.size(); i++) {
-            this.visit(inputParams.get(i));
-            Ast.Type.T actualType = this.currType;
-            this.visit(method.getFormals().get(i));
-            Ast.Type.T expectedType = this.currType;
-            if (!isAssignable(expectedType, actualType, inputParams.get(i))) {
-                Ast.Expr.T argument = inputParams.get(i);
-                if (!rangeErrorIfNeeded(expectedType, actualType, argument, argument.getLineNum(), argument.getSpan(),
-                        "argument " + (i + 1) + " of '" + methodName + "'")) {
-                    typeError(DiagnosticCodes.TYPE_ARGUMENT, typeName(expectedType), typeName(actualType), expressionName(argument),
-                            argument.getLineNum(), argument.getSpan(), "argument " + (i + 1) + " of '" + methodName + "'", null);
+        // Allow enum↔int compatibility for function-call arguments
+        this.allowEnumIntAssignment = true;
+        try {
+            for (int i = 0; i < inputParams.size(); i++) {
+                this.visit(inputParams.get(i));
+                Ast.Type.T actualType = this.currType;
+                this.visit(method.getFormals().get(i));
+                Ast.Type.T expectedType = this.currType;
+                if (!isAssignable(expectedType, actualType, inputParams.get(i))) {
+                    Ast.Expr.T argument = inputParams.get(i);
+                    if (!rangeErrorIfNeeded(expectedType, actualType, argument, argument.getLineNum(), argument.getSpan(),
+                            "argument " + (i + 1) + " of '" + methodName + "'")) {
+                        // Allow enum↔int for function arguments when flag is set
+                        boolean enumIntMatch = allowEnumIntAssignment
+                                && ((expectedType != null && expectedType.getKind() == TypeKind.ENUM && actualType != null && actualType.getKind() == TypeKind.INT)
+                                 || (expectedType != null && expectedType.getKind() == TypeKind.INT && actualType != null && actualType.getKind() == TypeKind.ENUM));
+                        if (!enumIntMatch) {
+                            typeError(DiagnosticCodes.TYPE_ARGUMENT, typeName(expectedType), typeName(actualType), expressionName(argument),
+                                    argument.getLineNum(), argument.getSpan(), "argument " + (i + 1) + " of '" + methodName + "'", null);
+                        }
+                    }
                 }
             }
+        } finally {
+            this.allowEnumIntAssignment = false;
         }
         return this.methodNameRetTypeMap.get(methodName);
     }
@@ -2892,6 +2987,31 @@ public class SemanticVisitor implements ISemanticVisitor {
         if (stmts == null) return;
         for (Ast.Stmt.T s : stmts) {
             collectVarDeclNodes(s, decls);
+        }
+    }
+
+    private void collectVarDeclNodeIds(List<Ast.Stmt.T> stmts, Set<String> ids) {
+        if (stmts == null) return;
+        for (Ast.Stmt.T s : stmts) {
+            collectVarDeclNodeId(s, ids);
+        }
+    }
+
+    private void collectVarDeclNodeId(Ast.Stmt.T stmt, Set<String> ids) {
+        if (stmt == null) return;
+        if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
+            Ast.Declare.DeclareSingle dec = (Ast.Declare.DeclareSingle) varDecl.getDeclaration();
+            if (dec != null) ids.add(dec.getId());
+        } else if (stmt instanceof Ast.Stmt.Block block) {
+            collectVarDeclNodeIds(block.getStmts(), ids);
+        } else if (stmt instanceof Ast.Stmt.If ifStmt) {
+            collectVarDeclNodeId(ifStmt.getThenStmt(), ids);
+            collectVarDeclNodeId(ifStmt.getElseStmt(), ids);
+        } else if (stmt instanceof Ast.Stmt.While whileStmt) {
+            collectVarDeclNodeId(whileStmt.getBody(), ids);
+        } else if (stmt instanceof Ast.Stmt.For forStmt) {
+            collectVarDeclNodeId(forStmt.getInit(), ids);
+            collectVarDeclNodeId(forStmt.getBody(), ids);
         }
     }
 

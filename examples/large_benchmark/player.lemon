@@ -1,0 +1,17 @@
+// player.lemon
+// Player-specific logic: combat actions.
+import types = @import("types.lemon");
+import entity = @import("entity.lemon");
+
+// Attacks an enemy: returns damage dealt.
+pub int playerAttack(struct types.PlayerData* p, int enemyDef) {
+    int atk;
+    int dmg;
+    atk = entity.playerAtk(p);
+    if (atk > enemyDef) {
+        dmg = atk - enemyDef;
+    } else {
+        dmg = 1; // minimum damage
+    }
+    return dmg;
+}

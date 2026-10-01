@@ -1,0 +1,35 @@
+// stats.lemon
+// Computes derived stats from a base Stats struct and modifiers.
+import types = @import("types.lemon");
+
+// Returns total attack: baseAtk * multiplier, clamped between 1 and maxVal.
+pub int calcAtk(struct types.Stats base, int multiplier, int maxVal) {
+    int atk;
+    atk = base.baseAtk * multiplier;
+    if (atk > maxVal) {
+        atk = maxVal;
+    }
+    if (atk < 1) {
+        atk = 1;
+    }
+    return atk;
+}
+
+// Returns total defense using a simple formula.
+pub int calcDef(struct types.Stats base, int bonus) {
+    return base.baseDef + bonus;
+}
+
+// Returns effective HP using a recursive doubling formula for stress-testing
+// the IR lowering and ARC pass.
+pub int calcHp(struct types.Stats base, int level) {
+    if (level <= 0) {
+        return base.baseHp;
+    }
+    return base.baseHp + calcHp(base, level - 1);
+}
+
+// Sum of all stats fields.
+pub int totalStats(struct types.Stats s) {
+    return s.baseHp + s.baseAtk + s.baseDef;
+}

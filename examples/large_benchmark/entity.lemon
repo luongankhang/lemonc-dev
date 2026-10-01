@@ -1,0 +1,138 @@
+// entity.lemon
+// Entity base logic with position tracking, damage calculation, and status.
+// Also includes enemy creation logic (no separate enemy module needed).
+import types = @import("types.lemon");
+
+// ---- stat computation helpers (inlined to avoid deep import chain) ----
+
+// Returns total attack: baseAtk * multiplier, clamped between 1 and maxVal.
+pub int calcAtk(int baseAtk, int multiplier, int maxVal) {
+    int atk;
+    atk = baseAtk * multiplier;
+    if (atk > maxVal) {
+        atk = maxVal;
+    }
+    if (atk < 1) {
+        atk = 1;
+    }
+    return atk;
+}
+
+// Returns total defense.
+pub int calcDef(int baseDef, int bonus) {
+    return baseDef + bonus;
+}
+
+// Returns effective HP: baseHp * (1 + level).
+pub int calcHp(int baseHp, int level) {
+    return baseHp + baseHp * level;
+}
+
+// ---- player creation and manipulation ----
+
+// Creates a PlayerData struct with given position, stats, and level.
+pub struct types.PlayerData makePlayer(int x, int y, int baseHp, int baseAtk, int baseDef, int level) {
+    struct types.PlayerData p;
+    p.pos.x = x;
+    p.pos.y = y;
+    p.stats.baseHp = baseHp;
+    p.stats.baseAtk = baseAtk;
+    p.stats.baseDef = baseDef;
+    p.level = level;
+    return p;
+}
+
+// Computes current HP based on level.
+pub int currentHp(struct types.PlayerData* p) {
+    return calcHp(p->stats.baseHp, p->level);
+}
+
+// Computes attack power with multiplier based on level.
+pub int playerAtk(struct types.PlayerData* p) {
+    int mult;
+    mult = 1 + p->level / 5;
+    return calcAtk(p->stats.baseAtk, mult, 500);
+}
+
+// Moves player position (pointer mutation).
+pub void movePlayer(struct types.PlayerData* p, int dx, int dy) {
+    p->pos.x = p->pos.x + dx;
+    p->pos.y = p->pos.y + dy;
+}
+
+// Gets distance from origin.
+pub int playerDist(struct types.PlayerData* p) {
+    return p->pos.x + p->pos.y;
+}
+
+// Prints player info (shows nested struct and pointer dereference).
+pub void printPlayer(struct types.PlayerData* p) {
+    int hp;
+    int atk;
+    hp = currentHp(p);
+    atk = playerAtk(p);
+    printf("Player: lvl=%d pos=(%d,%d) hp=%d atk=%d\n",
+           p->level, p->pos.x, p->pos.y, hp, atk);
+}
+
+// ---- enemy creation ----
+
+// Returns a fixed level for each enemy type.
+pub int enemyLevel(enum types.EnemyType etype) {
+    int lvl;
+    lvl = 1;
+    switch (etype) {
+        case SLIME: lvl = 1; break;
+        case GOBLIN: lvl = 3; break;
+        case ORC: lvl = 5; break;
+        case DRAGON: lvl = 10; break;
+    }
+    return lvl;
+}
+
+// Creates an enemy with the given type and position.
+pub struct types.PlayerData makeEnemy(enum types.EnemyType etype, int x, int y) {
+    int hp;
+    int atk;
+    int def;
+    struct types.PlayerData e;
+
+    // Select base stats based on enemy type via switch.
+    switch (etype) {
+        case SLIME:
+            hp = 20; atk = 5; def = 1;
+            break;
+        case GOBLIN:
+            hp = 40; atk = 12; def = 3;
+            break;
+        case ORC:
+            hp = 80; atk = 25; def = 8;
+            break;
+        case DRAGON:
+            hp = 200; atk = 60; def = 20;
+            break;
+        default:
+            hp = 10; atk = 3; def = 0;
+    }
+
+    e.pos.x = x;
+    e.pos.y = y;
+    e.stats.baseHp = hp;
+    e.stats.baseAtk = atk;
+    e.stats.baseDef = def;
+    e.level = enemyLevel(etype);
+    return e;
+}
+
+// Enemy attacks the player: returns raw damage (before player defense).
+pub int enemyAttack(struct types.PlayerData* enemy) {
+    return calcAtk(enemy->stats.baseAtk, 1, 200);
+}
+
+// Prints enemy info.
+pub void printEnemy(struct types.PlayerData* e, int typeCode) {
+    printf("Enemy type=%d lvl=%d pos=(%d,%d) atk=%d def=%d\n",
+           typeCode, e->level, e->pos.x, e->pos.y,
+           calcAtk(e->stats.baseAtk, 1, 200),
+           calcDef(e->stats.baseDef, 0));
+}

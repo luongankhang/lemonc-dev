@@ -349,6 +349,37 @@ Source: [examples/Fib.lemon](examples/Fib.lemon)
 循环计算斐波那契数列，一年后总共有144对兔子
 ```
 
+### Large multi-module benchmark
+
+Source: [examples/large_benchmark/](examples/large_benchmark/)
+
+A 6-module world-simulation benchmark (`types`, `entity`, `inventory`, `item`, `stats`, `world`) that stresses:
+
+- **Nested structs** — `PlayerData` contains `Position` and `Stats`; `Item` contains `Position`
+- **Enum–int interop** — enum fields compared with `int` array values via parallel arrays
+- **Multi-module imports** — `import world = @import("world.lemon")` with transitive resolution
+- **Struct pointers** — `combatRound(struct types.PlayerData* p, struct types.PlayerData* e)`
+- **Switch on int** — deterministic item generation and world exploration
+- **Both backends** — verified end-to-end with identical output (checksum parity)
+
+```bash
+# Compile to C
+java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar \
+  examples/large_benchmark/benchmark_main.lemon --target c
+
+# Run C binary (requires gcc/clang and runtime headers)
+gcc -I runtime/include -I runtime \
+  examples/large_benchmark/benchmark_main.c \
+  runtime/src/memory.c runtime/src/object.c runtime/src/array.c \
+  runtime/src/string.c runtime/src/runtime.c runtime/src/error.c \
+  runtime/src/floatfmt.c -o benchmark.exe -O2 && benchmark.exe
+
+# Compile to JVM
+java -jar target/LemonC-0.1-beta-jar-with-dependencies.jar \
+  examples/large_benchmark/benchmark_main.lemon --target jvm
+java -cp target/lemonc benchmark_main
+```
+
 ## Quick Start
 
 Requirements:

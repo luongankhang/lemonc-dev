@@ -1,0 +1,30 @@
+// World module
+import types = @import("debug_types.lemon");
+import item = @import("debug_item.lemon");
+
+pub int runWorld(int nameHash) {
+    int i;
+    int invRarities[3];
+    int result;
+    int rounds;
+    invRarities[0] = 1;
+    invRarities[1] = 2;
+    invRarities[2] = 3;
+    result = 0;
+    rounds = 0;
+    while (rounds < 2) {
+        rounds = rounds + 1;
+        for (i = 0; i < 3; i = i + 1) {
+            int score;
+            score = item.rarityScore(invRarities[i]);
+            result = result + score;
+        }
+    }
+    printf("result=%d\n", result);
+    return result;
+}
+
+pub void main() {
+    int cs;
+    cs = runWorld(42);
+}

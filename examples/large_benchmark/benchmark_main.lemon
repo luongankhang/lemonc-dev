@@ -1,0 +1,19 @@
+// benchmark_main.lemon
+// Entry point for the large benchmark. Runs the world simulation twice with
+// different player configurations and prints a deterministic checksum for parity verification.
+import world = @import("world.lemon");
+
+void main() {
+    int cs1;
+    int cs2;
+    int total;
+
+    // Run two independent simulations with different name hashes for determinism
+    cs1 = world.runWorld(42);
+    printf("---\n");
+    cs2 = world.runWorld(99);
+    printf("---\n");
+
+    total = cs1 + cs2;
+    printf("Total checksum: %d\n", total);
+}

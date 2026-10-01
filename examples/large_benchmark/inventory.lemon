@@ -1,0 +1,57 @@
+// inventory.lemon
+// Inventory management: compute total value, find best item index, count by type.
+// Uses parallel int arrays instead of struct arrays (struct arrays are not
+// supported by the parser).
+import types = @import("types.lemon");
+import item = @import("item.lemon");
+
+// Computes total value of all items in inventory.
+pub int inventoryValue(int values[], int count) {
+    int i;
+    int total;
+    total = 0;
+    for (i = 0; i < count; i = i + 1) {
+        total = total + values[i];
+    }
+    return total;
+}
+
+// Finds the index of the highest-value item in the inventory.
+pub int findBestItemIdx(int values[], int count) {
+    int i;
+    int bestIdx;
+    int bestVal;
+    bestIdx = 0;
+    bestVal = -1;
+    for (i = 0; i < count; i = i + 1) {
+        if (values[i] > bestVal) {
+            bestVal = values[i];
+            bestIdx = i;
+        }
+    }
+    return bestIdx;
+}
+
+// Counts items of a given type using a parallel enum-type array.
+pub int countItemType(int typesArr[], int count, enum types.ItemType targetType) {
+    int i;
+    int cnt;
+    cnt = 0;
+    for (i = 0; i < count; i = i + 1) {
+        if (typesArr[i] == targetType) {
+            cnt = cnt + 1;
+        }
+    }
+    return cnt;
+}
+
+// Prints all items using their parallel arrays.
+pub void printAllItems(int values[], int typesArr[], int rarities[], int positionsX[], int positionsY[], int count) {
+    int i;
+    for (i = 0; i < count; i = i + 1) {
+        int score;
+        score = item.rarityScore(rarities[i]);
+        printf("  [%d] val=%d type=%d rarityScore=%d pos=(%d,%d)\n",
+               i, values[i], typesArr[i], score, positionsX[i], positionsY[i]);
+    }
+}

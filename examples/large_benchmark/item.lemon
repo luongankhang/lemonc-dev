@@ -1,0 +1,41 @@
+// item.lemon
+// Item factory and utilities. Exercises enums, structs, switch, pointers, and loops.
+import types = @import("types.lemon");
+
+// Creates an Item by value (tests STRUCT_COPY / allocation paths).
+pub struct types.Item makeItem(int value, enum types.ItemType itemType, enum types.Rarity rarity) {
+    struct types.Item it;
+    it.value = value;
+    it.type = itemType;
+    it.rarity = rarity;
+    it.pos.x = 0;
+    it.pos.y = 0;
+    return it;
+}
+
+// Sets position on an item via pointer.
+pub void setItemPos(struct types.Item* it, int x, int y) {
+    it->pos.x = x;
+    it->pos.y = y;
+}
+
+// Returns the rarity score for an item (switch on enum).
+pub int rarityScore(enum types.Rarity r) {
+    int score;
+    score = 0;
+    switch (r) {
+        case COMMON: score = 1; break;
+        case UNCOMMON: score = 2; break;
+        case RARE: score = 3; break;
+        case LEGENDARY: score = 4; break;
+    }
+    return score;
+}
+
+// Prints an item summary (uses pointer and nested struct access).
+pub void printItem(struct types.Item* it, int idx) {
+    int score;
+    score = rarityScore(it->rarity);
+    printf("  [%d] val=%d type=%d rarityScore=%d pos=(%d,%d)\n",
+           idx, it->value, it->type, score, it->pos.x, it->pos.y);
+}

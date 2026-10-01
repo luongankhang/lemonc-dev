@@ -1,0 +1,79 @@
+// enemy.lemon
+// Enemy creation, AI behavior via switch, and combat.
+import types = @import("types.lemon");
+import stats = @import("stats.lemon");
+import entity = @import("entity.lemon");
+
+// Creates an enemy with the given type and stats.
+pub struct types.PlayerData makeEnemy(enum types.EnemyType etype, int x, int y) {
+    struct types.Stats s;
+
+    // Select base stats based on enemy type via switch.
+    switch (etype) {
+        case types.EnemyType.SLIME:
+            s.baseHp = 20;
+            s.baseAtk = 5;
+            s.baseDef = 1;
+            break;
+        case types.EnemyType.GOBLIN:
+            s.baseHp = 40;
+            s.baseAtk = 12;
+            s.baseDef = 3;
+            break;
+        case types.EnemyType.ORC:
+            s.baseHp = 80;
+            s.baseAtk = 25;
+            s.baseDef = 8;
+            break;
+        case types.EnemyType.DRAGON:
+            s.baseHp = 200;
+            s.baseAtk = 60;
+            s.baseDef = 20;
+            break;
+        default:
+            s.baseHp = 10;
+            s.baseAtk = 3;
+            s.baseDef = 0;
+    }
+
+    // Use a single integer to encode the enemy type for printing.
+    int typeCode;
+    typeCode = 0;
+    switch (etype) {
+        case types.EnemyType.SLIME: typeCode = 1; break;
+        case types.EnemyType.GOBLIN: typeCode = 2; break;
+        case types.EnemyType.ORC: typeCode = 3; break;
+        case types.EnemyType.DRAGON: typeCode = 4; break;
+    }
+
+    struct types.PlayerData e;
+    e.pos.x = x;
+    e.pos.y = y;
+    e.stats = s;
+    e.level = enemyLevel(etype);
+    return e;
+}
+
+// Returns a fixed level for each enemy type (deterministic).
+pub int enemyLevel(enum types.EnemyType etype) {
+    switch (etype) {
+        case types.EnemyType.SLIME: return 1;
+        case types.EnemyType.GOBLIN: return 3;
+        case types.EnemyType.ORC: return 5;
+        case types.EnemyType.DRAGON: return 10;
+        default: return 1;
+    }
+}
+
+// Enemy attacks the player: returns raw damage (before player defense).
+pub int enemyAttack(struct types.PlayerData* enemy) {
+    return stats.calcAtk(enemy->stats, 1, 200);
+}
+
+// Prints enemy info.
+pub void printEnemy(struct types.PlayerData* e, int typeCode) {
+    printf("Enemy type=%d lvl=%d pos=(%d,%d) atk=%d def=%d\n",
+           typeCode, e->level, e->pos.x, e->pos.y,
+           stats.calcAtk(e->stats, 1, 200),
+           stats.calcDef(e->stats, 0));
+}

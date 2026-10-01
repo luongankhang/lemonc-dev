@@ -1,0 +1,54 @@
+// types.lemon
+// Shared enumerations and struct definitions used across the benchmark.
+// Exposes all types publicly so other modules can use them.
+
+pub enum ItemType {
+    WEAPON,
+    ARMOR,
+    POTION,
+    FOOD
+}
+
+pub enum EnemyType {
+    SLIME,
+    GOBLIN,
+    ORC,
+    DRAGON
+}
+
+pub enum Rarity {
+    COMMON,
+    UNCOMMON,
+    RARE,
+    LEGENDARY
+}
+
+// Nested struct definition to exercise field loading through multiple levels.
+pub struct Position {
+    int x;
+    int y;
+}
+
+pub struct Stats {
+    int baseHp;
+    int baseAtk;
+    int baseDef;
+}
+
+// Item struct contains a nested Position and integer enum fields.
+pub struct Item {
+    int value;
+    int type;
+    int rarity;
+    struct Position pos;
+}
+
+// PlayerData is a struct-within-struct to stress STRUCT_COPY in the optimizer.
+pub struct PlayerData {
+    int level;
+    struct Position pos;
+    struct Stats stats;
+}
+
+// Required: every module must declare at least one function for the parser.
+void _types_dummy() {}

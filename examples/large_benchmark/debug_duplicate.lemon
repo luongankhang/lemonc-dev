@@ -1,0 +1,9 @@
+// debug_duplicate.lemon
+pub void main() {
+    int count = 3;
+    for (int i = 0; i < count; i = i + 1) {
+        int score;
+        score = i * 10;
+    }
+    printf("done\n");
+}

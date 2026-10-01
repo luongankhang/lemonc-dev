@@ -1,0 +1,17 @@
+// Debug: nested while/for with local declarations
+pub void main() {
+    int i;
+    int j;
+    int score;
+    int rounds;
+    int inner;
+    rounds = 0;
+    while (rounds < 2) {
+        rounds = rounds + 1;
+        for (i = 0; i < 3; i = i + 1) {
+            int score;
+            score = i * 10;
+        }
+    }
+    printf("done\n");
+}

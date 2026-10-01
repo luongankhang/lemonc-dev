@@ -1,0 +1,14 @@
+// Item module
+import types = @import("debug_types.lemon");
+
+pub int rarityScore(enum types.Rarity r) {
+    int score;
+    score = 0;
+    switch (r) {
+        case COMMON: score = 1; break;
+        case UNCOMMON: score = 2; break;
+        case RARE: score = 3; break;
+        case LEGENDARY: score = 4; break;
+    }
+    return score;
+}

@@ -176,6 +176,18 @@ mvn test                         # full suite — no regression
 mvn -Dtest=SwitchTest test       # focused switch suite
 mvn -Dtest=EnumTest test         # focused enum suite
 mvn -Dtest=ReturnPathAnalysisTest test  # return-path analysis
+mvn -Dtest=LargeBenchmarkTest test  # multi-module benchmark sanity
+```
+
+### Large benchmark (`examples/large_benchmark/`)
+
+The 6-module world-simulation benchmark is the most comprehensive stress test. It exercises nested structs, enum–int interop, struct pointers, multi-module imports, and both backends. Always run it after changes to any of these areas:
+
+```
+mvn test -Dtest=LargeBenchmarkTest   # semantic + backend compilation sanity
+mvn test -Dtest=EnumTest             # enum comparison regressions
+mvn test -Dtest=StructTest           # struct field access regressions
+mvn test -Dtest=CBackendTest         # C backend parity
 ```
 
 Do not modify expected outputs to hide failures; fix the compiler.

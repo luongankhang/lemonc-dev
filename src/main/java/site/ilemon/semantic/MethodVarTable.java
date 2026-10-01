@@ -40,6 +40,24 @@ public class MethodVarTable {
         }
     }
 
+    /**
+     * Exits the current scope and removes {@code leaving} from every
+     * remaining underlying scope. Used by for/while-loop exits where
+     * variables may have leaked into parent scopes during nested iterations.
+     */
+    public void exitScope(Set<String> leaving) {
+        if (scopes.size() > 1) {
+            scopes.pop();
+            if (!scopes.isEmpty()) {
+                for (Map<String, Symbol> s : scopes) {
+                    for (String name : leaving) {
+                        s.remove(name);
+                    }
+                }
+            }
+        }
+    }
+
     public Set<String> currentScopeNames() {
         if (scopes.isEmpty()) return Set.of();
         return Set.copyOf(scopes.peek().keySet());

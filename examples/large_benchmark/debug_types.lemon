@@ -1,0 +1,12 @@
+// Types
+pub enum Rarity {
+    COMMON, UNCOMMON, RARE, LEGENDARY
+}
+
+pub struct Item {
+    int value;
+    int type;
+    int rarity;
+}
+
+pub void _types_dummy() {}

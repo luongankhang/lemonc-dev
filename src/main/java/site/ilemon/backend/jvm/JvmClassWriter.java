@@ -10,8 +10,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Minimal, dependency-free JVM class-file writer.
@@ -287,10 +289,14 @@ final class JvmClassWriter {
     /** Gathers every struct instance field referenced by any method's code. */
     private List<StructField> collectStructFields(IrModule module) {
         List<StructField> fields = new ArrayList<>();
+        Set<String> seen = new HashSet<>(); // dedup key: "fieldName|descriptor" — same field name + type across different structs must not collide
         for (IrModule.IrStruct struct : module.structsView().values()) {
             for (IrModule.IrStructField field : struct.fields()) {
-                fields.add(new StructField(struct.name(), field.name(),
-                        structFieldDescriptor(field.type(), module.name())));
+                String desc = structFieldDescriptor(field.type(), module.name());
+                String key = field.name() + "|" + desc;
+                if (seen.add(key)) {
+                    fields.add(new StructField(struct.name(), field.name(), desc));
+                }
             }
         }
         return fields;

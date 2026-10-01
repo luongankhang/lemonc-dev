@@ -1,0 +1,148 @@
+// world.lemon
+// World simulation: creates players and enemies, runs combat rounds,
+// manages inventory via parallel int arrays, and computes a final checksum.
+import types = @import("types.lemon");
+import item = @import("item.lemon");
+import entity = @import("entity.lemon");
+import inventory = @import("inventory.lemon");
+
+const int INV_SIZE = 8;
+
+// Simulates one round of combat between player and enemy.
+// Returns the total damage dealt by the player this round.
+pub int combatRound(struct types.PlayerData* p, struct types.PlayerData* e) {
+    int dmg;
+    int enemyDef;
+    int enemyHpBefore;
+    int enemyHpAfter;
+
+    enemyDef = entity.calcDef(e->stats.baseDef, 0);
+    dmg = entity.playerAtk(p) - enemyDef;
+    if (dmg < 1) {
+        dmg = 1;
+    }
+    enemyHpBefore = entity.currentHp(e);
+    e->stats.baseHp = e->stats.baseHp - dmg;
+    if (e->stats.baseHp < 1) {
+        e->stats.baseHp = 1;
+    }
+    enemyHpAfter = entity.currentHp(e);
+    printf("  Player hits for %d (enemy hp %d -> %d)\n", dmg, enemyHpBefore, enemyHpAfter);
+
+    if (enemyHpAfter > 0) {
+        int eDmg;
+        int playerDef;
+        eDmg = entity.enemyAttack(e);
+        playerDef = entity.calcDef(p->stats.baseDef, 0);
+        if (eDmg > playerDef) {
+            eDmg = eDmg - playerDef;
+        } else {
+            eDmg = 1;
+        }
+        p->stats.baseHp = p->stats.baseHp - eDmg;
+        if (p->stats.baseHp < 1) {
+            p->stats.baseHp = 1;
+        }
+        printf("  Enemy counters for %d (player hp now %d)\n", eDmg, entity.currentHp(p));
+    }
+    return dmg;
+}
+
+// Moves the player around the world in a deterministic pattern.
+pub void exploreWorld(struct types.PlayerData* p) {
+    int dir;
+    for (dir = 0; dir < 4; dir = dir + 1) {
+        switch (dir) {
+            case 0: entity.movePlayer(p, 1, 0); printf("  Moving east to (%d,%d)\n", p->pos.x, p->pos.y); break;
+            case 1: entity.movePlayer(p, 0, 1); printf("  Moving south to (%d,%d)\n", p->pos.x, p->pos.y); break;
+            case 2: entity.movePlayer(p, -1, 0); printf("  Moving west to (%d,%d)\n", p->pos.x, p->pos.y); break;
+            case 3: entity.movePlayer(p, 0, -1); printf("  Moving north to (%d,%d)\n", p->pos.x, p->pos.y); break;
+        }
+    }
+}
+
+// Populates the player's inventory using parallel arrays.
+pub void fillInventory(int outValues[], int outTypes[], int outRarities[], int outPosX[], int outPosY[], int size) {
+    struct types.Item it;
+    int i;
+    for (i = 0; i < size; i = i + 1) {
+        switch (i) {
+            case 0: it = item.makeItem(100, types.ItemType.WEAPON, types.Rarity.RARE); break;
+            case 1: it = item.makeItem(80, types.ItemType.ARMOR, types.Rarity.UNCOMMON); break;
+            case 2: it = item.makeItem(20, types.ItemType.POTION, types.Rarity.COMMON); break;
+            case 3: it = item.makeItem(500, types.ItemType.ARMOR, types.Rarity.LEGENDARY); break;
+            case 4: it = item.makeItem(5, types.ItemType.FOOD, types.Rarity.COMMON); break;
+            case 5: it = item.makeItem(150, types.ItemType.WEAPON, types.Rarity.UNCOMMON); break;
+            case 6: it = item.makeItem(200, types.ItemType.ARMOR, types.Rarity.RARE); break;
+            default: it = item.makeItem(0, types.ItemType.WEAPON, types.Rarity.COMMON);
+        }
+        item.setItemPos(&it, i * 10, i * 5);
+        outValues[i] = it.value;
+        outTypes[i] = it.type;
+        outRarities[i] = it.rarity;
+        outPosX[i] = it.pos.x;
+        outPosY[i] = it.pos.y;
+    }
+}
+
+// Runs the full world simulation and returns a checksum of all output.
+pub int runWorld(int nameHash) {
+    struct types.PlayerData player;
+    struct types.PlayerData enemy1;
+    struct types.PlayerData enemy2;
+    struct types.PlayerData enemy3;
+    int totalDamage;
+    int round;
+    int checksum;
+    int killed;
+    int invValues[8];
+    int invTypes[8];
+    int invRarities[8];
+    int invPosX[8];
+    int invPosY[8];
+
+    player = entity.makePlayer(0, 0, 100, 20, 10, 5);
+    printf("=== World Simulation ===\n");
+    printf("Player created: hash=%d\n", nameHash);
+
+    fillInventory(invValues, invTypes, invRarities, invPosX, invPosY, INV_SIZE);
+    printf("\nInventory:\n");
+    inventory.printAllItems(invValues, invTypes, invRarities, invPosX, invPosY, INV_SIZE);
+    printf("Total inventory value: %d\n", inventory.inventoryValue(invValues, INV_SIZE));
+
+    printf("\nExploring world:\n");
+    exploreWorld(&player);
+    printf("Final position: (%d, %d)\n", player.pos.x, player.pos.y);
+
+    printf("\nEnemies spawned:\n");
+    enemy1 = entity.makeEnemy(types.EnemyType.SLIME, 10, 10);
+    enemy2 = entity.makeEnemy(types.EnemyType.ORC, 20, 30);
+    enemy3 = entity.makeEnemy(types.EnemyType.DRAGON, 50, 50);
+    entity.printEnemy(&enemy1, 1);
+    entity.printEnemy(&enemy2, 3);
+    entity.printEnemy(&enemy3, 4);
+
+    totalDamage = 0;
+    printf("\nCombat (5 rounds):\n");
+    for (round = 0; round < 5; round = round + 1) {
+        printf("Round %d:\n", round + 1);
+        killed = 0;
+        totalDamage = totalDamage + combatRound(&player, &enemy1);
+        if (enemy1.stats.baseHp < 10) { killed = killed + 1; }
+        totalDamage = totalDamage + combatRound(&player, &enemy2);
+        if (enemy2.stats.baseHp < 10) { killed = killed + 1; }
+        totalDamage = totalDamage + combatRound(&player, &enemy3);
+        if (enemy3.stats.baseHp < 10) { killed = killed + 1; }
+        if (killed > 0) {
+            printf("  %d enemies defeated this round\n", killed);
+        }
+    }
+
+    checksum = player.stats.baseHp + player.stats.baseAtk + player.stats.baseDef
+             + player.level + player.pos.x + player.pos.y + totalDamage + nameHash;
+    printf("\n=== Summary ===\n");
+    entity.printPlayer(&player);
+    printf("Total damage dealt: %d\n", totalDamage);
+    printf("Checksum: %d\n", checksum);
+    return checksum;
+}

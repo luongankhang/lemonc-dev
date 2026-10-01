@@ -1,0 +1,14 @@
+// Debug: multiple for loops with same variable name
+pub void main() {
+    int i;
+    int score;
+    for (i = 0; i < 3; i = i + 1) {
+        int score;
+        score = i * 10;
+    }
+    for (i = 0; i < 2; i = i + 1) {
+        int score;
+        score = i * 20;
+    }
+    printf("done\n");
+}
