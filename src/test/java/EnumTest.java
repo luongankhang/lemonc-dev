@@ -483,4 +483,37 @@ public class EnumTest {
                         && d.message().contains("private enum"));
         assertTrue("Exposing private enum in public return type must fail with SEM_INVALID_SCOPE", hasScopeError);
     }
+
+    @Test
+    public void testCrossModuleEnumSwitch_C_and_JVM() throws Exception {
+        Path dir = temporaryFolder.newFolder("cross-enum-switch").toPath();
+        Path colorsMod = write(dir, "colors.lemon", """
+                pub enum Color {
+                    RED = 1,
+                    GREEN = 2,
+                    BLUE = 3
+                }
+
+                pub int color_code(enum Color c) {
+                    switch (c) {
+                        case Color.RED: return 100;
+                        case Color.GREEN: return 200;
+                        default: return 300;
+                    }
+                }
+                """);
+        Path mainFile = write(dir, "main.lemon", """
+                import col = @import("colors.lemon");
+
+                void main() {
+                    enum col.Color c = col.Color.GREEN;
+                    printf("code=%d\\n", col.color_code(c));
+                    c = col.Color.BLUE;
+                    printf("code=%d\\n", col.color_code(c));
+                }
+                """);
+        String expected = "code=200\ncode=300\n";
+        assertEquals(expected, compileAndRunJvm(mainFile));
+        assertEquals(expected, compileAndRunNative(mainFile));
+    }
 }

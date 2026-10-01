@@ -295,6 +295,82 @@ public class ReturnPathAnalysisTest {
                 "} void main() { printf(\"%d\", f(1)); }");
     }
 
+    // ===== Switch return-path analysis =====
+
+    @Test
+    public void testSwitchWithDefaultAllCasesReturn() throws IOException {
+        compileSource("int f(int x) { " +
+                "switch (x) { " +
+                "case 1: return 1; " +
+                "case 2: return 2; " +
+                "default: return 3; " +
+                "} " +
+                "} void main() { printf(\"%d\", f(1)); }");
+    }
+
+    @Test
+    public void testSwitchWithoutDefaultMayFallThrough() throws IOException {
+        // No default: switch can complete normally even if every case returns
+        // (the subject might match no case).
+        compileSource("int f(int x) { " +
+                "switch (x) { " +
+                "case 1: return 1; " +
+                "case 2: return 2; " +
+                "} " +
+                "return 0; " +
+                "} void main() { printf(\"%d\", f(1)); }");
+    }
+
+    @Test(expected = SemanticException.class)
+    public void testSwitchWithDefaultOneCaseDoesNotReturn() throws IOException {
+        // Every case must return when a default is present.
+        compileSource("int f(int x) { " +
+                "switch (x) { " +
+                "case 1: return 1; " +
+                "default: printf(\"missing return\"); " +
+                "} " +
+                "} void main() { printf(\"%d\", f(1)); }");
+    }
+
+    @Test(expected = SemanticException.class)
+    public void testSwitchFallthroughCaseWithBreak() throws IOException {
+        // A case ending in break exits the switch without returning from the
+        // function; without a trailing return after the switch the method is
+        // incomplete.
+        compileSource("int f(int x) { " +
+                "switch (x) { " +
+                "case 1: printf(\"one\"); break; " +
+                "case 2: return 2; " +
+                "default: return 3; " +
+                "} " +
+                "} void main() { printf(\"%d\", f(1)); }");
+    }
+
+    @Test
+    public void testSwitchFallthroughChainReturns() throws IOException {
+        // Empty cases fall through; a returning case at the end satisfies the
+        // all-cases-return requirement.
+        compileSource("int f(int x) { " +
+                "switch (x) { " +
+                "case 1: " +
+                "case 2: return 2; " +
+                "default: return 3; " +
+                "} " +
+                "} void main() { printf(\"%d\", f(1)); }");
+    }
+
+    @Test(expected = SemanticException.class)
+    public void testSwitchNoDefaultMissingReturnAtEnd() throws IOException {
+        // No default and last case does not return — switch may fall through to
+        // after it, so a trailing return is required.
+        compileSource("int f(int x) { " +
+                "switch (x) { " +
+                "case 1: printf(\"one\"); break; " +
+                "case 2: printf(\"two\"); break; " +
+                "} " +
+                "} void main() { printf(\"%d\", f(1)); }");
+    }
+
     // ======================== Infrastructure ========================
 
     /**

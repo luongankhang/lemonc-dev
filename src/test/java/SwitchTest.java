@@ -483,4 +483,53 @@ public class SwitchTest {
                 """);
         assertTrue("break inside a loop must remain legal", visitor.passOrNot());
     }
+
+    @Test
+    public void testMultiCaseFallthrough_C_and_JVM() throws Exception {
+        String source = """
+                void main() {
+                    int x = 1;
+                    switch (x) {
+                        case 1:
+                        case 2:
+                        case 3: printf("one_two_three\\n"); break;
+                        default: printf("other\\n");
+                    }
+                }
+                """;
+        Path dir = temporaryFolder.newFolder("switch-multi-fall").toPath();
+        Path file = write(dir, "SwitchMultiFall.lemon", source);
+        String expected = "one_two_three\n";
+        assertEquals(expected, compileAndRunJvm(file));
+        assertEquals(expected, compileAndRunNative(file));
+    }
+
+    @Test
+    public void testNestedSwitchBreakTargetsInnerSwitch() throws Exception {
+        // Break inside nested switch must target the inner switch, not the
+        // outer one.
+        String source = """
+                void main() {
+                    int i = 0;
+                    while (i < 2) {
+                        switch (i) {
+                            case 0:
+                                switch (i) {
+                                    case 0: printf("inner\\n"); break;
+                                    default: printf("inner-default\\n"); break;
+                                }
+                                printf("outer-after-inner\\n");
+                                break;
+                            default: printf("outer-default\\n"); break;
+                        }
+                        i = i + 1;
+                    }
+                }
+                """;
+        Path dir = temporaryFolder.newFolder("switch-nested-break").toPath();
+        Path file = write(dir, "SwitchNestedBreak.lemon", source);
+        String expected = "inner\nouter-after-inner\nouter-default\n";
+        assertEquals(expected, compileAndRunJvm(file));
+        assertEquals(expected, compileAndRunNative(file));
+    }
 }

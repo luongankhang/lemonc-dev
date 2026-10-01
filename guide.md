@@ -1,6 +1,6 @@
 # LemonC Compiler Development Guide
 
-Verified against source on 2026-09-30. Companion to `AGENTS.md` (architecture summary + coding rules). This guide walks a language feature through every pipeline stage with concrete code references.
+Verified against source on 2026-10-01. Companion to `AGENTS.md` (architecture summary + coding rules). This guide walks a language feature through every pipeline stage with concrete code references.
 
 ## 1. Pipeline overview
 
@@ -173,7 +173,9 @@ Stage-by-stage:
 
 ```
 mvn test                         # full suite — no regression
-mvn -Dtest=SwitchTest test       # focused suite
+mvn -Dtest=SwitchTest test       # focused switch suite
+mvn -Dtest=EnumTest test         # focused enum suite
+mvn -Dtest=ReturnPathAnalysisTest test  # return-path analysis
 ```
 
 Do not modify expected outputs to hide failures; fix the compiler.

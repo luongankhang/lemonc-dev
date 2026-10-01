@@ -67,6 +67,14 @@ public final class ModuleLoader {
                 collectStatementImports(java.util.List.of(loop.getBody()), owner, ownerPath, aliases);
             } else if (statement instanceof Ast.Stmt.For loop) {
                 collectStatementImports(java.util.List.of(loop.getBody()), owner, ownerPath, aliases);
+            } else if (statement instanceof Ast.Stmt.Switch switchStmt) {
+                if (switchStmt.getClauses() != null) {
+                    for (Ast.Stmt.CaseClause clause : switchStmt.getClauses()) {
+                        if (clause.getBody() != null) {
+                            collectStatementImports(clause.getBody(), owner, ownerPath, aliases);
+                        }
+                    }
+                }
             }
         }
     }
