@@ -1,0 +1,27 @@
+// Array initializer demo: type id[size] = { ... };
+void main() {
+    int primes[5] = {2, 3, 5, 7, 11};
+    byte flags[3] = {1, 0, 1};
+    short offsets[4] = {-100, 0, 100, 200};
+
+    int i = 0;
+    while (i < 5) {
+        printf("%d ", primes[i]);
+        i = i + 1;
+    }
+    printLine();
+
+    i = 0;
+    while (i < 3) {
+        printf("%d ", flags[i]);
+        i = i + 1;
+    }
+    printLine();
+
+    i = 0;
+    while (i < 4) {
+        printf("%d ", offsets[i]);
+        i = i + 1;
+    }
+    printLine();
+}

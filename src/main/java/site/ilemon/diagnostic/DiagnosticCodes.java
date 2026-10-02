@@ -36,6 +36,8 @@ public final class DiagnosticCodes {
     public static final String TYPE_POINTER_ASSIGNMENT = "E3013";
     public static final String TYPE_POINTER_ARITHMETIC = "E3014";
     public static final String TYPE_POINTER_WRITE = "E3015";
+    public static final String TYPE_ARRAY_INIT_SIZE_MISMATCH = "E3016";
+    public static final String TYPE_ARRAY_INIT_ELEMENT_TYPE = "E3017";
 
     public static final String MODULE_NOT_FOUND = "E4001";
     public static final String GENERIC_ERROR = "E5001";

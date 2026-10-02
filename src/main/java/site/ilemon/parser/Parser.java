@@ -542,7 +542,7 @@ public class Parser {
 		}
 		ArrayList<Ast.Stmt.T> stmts = parseStmts();
 		match("}");
-		for (Ast.Declare.T d : collectLocalDeclarations(stmts)) {
+		for (Ast.Declare.T d : collectLocalDeclarationsWithoutInit(stmts)) {
 			localParams.add(d);
 		}
 		Ast.Stmt.T stmt = stmts.isEmpty() ? null : stmts.get(stmts.size()-1);
@@ -569,7 +569,10 @@ public class Parser {
 	private void collectLocalDeclarations(Ast.Stmt.T stmt, ArrayList<Ast.Declare.T> locals) {
 		if (stmt == null) return;
 		if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
-			locals.add(varDecl.getDeclaration());
+			Ast.Declare.T decl = varDecl.getDeclaration();
+			if (decl instanceof Ast.Declare.DeclareSingle single && single.getInitExp() == null) {
+				locals.add(single);
+			}
 		} else if (stmt instanceof Ast.Stmt.Block block) {
 			if (block.getStmts() != null) {
 				for (Ast.Stmt.T s : block.getStmts()) {
@@ -584,6 +587,45 @@ public class Parser {
 		} else if (stmt instanceof Ast.Stmt.For forStmt) {
 			collectLocalDeclarations(forStmt.getInit(), locals);
 			collectLocalDeclarations(forStmt.getBody(), locals);
+		}
+	}
+
+	/**
+	 * Collects only the declarations that have NO initializers, so they can be
+	 * hoisted to {@code localParams} without losing their (now absent) init
+	 * expressions from the body statement list. Declarations with initializers
+	 * stay in the body so the IR lowerer can emit ALLOC + STORE for them.
+	 */
+	private ArrayList<Ast.Declare.T> collectLocalDeclarationsWithoutInit(ArrayList<Ast.Stmt.T> stmts) {
+		ArrayList<Ast.Declare.T> locals = new ArrayList<>();
+		if (stmts == null) return locals;
+		for (Ast.Stmt.T s : stmts) {
+			collectLocalDeclarationsInto(s, locals);
+		}
+		return locals;
+	}
+
+	private void collectLocalDeclarationsInto(Ast.Stmt.T stmt, ArrayList<Ast.Declare.T> locals) {
+		if (stmt == null) return;
+		if (stmt instanceof Ast.Stmt.VarDecl varDecl) {
+			Ast.Declare.T decl = varDecl.getDeclaration();
+			if (decl instanceof Ast.Declare.DeclareSingle single && single.getInitExp() == null) {
+				locals.add(single);
+			}
+		} else if (stmt instanceof Ast.Stmt.Block block) {
+			if (block.getStmts() != null) {
+				for (Ast.Stmt.T s : block.getStmts()) {
+					collectLocalDeclarationsInto(s, locals);
+				}
+			}
+		} else if (stmt instanceof Ast.Stmt.If ifStmt) {
+			collectLocalDeclarationsInto(ifStmt.getThenStmt(), locals);
+			collectLocalDeclarationsInto(ifStmt.getElseStmt(), locals);
+		} else if (stmt instanceof Ast.Stmt.While whileStmt) {
+			collectLocalDeclarationsInto(whileStmt.getBody(), locals);
+		} else if (stmt instanceof Ast.Stmt.For forStmt) {
+			collectLocalDeclarationsInto(forStmt.getInit(), locals);
+			collectLocalDeclarationsInto(forStmt.getBody(), locals);
 		}
 	}
 
@@ -631,7 +673,24 @@ public class Parser {
 		if (offset < 0) return false;
 		Token varName = lexer.lookahead(offset + 1);
 		if (varName == null || varName.kind != TokenKind.Id) return false;
-		Token afterVar = lexer.lookahead(offset + 2);
+		// Skip past any array dimension brackets: type id[size] ...
+		int i = offset + 2;
+		while (true) {
+			Token t = lexer.lookahead(i);
+			if (t == null) break;
+			if (t.kind == TokenKind.Lbracket) {
+				// expect a size number then ]
+				i += 2; // skip [ and size num
+				if (lexer.lookahead(i) != null && lexer.lookahead(i).kind == TokenKind.Rbracket) {
+					i++;
+				} else {
+					break;
+				}
+			} else {
+				break;
+			}
+		}
+		Token afterVar = lexer.lookahead(i);
 		return afterVar != null && afterVar.kind != TokenKind.Assign;
 	}
 
@@ -666,15 +725,28 @@ public class Parser {
 				}
 				match(new Token(TokenKind.Num));
 				match("]");
-				match(";");
-				// Create array type based on element type
 				Ast.Type.T arrayType = createArrayType(type, size);
 				if( arrayType == null ){
 					error(String.format("unsupported array element type: %s", type));
 					return null;
 				}
-				Ast.Declare.DeclareSingle declaration = new Ast.Declare.DeclareSingle(arrayType, id, lineNumber);
-				declaration.setSpan(tokenSpan(idToken));
+				Ast.Declare.DeclareSingle declaration;
+				if (look.kind == TokenKind.Assign) {
+					move();
+					Ast.Expr.T initExp = parseExpr();
+					Ast.Expr.InitializerList initList = null;
+					if (initExp instanceof Ast.Expr.InitializerList il) {
+						initList = il;
+					} else {
+						error(String.format("array initializer must be a brace-enclosed list for '%s'", id));
+					}
+					declaration = new Ast.Declare.DeclareSingle(arrayType, id, initList, lineNumber);
+					declaration.setSpan(tokenSpan(idToken));
+				} else {
+					declaration = new Ast.Declare.DeclareSingle(arrayType, id, lineNumber);
+					declaration.setSpan(tokenSpan(idToken));
+				}
+				match(";");
 				return declaration;
 			}
 			// type id = expr;

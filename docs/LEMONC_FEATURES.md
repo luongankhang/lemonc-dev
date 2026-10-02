@@ -368,6 +368,20 @@ LemonC supports 1-dimensional, statically sized arrays for all scalar types.
    names[0] = "Alice";
    ```
 
+4. **Array Initializers**:
+   Arrays can be declared and initialized in a single statement using curly-brace syntax:
+   ```c
+   int primes[5] = {2, 3, 5, 7, 11};
+   byte flags[3] = {1, 0, 1};
+   short offsets[4] = {-100, 0, 100, 200};
+   int partial[3] = {1, 2};      // remaining elements are zero-filled
+   int empty[3] = {};            // all elements zero-initialized
+   ```
+   - Elements are evaluated left-to-right and stored into the allocated array.
+   - The initializer must contain **at most** the declared size of elements. More elements produces diagnostic `E3016` (`TYPE_ARRAY_INIT_SIZE_MISMATCH`).
+   - Each element must be assignable to the array's element type (integer literals are accepted for `int`/`byte`/`short`/`char`, float literals are rejected for integer arrays). Type mismatch produces `E3017` (`TYPE_ARRAY_INIT_ELEMENT_TYPE`).
+   - Example: [examples/ArrayInitDemo.lemon](../examples/ArrayInitDemo.lemon)
+
 4. **Array Length (`.length`)**:
    The number of elements is retrieved using the `.length` property:
    ```c
@@ -1465,6 +1479,8 @@ LemonC includes a standardized diagnostic reporting engine ([`DiagnosticEngine`]
 | `E3013` | Type | `TYPE_POINTER_ASSIGNMENT` | Incompatible pointer assignment. |
 | `E3014` | Type | `TYPE_POINTER_ARITHMETIC` | Pointer arithmetic is unsupported. |
 | `E3015` | Type | `TYPE_POINTER_WRITE` | Invalid pointer write target (e.g. `*pp = p`). |
+| `E3016` | Type | `TYPE_ARRAY_INIT_SIZE_MISMATCH` | Array initializer has more elements than the declared size. |
+| `E3017` | Type | `TYPE_ARRAY_INIT_ELEMENT_TYPE` | Array initializer element type does not match the array element type. |
 | `E4001` | Module | `MODULE_NOT_FOUND` | Imported module file could not be found. |
 | `E5001` | General | `GENERIC_ERROR` | General compiler failure. |
 | `E6001` | FFI | `FFI_ERROR` | Foreign function interface error. |
@@ -1504,5 +1520,6 @@ The following limitations are deliberate architectural boundaries for LemonC:
 | Pointers | Unmanaged scalar stack addresses. Pointer arithmetic (`p + 1`) is forbidden (`E3014`). Returning the address of a local stack variable is prevented at compile time (`E2008`). Reassigning through double dereferences (`*pp = p`) is forbidden (`E3015`). |
 | Memory Management | Heap arrays are managed via ARC (`--arc`) or GC on JVM; raw pointers are unmanaged stack addresses. |
 | Array Dimensions | Statically sized 1-dimensional arrays only; multi-dimensional arrays (`int[][]`) are not supported. |
+| Array Initializers | Supported via `type id[N] = { ... };`. Partial and empty initializers zero-fill. Size excess → `E3016`; wrong element type → `E3017`. |
 | Whole Array Copies | Direct assignment of entire arrays (`a = b;`) is disallowed; element-by-element iteration is required. Assigning `arr = null;` is supported and safely releases the array reference via ARC. |
 | Format Specifiers | `printf` supports `%d` (integers, bools) and `%f` (floats, doubles). String formatting (`%s`) is unsupported. |

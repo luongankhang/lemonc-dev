@@ -331,7 +331,9 @@ public final class AstToIrLowerer {
                 }
                 IrValue rhsVal = null;
                 if (d.getInitExp() != null) {
-                    if (targetType.kind() == IrType.Kind.DOUBLE
+                    if (d.getInitExp() instanceof Ast.Expr.InitializerList initList) {
+                        lowerArrayInitializer(initList, targetId, targetType, ctx);
+                    } else if (targetType.kind() == IrType.Kind.DOUBLE
                             && d.getInitExp() instanceof Ast.Expr.Number number
                             && number.getType() instanceof Ast.Type.Float) {
                         rhsVal = ctx.newTemp(IrType.scalar(IrType.Kind.DOUBLE));
@@ -341,7 +343,10 @@ public final class AstToIrLowerer {
                     } else {
                         rhsVal = lowerExpr(d.getInitExp(), ctx);
                     }
-                    if (isManaged(targetType)) {
+                    // Array initializer handles its own ALLOC + STOREs; skip generic init below.
+                    if (rhsVal == null) {
+                        // fall through — nothing more to do for this declaration
+                    } else if (isManaged(targetType)) {
                         if (isManaged(rhsVal.type())) {
                             if (!rhsVal.name().startsWith("_t")) {
                                 ctx.emit(new IrInstruction(IrInstruction.Op.EXTERNAL_CALL, null, List.of(rhsVal), "lemon_retain"));
@@ -1516,6 +1521,30 @@ public final class AstToIrLowerer {
             current = structFieldType(current, part);
         }
         return current;
+    }
+
+    /**
+     * Lowers an array initializer list into ALLOC + a sequence of STORE instructions.
+     * The allocated array is stored directly into the target local variable.
+     */
+    private void lowerArrayInitializer(Ast.Expr.InitializerList initList, String targetId, IrType targetType, MethodLoweringContext ctx) {
+        int size = getArraySize(initList.getType());
+        IrValue lenVal = new IrValue(String.valueOf(size), IrType.scalar(IrType.Kind.INT));
+        IrValue arrVal = new IrValue(targetId, targetType);
+        ctx.emit(new IrInstruction(IrInstruction.Op.ALLOC, arrVal, List.of(lenVal), null));
+        IrType elemType = targetType.elementType();
+        for (int i = 0; i < initList.getElements().size(); i++) {
+            Ast.Expr.T elem = initList.getElements().get(i);
+            IrValue elemVal = lowerExpr(elem, ctx);
+            // Match the assignment-path behaviour: convert when element type differs.
+            if (elemVal.type().kind() != elemType.kind()) {
+                IrValue converted = ctx.newTemp(elemType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(elemVal), null));
+                elemVal = converted;
+            }
+            IrValue idxVal = new IrValue(String.valueOf(i), IrType.scalar(IrType.Kind.INT));
+            ctx.emit(new IrInstruction(IrInstruction.Op.STORE, null, List.of(arrVal, idxVal, elemVal), null));
+        }
     }
 
     private void emitRetain(IrValue val, MethodLoweringContext ctx) {

@@ -2561,6 +2561,47 @@ public class SemanticVisitor implements ISemanticVisitor {
         return integralLiteralValue(expression);
     }
 
+    private void validateArrayInitializer(Ast.Type.T arrayType, Ast.Expr.InitializerList initList, int lineNum, site.ilemon.util.SourceSpan span) {
+        Ast.Type.T elementType = getElementType(arrayType);
+        if (elementType == null) {
+            typeError(DiagnosticCodes.TYPE_ARRAY_INIT_ELEMENT_TYPE, "supported array element type",
+                    typeName(arrayType), "array initializer", lineNum, span,
+                    "array initializer for '" + arrayType + "'", "only primitive numeric, bool, char, and string arrays are supported");
+            return;
+        }
+        int expectedSize = -1;
+        if (arrayType instanceof Ast.Type.IntArray ia) expectedSize = ia.getSize();
+        else if (arrayType instanceof Ast.Type.ByteArray ba) expectedSize = ba.getSize();
+        else if (arrayType instanceof Ast.Type.ShortArray sa) expectedSize = sa.getSize();
+        else if (arrayType instanceof Ast.Type.CharArray ca) expectedSize = ca.getSize();
+        else if (arrayType instanceof Ast.Type.LongArray la) expectedSize = la.getSize();
+        else if (arrayType instanceof Ast.Type.FloatArray fa) expectedSize = fa.getSize();
+        else if (arrayType instanceof Ast.Type.DoubleArray da) expectedSize = da.getSize();
+        else if (arrayType instanceof Ast.Type.BoolArray boa) expectedSize = boa.getSize();
+        else if (arrayType instanceof Ast.Type.StringArray sta) expectedSize = sta.getSize();
+
+        java.util.List<Ast.Expr.T> elements = initList.getElements();
+        int count = elements.size();
+        if (expectedSize >= 0 && count > expectedSize) {
+            semanticError(DiagnosticCodes.TYPE_ARRAY_INIT_SIZE_MISMATCH,
+                    String.format("array initializer has %d element(s) but the declared array size is %d", count, expectedSize),
+                    lineNum, span != null ? span : initList.getSpan(), "array initializer",
+                    "reduce the number of initializer elements to match the declared size",
+                    "remove " + (count - expectedSize) + " extra element(s)");
+        }
+        for (int i = 0; i < count; i++) {
+            Ast.Expr.T elem = elements.get(i);
+            this.visit(elem);
+            Ast.Type.T elemType = (elem instanceof Ast.Expr.Call call) ? call.getReturnType() : this.currType;
+            if (!isAssignable(elementType, elemType, elem)) {
+                typeError(DiagnosticCodes.TYPE_ARRAY_INIT_ELEMENT_TYPE, typeName(elementType), typeName(elemType),
+                        "initializer element " + i, elem.getLineNum(), elem.getSpan(),
+                        "array initializer for '" + arrayType + "'", "element type must match the array element type");
+            }
+        }
+        initList.setType(arrayType);
+    }
+
     private boolean shortRangeErrorIfNeeded(Ast.Type.T target, Ast.Type.T actual, Ast.Expr.T expression,
                                             int lineNum, site.ilemon.util.SourceSpan span, String context) {
         if (target == null || target.getKind() != TypeKind.SHORT
@@ -2961,7 +3002,9 @@ public class SemanticVisitor implements ISemanticVisitor {
                     ? call.getReturnType()
                     : this.currType;
 
-            if (!isAssignable(declType, initType, initExp)) {
+            if (initExp instanceof Ast.Expr.InitializerList initList && isArrayType(declType)) {
+                validateArrayInitializer(declType, initList, declareSingle.getLineNum(), declareSingle.getSpan());
+            } else if (!isAssignable(declType, initType, initExp)) {
                 if (!rangeErrorIfNeeded(declType, initType, initExp, declareSingle.getLineNum(),
                         declareSingle.getSpan(), "variable initializer for '" + declareSingle.getId() + "'")
                         && !shortRangeErrorIfNeeded(declType, initType, initExp, declareSingle.getLineNum(),
