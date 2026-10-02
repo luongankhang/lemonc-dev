@@ -859,6 +859,7 @@ public final class ModuleLoader {
         if (src instanceof Ast.Type.DoubleArray d) return new Ast.Type.DoubleArray(d.getSize());
         if (src instanceof Ast.Type.BoolArray bo) return new Ast.Type.BoolArray(bo.getSize());
         if (src instanceof Ast.Type.StringArray str) return new Ast.Type.StringArray(str.getSize());
+        if (src instanceof Ast.Type.StructArray sa) return new Ast.Type.StructArray(sa.getStructName(), sa.getSize());
         if (src instanceof Ast.Type.Pointer p) return new Ast.Type.Pointer(deepCopyType(p.getPointee()));
         // Value types are stateless — safe to reuse the singleton
         return src;

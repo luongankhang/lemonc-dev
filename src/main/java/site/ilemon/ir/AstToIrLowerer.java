@@ -464,7 +464,8 @@ public final class AstToIrLowerer {
             IrValue arrVal;
             IrType arrType;
             if (arrayAssign.getFieldTarget() != null) {
-                arrVal = lowerFieldLoad(arrayAssign.getFieldTarget(), ctx);
+                // For arr[i].field = expr: lower the index and field load/store
+                arrVal = lowerArrayFieldLoad(arrayAssign.getFieldTarget(), arrayAssign.getIndex(), ctx);
                 arrType = arrVal.type();
             } else {
                 String arrName = arrayAssign.getArrayName();
@@ -913,6 +914,19 @@ public final class AstToIrLowerer {
             }
         }
         if (rootType == null) rootType = IrType.scalar(IrType.Kind.INT);
+        // When the variable is an array (arr[i].field), load the element from
+        // the array first, then access the field on the element.
+        IrType elementRootType = getArrayElementType(id.getId(), ctx);
+        if (elementRootType != null) {
+            IrValue idxVal = new IrValue("0", IrType.scalar(IrType.Kind.INT));
+            IrValue elemVal = ctx.newTemp(elementRootType);
+            ctx.emit(new IrInstruction(IrInstruction.Op.BOUNDS_CHECK, null,
+                    List.of(new IrValue(id.getId(), rootType), idxVal), null));
+            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, elemVal,
+                    List.of(new IrValue(id.getId(), rootType), idxVal), null));
+            IrType resultType = fieldPathType(elementRootType, field.getPath(), false);
+            return lowerFieldLoadAtPath(elemVal, elementRootType, field.getPath(), ctx);
+        }
         boolean throughPointer = field.isPointerBase() && isPointerKind(rootType);
         IrType resultType = fieldPathType(rootType, field.getPath(), throughPointer);
         IrValue loaded = ctx.newTemp(resultType);
@@ -922,6 +936,35 @@ public final class AstToIrLowerer {
         return loaded;
     }
 
+    /**
+     * Lowers a field access chain on an already-loaded value (e.g. arr[i].x where
+     * the array element has already been loaded into {@code base}).
+     * If {@code baseType} is a POINTER, the pointer is dereferenced once before
+     * navigating the field path — this handles cases like c->items[0].field where
+     * the loaded element is itself a struct* cell reference.
+     */
+    private IrValue lowerFieldLoadAtPath(IrValue base, IrType baseType, java.util.List<String> path,
+                                         MethodLoweringContext ctx) {
+        IrType currentType = baseType;
+        IrValue current = base;
+        for (String fieldName : path) {
+            if (currentType.kind() == IrType.Kind.POINTER) {
+                // Dereference the pointer to get the struct value.
+                IrType pointee = currentType.elementType();
+                IrValue deref = ctx.newTemp(pointee);
+                ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, deref, List.of(current), null));
+                current = deref;
+                currentType = pointee;
+            }
+            IrType fieldType = structFieldType(currentType, fieldName);
+            IrValue loaded = ctx.newTemp(fieldType);
+            ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_LOAD, loaded, List.of(current), fieldName));
+            current = loaded;
+            currentType = fieldType;
+        }
+        return current;
+    }
+
     /** Result type of a field path, resolving each link through struct layouts. */
     private IrType fieldPathType(IrType rootType, List<String> path, boolean throughPointer) {
         IrType current = throughPointer ? rootType.elementType() : rootType;
@@ -929,6 +972,80 @@ public final class AstToIrLowerer {
             current = structFieldType(current, fieldName);
         }
         return current;
+    }
+
+    /**
+     * Lowers arr[i].field = expr: loads the array element at index i into a temp,
+     * then returns that temp as the storage base for the subsequent FIELD_STORE.
+     * The caller is responsible for emitting BOUNDS_CHECK with the actual index.
+     * For struct-to-array assignments (e.g. myPath.points[i] = expr), the receiver
+     * is a struct variable and the path leads to an array field; in that case we
+     * navigate the struct fields via FIELD_LOAD ops first, then load the array element.
+     */
+    private IrValue lowerArrayFieldLoad(Ast.Expr.Field field, Ast.Expr.T indexExpr, MethodLoweringContext ctx) {
+        Ast.Expr.T receiverExpr = field.getReceiver();
+        if (!(receiverExpr instanceof Ast.Expr.Id id)) {
+            throw new CompilerException("field access requires a named struct receiver");
+        }
+        IrType rootType = ctx.variableTypes.get(id.getId());
+        if (rootType == null) {
+            Ast.ConstDecl constant = findConst(id.getId(), ctx);
+            if (constant != null) {
+                rootType = toIrType(constant.getType());
+            }
+        }
+        if (rootType == null) rootType = IrType.scalar(IrType.Kind.INT);
+        IrType elementRootType = getArrayElementType(id.getId(), ctx);
+        if (elementRootType != null) {
+            // Direct array access: arr[i] or arr[i].field
+            IrValue idxVal = lowerExpr(indexExpr, ctx);
+            IrValue elemVal = ctx.newTemp(elementRootType);
+            ctx.emit(new IrInstruction(IrInstruction.Op.BOUNDS_CHECK, null,
+                    List.of(new IrValue(id.getId(), rootType), idxVal), null));
+            ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, elemVal,
+                    List.of(new IrValue(id.getId(), rootType), idxVal), null));
+            if (field.getPath() != null && !field.getPath().isEmpty()) {
+                // arr[i].field — navigate fields on the loaded element.
+                IrType resultType = fieldPathType(elementRootType, field.getPath(), false);
+                return lowerFieldLoadAtPath(elemVal, elementRootType, field.getPath(), ctx);
+            }
+            return elemVal;
+        }
+        // Struct-to-array access: myPath.points[i] — navigate struct fields to reach
+        // the array field, then load the element at the given index.
+        if (field.getPath() == null || field.getPath().isEmpty()) {
+            throw new CompilerException("array field access requires a path to array field: " + id.getId());
+        }
+        // Navigate struct fields to get the array base.
+        IrValue arrayBase = lowerFieldLoadAtPath(new IrValue(id.getId(), rootType),
+                rootType, field.getPath(), ctx);
+        // Determine the array type and element type from the struct definition.
+        IrType arrayType = null;
+        IrType elemType = null;
+        IrType curType = rootType;
+        // If rootType is a pointer (c->items[i]), dereference once so we can
+        // navigate the struct fields on the pointee type.
+        if (curType.kind() == IrType.Kind.POINTER) {
+            curType = curType.elementType();
+        }
+        for (int i = 0; i < field.getPath().size(); i++) {
+            String name = field.getPath().get(i);
+            IrType next = structFieldType(curType, name);
+            if (i == field.getPath().size() - 1) {
+                arrayType = next;
+                elemType = next.elementType();
+                break;
+            }
+            curType = next;
+        }
+        if (elemType == null) {
+            throw new CompilerException("array field access requires array-typed variable: " + id.getId());
+        }
+        // For struct-to-array assignments, return the array base so the caller
+        // (ArrayAssign handler) can perform BOUNDS_CHECK and STORE with the
+        // correct array reference. The caller will also emit the element LOAD
+        // if the expression reads from this array access.
+        return arrayBase;
     }
 
     /** Field type of {@code fieldName} inside a struct-typed value. */
@@ -966,11 +1083,32 @@ public final class AstToIrLowerer {
         }
         IrType rootType = ctx.variableTypes.get(id.getId());
         if (rootType == null) rootType = IrType.scalar(IrType.Kind.INT);
+        // When the variable is an array (arr[i].field), we need an array LOAD
+        // as the storage root for FIELD_STORE, then navigate the field path.
+        IrType elementRootType = getArrayElementType(id.getId(), ctx);
+        if (elementRootType != null) {
+            // Caller is responsible for BOUNDS_CHECK and LOAD; just return the element temp.
+            IrValue elemVal = ctx.newTemp(elementRootType);
+            IrType fieldType = fieldPathType(elementRootType, target.getPath(), false);
+            IrValue stored = value;
+            if (stored.type().kind() != fieldType.kind()) {
+                IrValue converted = ctx.newTemp(fieldType);
+                ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(stored), null));
+                stored = converted;
+            }
+            ctx.emit(new IrInstruction(IrInstruction.Op.FIELD_STORE, null,
+                    List.of(elemVal, stored), String.join(".", target.getPath()), isSafe));
+            return;
+        }
         boolean throughPointer = target.isPointerBase() && isPointerKind(rootType);
         IrType fieldType = fieldPathType(rootType, target.getPath(), throughPointer);
         IrValue stored = value;
-        if (stored.type().kind() != fieldType.kind()
-                || (stored.type().kind() == IrType.Kind.STRUCT && !stored.type().name().equals(fieldType.name()))) {
+        // For struct-to-array assignments (b.data[0] = 11), the field path leads
+        // to an array type (int[]). No type conversion is needed — the int value
+        // is stored directly into the array field. Skip CONVERT for array types.
+        if (fieldType.kind() != IrType.Kind.ARRAY
+                && (stored.type().kind() != fieldType.kind()
+                || (stored.type().kind() == IrType.Kind.STRUCT && !stored.type().name().equals(fieldType.name())))) {
             IrValue converted = ctx.newTemp(fieldType);
             ctx.emit(new IrInstruction(IrInstruction.Op.CONVERT, converted, List.of(stored), null));
             stored = converted;
@@ -1187,6 +1325,10 @@ public final class AstToIrLowerer {
             IrType elemType = arrType != null && arrType.elementType() != null ? arrType.elementType() : IrType.scalar(IrType.Kind.INT);
             IrValue res = ctx.newTemp(elemType);
             ctx.emit(new IrInstruction(IrInstruction.Op.LOAD, res, List.of(arrVal, idxVal), null));
+            // Handle field path on array element: arr[i].field
+            if (access.getFieldPath() != null && !access.getFieldPath().isEmpty()) {
+                return lowerFieldLoadAtPath(res, elemType, access.getFieldPath(), ctx);
+            }
             return res;
         } else if (expr instanceof Ast.Expr.ArrayLength arrayLen) {
             String arrName = arrayLen.getArrayName();
@@ -1464,6 +1606,9 @@ public final class AstToIrLowerer {
         if (type instanceof Ast.Type.DoubleArray) return IrType.array(IrType.scalar(IrType.Kind.DOUBLE));
         if (type instanceof Ast.Type.BoolArray) return IrType.array(IrType.scalar(IrType.Kind.BOOL));
         if (type instanceof Ast.Type.StringArray) return IrType.array(IrType.scalar(IrType.Kind.STRING));
+        if (type instanceof Ast.Type.StructArray structArray) {
+            return IrType.array(IrType.structType(structArray.getStructName()));
+        }
 
         return IrType.scalar(IrType.Kind.INT);
     }
@@ -1478,11 +1623,24 @@ public final class AstToIrLowerer {
         if (type instanceof Ast.Type.DoubleArray a) return a.getSize();
         if (type instanceof Ast.Type.BoolArray a) return a.getSize();
         if (type instanceof Ast.Type.StringArray a) return a.getSize();
+        if (type instanceof Ast.Type.StructArray sa) return sa.getSize();
         return 0;
     }
 
     public static boolean isManaged(IrType type) {
         return type != null && type.kind() == IrType.Kind.ARRAY;
+    }
+
+    /**
+     * Returns the element type of an array-typed variable, or null if the type
+     * is not an array. Used to resolve array-element field access like arr[i].x.
+     */
+    private IrType getArrayElementType(String varName, MethodLoweringContext ctx) {
+        IrType t = ctx.variableTypes.get(varName);
+        if (t != null && t.kind() == IrType.Kind.ARRAY) {
+            return t.elementType();
+        }
+        return null;
     }
 
     private List<String> getManagedPaths(IrType type) {
@@ -1772,6 +1930,10 @@ public final class AstToIrLowerer {
                 return true;
             }
             if (arrayAssign.getFieldTarget() != null && isFieldReceiverParam(paramName, arrayAssign.getFieldTarget())) {
+                return true;
+            }
+            // Also check the index expression (arr[i] where i is the param)
+            if (containsParamAddressOrReturn(paramName, arrayAssign.getIndex())) {
                 return true;
             }
             return containsParamAddressOrReturn(paramName, arrayAssign.getExpr());

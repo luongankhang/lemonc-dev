@@ -269,6 +269,8 @@ public final class MethodCallRewriter implements ISemanticVisitor {
     @Override
     public void visit(Ast.Type.StringArray obj) { }
     @Override
+    public void visit(Ast.Type.StructArray obj) { }
+    @Override
     public void visit(Ast.Type.Pointer obj) { }
     @Override
     public void visit(Ast.Type.Null obj) { }

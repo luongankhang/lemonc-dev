@@ -616,6 +616,8 @@ final class JvmInstructionEmitter {
             // dedicated iconst_0 (1 byte) instead of a 2-3 byte ldc. Null
             // dereference is a defined runtime error (diagnosed and thrown),
             // never a raw NPE.
+            System.err.println("[DEBUG LOAD 1op] op0=" + operands.get(0) + " type=" + operands.get(0).type()
+                    + " result=" + result + " type=" + result.type());
             loadValue(operands.get(0));
             if (!instruction.nonNull()) {
                 emitNullDerefGuard();
@@ -625,6 +627,9 @@ final class JvmInstructionEmitter {
             store(result);
             return;
         }
+        System.err.println("[DEBUG LOAD 2op] op0=" + operands.get(0) + " type=" + operands.get(0).type()
+                + " op1=" + operands.get(1) + " type=" + operands.get(1).type()
+                + " result=" + result + " type=" + result.type());
         loadValue(operands.get(0));
         loadValue(operands.get(1));
         code.simple(arrayLoadOpcode(result.type()));
@@ -635,6 +640,8 @@ final class JvmInstructionEmitter {
         List<IrValue> operands = instruction.operands();
         if (operands.size() == 2) {
             // Pointer store: *(p) = v, guarded like the dereference load.
+            System.err.println("[DEBUG STORE 2op] op0=" + operands.get(0) + " type=" + operands.get(0).type()
+                    + " op1=" + operands.get(1) + " type=" + operands.get(1).type());
             loadValue(operands.get(0));
             if (!instruction.nonNull()) {
                 emitNullDerefGuard();
@@ -644,6 +651,9 @@ final class JvmInstructionEmitter {
             code.simple(arrayStoreOpcode(operands.get(1).type()));
             return;
         }
+        System.err.println("[DEBUG STORE 3op] op0=" + operands.get(0) + " type=" + operands.get(0).type()
+                + " op1=" + operands.get(1) + " type=" + operands.get(1).type()
+                + " op2=" + operands.get(2) + " type=" + operands.get(2).type());
         loadValue(operands.get(0));
         loadValue(operands.get(1));
         loadValue(operands.get(2));
@@ -905,10 +915,13 @@ final class JvmInstructionEmitter {
         IrValue result = instruction.result();
         IrType arrayType = result.type();
         loadValue(instruction.operands().get(0));
-        if (arrayType.elementType().kind() == IrType.Kind.STRING) {
+        IrType elemKind = arrayType.elementType();
+        if (elemKind.kind() == IrType.Kind.STRING) {
             code.cpRef(ANEWARRAY, pool.classRef("java/lang/String"));
+        } else if (elemKind.kind() == IrType.Kind.STRUCT) {
+            code.cpRef(ANEWARRAY, pool.classRef(mapper.descriptor(elemKind)));
         } else {
-            code.newarray(arrayTypeCode(arrayType.elementType()));
+            code.newarray(arrayTypeCode(elemKind));
         }
         store(result);
     }
@@ -937,7 +950,7 @@ final class JvmInstructionEmitter {
             case LONG -> LASTORE;
             case FLOAT -> FASTORE;
             case DOUBLE -> DASTORE;
-            case STRING, POINTER, REFERENCE, ARRAY -> AASTORE;
+            case STRING, POINTER, REFERENCE, ARRAY, STRUCT -> AASTORE;
             default -> throw new CompilerException("no JVM array store for " + elementType.kind());
         };
     }

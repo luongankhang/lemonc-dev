@@ -796,6 +796,8 @@ public class Parser {
 			return new Ast.Type.BoolArray(size);
 		} else if (baseType instanceof Ast.Type.Str) {
 			return new Ast.Type.StringArray(size);
+		} else if (baseType instanceof Ast.Type.Struct structType) {
+			return new Ast.Type.StructArray(structType.getName(), size);
 		}
 		return null;
 	}
@@ -1205,9 +1207,28 @@ public class Parser {
 				match( "[" );
 				Ast.Expr.T index = parseExpr();
 				match( "]" );
+				// Allow arr[i].field or arr[i]->field after the bracket
+				Ast.Expr.ArrayAccess access = new Ast.Expr.ArrayAccess(arrayName, index, lineNum);
+				access.setSpan(tokenSpan(arrayToken));
+				if (look.kind == TokenKind.Dot || look.kind == TokenKind.Arrow) {
+					// Build the field-chain target from the array base
+					Ast.Expr.Id baseId = new Ast.Expr.Id(arrayName, lineNum);
+					baseId.setSpan(tokenSpan(arrayToken));
+					ArrayList<String> path = new ArrayList<>();
+					while (look.kind == TokenKind.Dot || look.kind == TokenKind.Arrow) {
+						move(); // '.' or '->'
+						if (look.kind != TokenKind.Id) {
+							error("expected a field name after '.' or '->'");
+							break;
+						}
+						path.add(look.lexeme);
+						move();
+					}
+					Ast.Expr.Field fieldTarget = new Ast.Expr.Field(baseId, path, false, lineNum);
+					fieldTarget.setSpan(tokenSpan(arrayToken));
+					access.setFieldTarget(fieldTarget);
+				}
 				if (look.kind == TokenKind.Inc || look.kind == TokenKind.Dec) {
-					Ast.Expr.ArrayAccess access = new Ast.Expr.ArrayAccess(arrayName, index, lineNum);
-					access.setSpan(tokenSpan(arrayToken));
 					Ast.Expr.T incDec = (look.kind == TokenKind.Inc)
 							? new Ast.Expr.PostInc(access, look.lineNumber)
 							: new Ast.Expr.PostDec(access, look.lineNumber);
@@ -1220,7 +1241,11 @@ public class Parser {
 					TokenKind op = matchAssignment();
 					Ast.Expr.T expr = parseExpr();
 					match( new Token(TokenKind.Semicolon) );
-					stmt = new Ast.Stmt.ArrayAssign(arrayName, index, expr, op, lineNum);
+					if (access.getFieldTarget() != null) {
+						stmt = new Ast.Stmt.ArrayAssign(access.getFieldTarget(), access.getIndex(), expr, op, lineNum);
+					} else {
+						stmt = new Ast.Stmt.ArrayAssign(access.getArrayName(), access.getIndex(), expr, op, lineNum);
+					}
 					stmt.setSpan(tokenSpan(arrayToken));
 				}
 			}
@@ -1675,6 +1700,21 @@ public class Parser {
 				match("]");
 				expr = new Ast.Expr.ArrayAccess(arrayName, index, lineNum);
 				expr.setSpan(tokenSpan(temp));
+				// Allow arr[i].field or arr[i]->field (for pointer fields)
+				if (look.kind == TokenKind.Dot || look.kind == TokenKind.Arrow) {
+					Ast.Expr.ArrayAccess access = (Ast.Expr.ArrayAccess) expr;
+					ArrayList<String> path = new ArrayList<>();
+					while (look.kind == TokenKind.Dot || look.kind == TokenKind.Arrow) {
+						move(); // '.' or '->'
+						if (look.kind != TokenKind.Id) {
+							error("expected a field name after '.' or '->'");
+							break;
+						}
+						path.add(look.lexeme);
+						move();
+					}
+					access.setFieldPath(path);
+				}
 			}
 			else if( ahead.kind == TokenKind.Dot){
 				String baseName = look.lexeme;
@@ -1796,22 +1836,7 @@ public class Parser {
 			return expr;
 		}
 		else if (look.kind == TokenKind.Lbrace) {
-			int lineNumber = look.lineNumber;
-			Token lbrace = look;
-			move();
-			ArrayList<Ast.Expr.T> elements = new ArrayList<>();
-			if (look.kind != TokenKind.Rbrace) {
-				elements.add(parseExpr());
-				while (look.kind == TokenKind.Comma) {
-					move();
-					elements.add(parseExpr());
-				}
-			}
-			match("}");
-			Ast.Expr.InitializerList initList = new Ast.Expr.InitializerList(elements, lineNumber);
-			initList.setSpan(tokenSpan(lbrace));
-			expr = initList;
-			return expr;
+			return parseInitializerList();
 		}
 		else{
 			throw diagnosticException(site.ilemon.diagnostic.DiagnosticCodes.PARSE_INVALID_EXPRESSION, String.format(
@@ -1877,5 +1902,34 @@ public class Parser {
 		expr = new Ast.Expr.Call(methodName, args, lineNumber);
 		expr.setSpan(tokenSpan(methodToken));
 		return expr;
+	}
+
+	/**
+	 * Parses an initializer list: { expr, expr, ... } or { {exprs}, {exprs}, ... } for structs.
+	 */
+	private Ast.Expr.InitializerList parseInitializerList() throws IOException {
+		int lineNumber = look.lineNumber;
+		Token lbrace = look;
+		move();
+		ArrayList<Ast.Expr.T> elements = new ArrayList<>();
+		if (look.kind != TokenKind.Rbrace) {
+			if (look.kind == TokenKind.Lbrace) {
+				elements.add(parseInitializerList());
+			} else {
+				elements.add(parseExpr());
+			}
+			while (look.kind == TokenKind.Comma) {
+				move();
+				if (look.kind == TokenKind.Lbrace) {
+					elements.add(parseInitializerList());
+				} else {
+					elements.add(parseExpr());
+				}
+			}
+		}
+		match("}");
+		Ast.Expr.InitializerList initList = new Ast.Expr.InitializerList(elements, lineNumber);
+		initList.setSpan(tokenSpan(lbrace));
+		return initList;
 	}
 }

@@ -1499,31 +1499,83 @@ public class SemanticVisitor implements ISemanticVisitor {
                 return;
             }
         }
-        // Resolve the receiver chain down to the struct value that holds the
-        // first named field, then walk the field path typing each link.
-        this.visit(obj.getReceiver());
+        // When the receiver is an ArrayAccess (e.g. arr[i].x), the element type
+        // was already resolved during ArrayAccess semantic analysis. Use it
+        // directly instead of re-looking up the array in the var table.
+        if (obj.getReceiver() instanceof Ast.Expr.ArrayAccess arrayAccess
+                && arrayAccess.getElementType() != null) {
+            visitFieldAccess(arrayAccess.getElementType(), obj.getPath(), obj.isPointerBase(),
+                    obj.getLineNum(), obj.getSpan(), obj);
+            return;
+        }
+        // When the receiver is an Id naming a struct array (e.g. arr in arr[0].x),
+        // resolve the field path on the array's element type instead of the array itself.
+        if (obj.getReceiver() instanceof Ast.Expr.Id idReceiver
+                && obj.getPath() != null && !obj.getPath().isEmpty()) {
+            MethodVarTable mTable = this.methodVarTable.get(currMethodName);
+            if (mTable != null) {
+                Ast.Type.T recvType = mTable.get(idReceiver.getId());
+                if (recvType != null && isArrayType(recvType)) {
+                    Ast.Type.T elemType = getElementType(recvType);
+                    if (elemType != null && elemType.getKind() == TypeKind.STRUCT) {
+                        visitFieldAccess(elemType, obj.getPath(), obj.isPointerBase(),
+                                obj.getLineNum(), obj.getSpan(), obj);
+                        return;
+                    }
+                }
+            }
+        }
+        visitFieldAccess(obj.getReceiver(), obj.getPath(), obj.isPointerBase(), obj.getLineNum(), obj.getSpan(), obj);
+    }
+
+    /**
+     * Resolves a field access chain starting from {@code receiver} with the given path.
+     * Used both by {@link Ast.Expr.Field} and by {@link Ast.Expr.ArrayAccess} when
+     * the array element is a struct and the access is like {@code arr[i].x}.
+     * Overload that accepts a pre-resolved receiver type avoids a redundant table lookup.
+     */
+    private void visitFieldAccess(Ast.Expr.T receiver, java.util.List<String> path,
+                                   boolean pointerBase, int lineNum, site.ilemon.util.SourceSpan span,
+                                   Ast.Expr.T contextNode) {
+        this.visit(receiver);
         Ast.Type.T receiverType = this.currType;
+        visitFieldAccessFromType(receiverType, path, pointerBase, lineNum, span);
+    }
+
+    /**
+     * Overload: receiver type is already known (e.g. ArrayAccess's pre-resolved element type).
+     */
+    private void visitFieldAccess(Ast.Type.T preResolvedReceiverType, java.util.List<String> path,
+                                   boolean pointerBase, int lineNum, site.ilemon.util.SourceSpan span,
+                                   Ast.Expr.T contextNode) {
+        visitFieldAccessFromType(preResolvedReceiverType, path, pointerBase, lineNum, span);
+    }
+
+    /**
+     * Walks the field path starting from the already-resolved {@code receiverType}.
+     */
+    private void visitFieldAccessFromType(Ast.Type.T receiverType, java.util.List<String> path,
+                                           boolean pointerBase, int lineNum, site.ilemon.util.SourceSpan span) {
         // Pointer base (->) auto-dereferences exactly once.
-        if (obj.isPointerBase()) {
+        if (pointerBase) {
             if (!isPointerType(receiverType)
                     || !(((Ast.Type.Pointer) receiverType).getPointee().getKind() == TypeKind.STRUCT)) {
                 semanticError(DiagnosticCodes.SEM_GENERAL,
                         "'->' requires a pointer to a struct, but the operand has type " + typeName(receiverType),
-                        obj.getLineNum(), obj.getSpan(), "invalid pointer field access",
+                        lineNum, span, "invalid pointer field access",
                         "use '.' for struct values and '->' for struct pointers", null);
                 this.currType = unknownType();
                 return;
             }
             receiverType = ((Ast.Type.Pointer) receiverType).getPointee();
         }
-        java.util.ArrayList<String> path = obj.getPath();
         for (int i = 0; i < path.size(); i++) {
             String fieldName = path.get(i);
             if (receiverType == null || receiverType.getKind() != TypeKind.STRUCT) {
                 semanticError(DiagnosticCodes.SEM_GENERAL,
                         "field access '.' requires a struct value, but '" + path.get(0)
                                 + "' chain reaches type " + typeName(receiverType),
-                        obj.getLineNum(), obj.getSpan(), "invalid field access",
+                        lineNum, span, "invalid field access",
                         "field access is only valid on struct values", null);
                 this.currType = unknownType();
                 return;
@@ -1532,7 +1584,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             if (structDecl == null) {
                 semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
                         "unknown struct type: " + ((Ast.Type.Struct) receiverType).getName(),
-                        obj.getLineNum(), obj.getSpan(), "unknown struct", null, null);
+                        lineNum, span, "unknown struct", null, null);
                 this.currType = unknownType();
                 return;
             }
@@ -1542,7 +1594,7 @@ public class SemanticVisitor implements ISemanticVisitor {
                 if (structDecl.getVisibility() == Ast.Visibility.PRIVATE) {
                     semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
                             "cannot access field '" + fieldName + "' of private struct '" + structDecl.getName() + "'",
-                            obj.getLineNum(), obj.getSpan(), "private struct",
+                            lineNum, span, "private struct",
                             "struct is private to its declaring module", null);
                     this.currType = unknownType();
                     return;
@@ -1551,7 +1603,7 @@ public class SemanticVisitor implements ISemanticVisitor {
                 if (fieldVis == Ast.Visibility.PRIVATE) {
                     semanticError(DiagnosticCodes.SEM_INVALID_SCOPE,
                             "cannot access private field '" + fieldName + "' of struct '" + structDecl.getName() + "'",
-                            obj.getLineNum(), obj.getSpan(), "private field",
+                            lineNum, span, "private field",
                             "field is private to its declaring module", null);
                     this.currType = unknownType();
                     return;
@@ -1561,7 +1613,7 @@ public class SemanticVisitor implements ISemanticVisitor {
             if (fieldType == null) {
                 semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
                         "struct '" + structDecl.getName() + "' has no field '" + fieldName + "'",
-                        obj.getLineNum(), obj.getSpan(), "unknown field",
+                        lineNum, span, "unknown field",
                         "the field is not declared in the struct", null);
                 this.currType = unknownType();
                 return;
@@ -1570,18 +1622,25 @@ public class SemanticVisitor implements ISemanticVisitor {
             receiverType = fieldType;
             if (i == path.size() - 1) {
                 this.currType = fieldType;
-                obj.setType(fieldType);
             }
         }
     }
 
     @Override
     public void visit(Ast.Stmt.FieldAssign obj) {
+        // Walk to the ultimate root of the field chain to validate it's a local variable.
+        // The receiver may be an Id, an ArrayAccess (for arr[i].field), or another Field.
         Ast.Expr.T root = obj.getTarget().getReceiver();
         while (root instanceof Ast.Expr.Field f) {
             root = f.getReceiver();
         }
-        if (root instanceof Ast.Expr.Id rootId) {
+        if (root instanceof Ast.Expr.ArrayAccess arrayAccess) {
+            // arr[i].field = ... — clear the array's "may be unassigned" flag.
+            String arrName = arrayAccess.getArrayName();
+            if (!arrName.isEmpty()) {
+                this.currMethodLocalVar.remove(arrName);
+            }
+        } else if (root instanceof Ast.Expr.Id rootId) {
             if (resolveEnum(rootId.getId()) != null) {
                 String memberName = obj.getTarget().getPath().isEmpty() ? "" : obj.getTarget().getPath().get(0);
                 semanticError(DiagnosticCodes.SEM_CONST_IMMUTABLE,
@@ -2579,6 +2638,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         else if (arrayType instanceof Ast.Type.DoubleArray da) expectedSize = da.getSize();
         else if (arrayType instanceof Ast.Type.BoolArray boa) expectedSize = boa.getSize();
         else if (arrayType instanceof Ast.Type.StringArray sta) expectedSize = sta.getSize();
+        else if (arrayType instanceof Ast.Type.StructArray structArray) expectedSize = structArray.getSize();
 
         java.util.List<Ast.Expr.T> elements = initList.getElements();
         int count = elements.size();
@@ -2670,7 +2730,8 @@ public class SemanticVisitor implements ISemanticVisitor {
         return kind == TypeKind.INT_ARRAY || kind == TypeKind.FLOAT_ARRAY
                 || kind == TypeKind.DOUBLE_ARRAY || kind == TypeKind.BOOL_ARRAY
                 || kind == TypeKind.STRING_ARRAY || kind == TypeKind.BYTE_ARRAY
-                || kind == TypeKind.SHORT_ARRAY || kind == TypeKind.CHAR_ARRAY || kind == TypeKind.LONG_ARRAY;
+                || kind == TypeKind.SHORT_ARRAY || kind == TypeKind.CHAR_ARRAY || kind == TypeKind.LONG_ARRAY
+                || kind == TypeKind.STRUCT_ARRAY;
     }
 
     /**
@@ -2815,11 +2876,49 @@ public class SemanticVisitor implements ISemanticVisitor {
     }
 
     @Override
+    public void visit(Ast.Type.StructArray obj) {
+        this.currType = obj;
+    }
+
+    @Override
     public void visit(Ast.Expr.ArrayAccess obj) {
         Ast.Type.T arrayType;
         if (obj.getFieldTarget() != null) {
-            this.visit(obj.getFieldTarget());
-            arrayType = this.currType;
+            Ast.Expr.Field fieldTarget = obj.getFieldTarget();
+            // Distinguish between direct array access (arr[i].field) and
+            // struct-field-to-array access (obj.field[i]).
+            // For direct array: fieldTarget.receiver names the array var.
+            // For struct-to-array: fieldTarget.path is non-empty, describing
+            // the field chain leading to the array field.
+            if (fieldTarget.getPath() == null || fieldTarget.getPath().isEmpty()) {
+                // Direct array access: arr[i] or arr[i].field
+                MethodVarTable mTable = this.methodVarTable.get(currMethodName);
+                if (mTable == null) {
+                    internalError(obj.getLineNum(), "internal error: variable table for method '" + currMethodName + "' was not found");
+                    this.currType = unknownType();
+                    return;
+                }
+                String arrName = fieldTarget.getReceiver() instanceof Ast.Expr.Id id ? id.getId() : null;
+                if (arrName == null) {
+                    semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE, "undefined array",
+                            obj.getLineNum(), obj.getSpan(), "unknown array",
+                            "the array base could not be resolved", null);
+                    this.currType = unknownType();
+                    return;
+                }
+                arrayType = mTable.get(arrName);
+                if (arrayType == null) {
+                    semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE, "undefined array: " + arrName,
+                            obj.getLineNum(), obj.getSpan(), "unknown array",
+                            "the name is not declared in the current method scope", null);
+                    this.currType = unknownType();
+                    return;
+                }
+            } else {
+                // Struct field chain to array: obj.field[i] — resolve the field type first.
+                this.visit(fieldTarget);
+                arrayType = this.currType;
+            }
         } else {
             MethodVarTable mTable = this.methodVarTable.get(currMethodName);
             if (mTable == null) {
@@ -2853,6 +2952,13 @@ public class SemanticVisitor implements ISemanticVisitor {
         }
         obj.setElementType(elementType);
         this.currType = obj.getElementType();
+        // Handle optional field chain on array element: arr[i].field
+        if (obj.getFieldPath() != null && !obj.getFieldPath().isEmpty()) {
+            // For array access, the receiver type is already known (elementType).
+            // Avoid calling visit(obj) which would recurse infinitely.
+            visitFieldAccessFromType(elementType, obj.getFieldPath(), false, obj.getLineNum(), obj.getSpan());
+            // currType was set by visitFieldAccessFromType to the final field type.
+        }
     }
 
     @Override
@@ -2885,13 +2991,46 @@ public class SemanticVisitor implements ISemanticVisitor {
     @Override
     public void visit(Ast.Stmt.ArrayAssign obj) {
         Ast.Type.T arrayType;
+        // Track whether this is a struct-to-array assignment for later skip logic.
+        boolean isStructToArray = false;
         if (obj.getFieldTarget() != null) {
+            // For arr[i].field = expr or myPath.points[i] = expr: unwrap the
+            // field target receiver chain to find the base variable/array access.
             Ast.Expr.T root = obj.getFieldTarget().getReceiver();
             while (root instanceof Ast.Expr.Field f) {
                 root = f.getReceiver();
             }
-            if (root instanceof Ast.Expr.Id rootId) {
-                MethodVarTable assignTable = this.methodVarTable.get(currMethodName);
+            MethodVarTable assignTable = this.methodVarTable.get(currMethodName);
+            if (root instanceof Ast.Expr.ArrayAccess arrayAccess) {
+                // Case: arr[i].field = expr (e.g., myPoint.x = 1)
+                // The array access itself has the array name and element type.
+                String arrName = arrayAccess.getArrayName();
+                if (arrName.isEmpty()) {
+                    // This shouldn't normally happen for statement-level, but handle it gracefully
+                    error(obj.getLineNum(), "array field assignment requires a named array base");
+                    this.currType = unknownType();
+                    return;
+                }
+                boolean isLocal = assignTable != null && assignTable.get(arrName) != null;
+                if (!isLocal && resolveConst(arrName) != null) {
+                    semanticError(DiagnosticCodes.SEM_CONST_IMMUTABLE,
+                            "cannot assign to field of constant '" + arrName + "': constants are immutable",
+                            obj.getLineNum(), obj.getSpan(), "immutable constant",
+                            "fields of constants cannot be modified", null);
+                    return;
+                }
+                arrayType = assignTable != null ? assignTable.get(arrName) : null;
+                if (arrayType == null) {
+                    semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE, "undefined array: " + arrName,
+                            obj.getLineNum(), obj.getSpan(), "unknown array",
+                            "the name is not declared in the current method scope", null);
+                    this.currType = unknownType();
+                    return;
+                }
+                this.currMethodLocalVar.remove(arrName);
+            } else if (root instanceof Ast.Expr.Id rootId) {
+                // Case: myPath.points[i] = expr (struct with array field)
+                // OR: v.data[0] = expr (field-of-struct is array)
                 boolean isLocal = assignTable != null && assignTable.get(rootId.getId()) != null;
                 if (!isLocal && resolveConst(rootId.getId()) != null) {
                     semanticError(DiagnosticCodes.SEM_CONST_IMMUTABLE,
@@ -2900,10 +3039,41 @@ public class SemanticVisitor implements ISemanticVisitor {
                             "fields of constants cannot be modified", null);
                     return;
                 }
+                Ast.Type.T rootType = assignTable != null ? assignTable.get(rootId.getId()) : null;
+                if (rootType == null) {
+                    semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE, "undefined array: " + rootId.getId(),
+                            obj.getLineNum(), obj.getSpan(), "unknown array",
+                            "the name is not declared in the current method scope", null);
+                    this.currType = unknownType();
+                    return;
+                }
                 this.currMethodLocalVar.remove(rootId.getId());
+                // Resolve the array type by following the field path from rootType.
+                // Two distinct cases:
+                //   arr[i].x = expr: rootType is array (e.g. Point[2]), fieldPath
+                //     points into the element type — keep arrayType as rootType.
+                //   myPath.points[i] = expr: rootType is struct, fieldPath leads
+                //     to an array field — walk on rootType to find the array.
+                java.util.List<String> fieldPath = obj.getFieldTarget().getPath();
+                if (isArrayType(rootType)) {
+                    // arr[i].field = expr: rootType is already the array type.
+                    // The field path points into the element type, handled later.
+                    arrayType = rootType;
+                } else {
+                    // myPath.points[i] = expr: walk fieldPath on struct to find array.
+                    arrayType = resolveArrayTypeThroughFields(rootType, fieldPath,
+                            obj.getLineNum(), obj.getSpan());
+                    isStructToArray = true;
+                }
+                if (arrayType == null) {
+                    this.currType = unknownType();
+                    return;
+                }
+            } else {
+                error(obj.getLineNum(), "array field assignment requires a named array base");
+                this.currType = unknownType();
+                return;
             }
-            this.visit(obj.getFieldTarget());
-            arrayType = this.currType;
         } else {
             MethodVarTable mTable = this.methodVarTable.get(currMethodName);
             if (mTable == null) {
@@ -2923,7 +3093,7 @@ public class SemanticVisitor implements ISemanticVisitor {
         Ast.Type.T elementType = getElementType(arrayType);
         if (elementType == null) {
             String name = obj.getFieldTarget() != null
-                    ? String.join(".", obj.getFieldTarget().getPath())
+                    ? obj.getFieldTarget().getReceiver().toString()
                     : obj.getArrayName();
             error(obj.getLineNum(), String.format("field/variable '%s' is not an array; actual type is %s",
                     name, typeName(arrayType)));
@@ -2936,17 +3106,74 @@ public class SemanticVisitor implements ISemanticVisitor {
             typeError(DiagnosticCodes.TYPE_INDEX, "int", typeName(this.currType), expressionName(obj.getIndex()),
                     obj.getIndex().getLineNum(), obj.getIndex().getSpan(), "array index", null);
         }
+        // Resolve the target type: if there is a field path (e.g. arr[i].x),
+        // use the field type; otherwise use the element type.
+        // For struct-to-array assignments (myPath.points[0] = expr), the path
+        // points to the array field itself, not into the element type — skip.
+        Ast.Type.T targetType = elementType;
+        if (obj.getFieldTarget() != null && obj.getFieldTarget().getPath() != null
+                && !obj.getFieldTarget().getPath().isEmpty()
+                && !isStructToArray) {
+            visitFieldAccessFromType(elementType, obj.getFieldTarget().getPath(), false,
+                    obj.getLineNum(), obj.getSpan());
+            targetType = this.currType;
+            obj.setFieldType(targetType);
+        }
         this.visit(obj.getExpr());
-        if (!isAssignable(elementType, this.currType, obj.getExpr())) {
-            if (!rangeErrorIfNeeded(elementType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
+        if (!isAssignable(targetType, this.currType, obj.getExpr())) {
+            if (!rangeErrorIfNeeded(targetType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                     "array element assignment")) {
-                if (!shortRangeErrorIfNeeded(elementType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
+                if (!shortRangeErrorIfNeeded(targetType, this.currType, obj.getExpr(), obj.getLineNum(), obj.getSpan(),
                         "array element assignment")) {
-                    typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(elementType), typeName(this.currType),
+                    typeError(DiagnosticCodes.TYPE_ASSIGNMENT, typeName(targetType), typeName(this.currType),
                             expressionName(obj.getExpr()), obj.getLineNum(), obj.getSpan(), "array element assignment", null);
                 }
             }
         }
+    }
+
+    /**
+     * Resolves the array type by walking through struct field paths.
+     * For example, given rootType=struct Path and path=[points], returns int[].
+     * Handles pointer auto-dereference for '->' field access.
+     */
+    private Ast.Type.T resolveArrayTypeThroughFields(Ast.Type.T rootType, java.util.List<String> path,
+                                                      int lineNum, site.ilemon.util.SourceSpan span) {
+        if (path == null || path.isEmpty()) {
+            return rootType;
+        }
+        Ast.Type.T currentType = rootType;
+        for (int i = 0; i < path.size(); i++) {
+            // Auto-dereference pointer for -> access
+            if (isPointerType(currentType)) {
+                currentType = ((Ast.Type.Pointer) currentType).getPointee();
+            }
+            if (currentType == null || currentType.getKind() != TypeKind.STRUCT) {
+                semanticError(DiagnosticCodes.SEM_GENERAL,
+                        "field access '.' requires a struct value, but '" + path.get(0)
+                                + "' chain reaches type " + typeName(currentType),
+                        lineNum, span, "invalid field access",
+                        "field access is only valid on struct values", null);
+                return null;
+            }
+            Ast.StructDecl decl = resolveStruct(((Ast.Type.Struct) currentType).getName());
+            if (decl == null) {
+                semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                        "unknown struct type: " + ((Ast.Type.Struct) currentType).getName(),
+                        lineNum, span, "unknown struct", null, null);
+                return null;
+            }
+            Ast.Declare.DeclareSingle field = decl.getField(path.get(i));
+            if (field == null) {
+                semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                        "struct '" + decl.getName() + "' has no field '" + path.get(i) + "'",
+                        lineNum, span, "unknown field",
+                        "the field is not declared in the struct", null);
+                return null;
+            }
+            currentType = field.getType();
+        }
+        return currentType;
     }
 
     // Get array element type (also supports pointer dereference)
@@ -2969,6 +3196,9 @@ public class SemanticVisitor implements ISemanticVisitor {
             return new Ast.Type.Bool();
         } else if (arrayType instanceof Ast.Type.StringArray) {
             return new Ast.Type.Str();
+        } else if (arrayType instanceof Ast.Type.StructArray structArray) {
+            Ast.Type.Struct structType = new Ast.Type.Struct(structArray.getStructName());
+            return structType;
         } else if (arrayType instanceof Ast.Type.Pointer) {
             // Pointer dereference: return the pointee type
             return ((Ast.Type.Pointer) arrayType).getPointee();

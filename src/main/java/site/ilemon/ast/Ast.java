@@ -441,6 +441,10 @@ public class Ast {
             private Type.T elementType;
             public Type.T getElementType() { return this.elementType; }
             public void setElementType(Type.T elementType) { this.elementType = elementType; }
+            /** Resolved type of the final field being assigned (for arr[i].field = expr). */
+            private Type.T fieldType;
+            public Type.T getFieldType() { return this.fieldType; }
+            public void setFieldType(Type.T fieldType) { this.fieldType = fieldType; }
 
             private site.ilemon.lexer.TokenKind op;
             public site.ilemon.lexer.TokenKind getOp() { return this.op; }
@@ -645,7 +649,8 @@ public class Ast {
             INT, FLOAT, DOUBLE, BOOL, CHAR, BYTE, SHORT, LONG, STRING, VOID,
             INT_ARRAY, FLOAT_ARRAY, DOUBLE_ARRAY, BOOL_ARRAY, STRING_ARRAY, BYTE_ARRAY, SHORT_ARRAY, CHAR_ARRAY, LONG_ARRAY,
             POINTER, NULL,
-            STRUCT, ENUM
+            STRUCT, ENUM,
+            STRUCT_ARRAY
         }
 
         public sealed abstract static class T{
@@ -889,6 +894,28 @@ public class Ast {
             public TypeKind getKind() { return TypeKind.STRING_ARRAY; }
             @Override
             public String toString() { return "@string[]"; }
+            @Override
+            public void accept(ISemanticVisitor v) { v.visit(this); }
+        }
+
+        /**
+         * Fixed-size array of struct values: {@code struct Point[3]}.
+         * Represented as a managed array whose elements are struct values.
+         */
+        public non-sealed static class StructArray extends T {
+            private final String structName;
+            private final int size;
+            public String getStructName() { return structName; }
+            public int getSize() { return size; }
+            public StructArray(String structName, int size) {
+                if (structName == null || structName.isBlank()) throw new IllegalArgumentException("struct name is empty");
+                this.structName = structName;
+                this.size = size;
+            }
+            @Override
+            public TypeKind getKind() { return TypeKind.STRUCT_ARRAY; }
+            @Override
+            public String toString() { return "@struct " + structName + "[]"; }
             @Override
             public void accept(ISemanticVisitor v) { v.visit(this); }
         }
@@ -1696,6 +1723,10 @@ public class Ast {
             private Type.T elementType;
             public Type.T getElementType() { return this.elementType; }
             public void setElementType(Type.T elementType) { this.elementType = elementType; }
+            /** Optional field chain on the array element, e.g. arr[i].x */
+            private ArrayList<String> fieldPath;
+            public ArrayList<String> getFieldPath() { return fieldPath; }
+            public void setFieldPath(ArrayList<String> fieldPath) { this.fieldPath = fieldPath; }
 
             public ArrayAccess(String arrayName, Expr.T index, int lineNum) {
                 this.arrayName = arrayName;

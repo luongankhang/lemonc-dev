@@ -293,6 +293,9 @@ public class AstOptimizer {
                         optimizeExpr(access.getIndex()), access.getLineNum());
             }
             optimized.setElementType(access.getElementType());
+            if (access.getFieldPath() != null) {
+                optimized.setFieldPath(access.getFieldPath());
+            }
             return optimized;
         }
         if (expr instanceof Ast.Expr.InitializerList list) {
