@@ -38,7 +38,12 @@ NullFlowAnalyzer (flow/NullFlowAnalyzer.java)
 │ CFunctionEmitter │ JvmMethodEmitter       │
 │ CInstructionEmit │ JvmInstructionEmitter  │
 │ CTypeEmitter     │ JvmCodeBuilder (binary │
-│                  │  encoder only)         │
+│ CModuleEmitter   │  encoder only)         │
+│ ConstantProp     │ JvmLocalAllocator      │
+│ DeadStoreElim    │ JvmStackTracker        │
+│ NativeToolchain  │ JvmTypeMapper          │
+│                  │ JvmClassWriter         │
+│                  │ JvmMethod              │
 └──────────────────┴────────────────────────┘
 ```
 
@@ -47,9 +52,10 @@ One shared IR; backends never see a second IR. `PHI` must be resolved before bac
 ## 2. Source file map
 
 ### Lexer
-- `src/main/java/site/ilemon/lexer/Lexer.java` — token stream, static `KEYWORDS` map
+- `src/main/java/site/ilemon/lexer/Lexer.java` — token stream, static `KEYWORDS` map (63 keywords including `struct`, `enum`, `const`, `pub`, `import`, `null`)
 - `src/main/java/site/ilemon/lexer/TokenKind.java` — enum of all token kinds
 - `src/main/java/site/ilemon/lexer/Token.java` — token record (kind, lexeme, line, col)
+- `src/main/java/site/ilemon/lexer/LexerState.java` — DFA state machine for tokenization
 
 ### Parser
 - `src/main/java/site/ilemon/parser/Parser.java` — recursive descent
@@ -75,8 +81,8 @@ One shared IR; backends never see a second IR. `PHI` must be resolved before bac
 ### Semantic
 - `src/main/java/site/ilemon/semantic/SemanticVisitor.java` — main visitor
 - `src/main/java/site/ilemon/semantic/MethodVarTable.java` — local variable scope table
-- `src/main/java/site/ilemon/semantic/ScopeManager.java` — scope nesting
-- `src/main/java/site/ilemon/semantic/Symbol.java` — symbol table entry
+- `src/main/java/site/ilemon/semantic/ScopeManager.java` — scope nesting for imports
+- `src/main/java/site/ilemon/semantic/Symbol.java` — symbol table entry (record: name, type, kind, lineNumber)
 - `src/main/java/site/ilemon/semantic/ImportSymbol.java` — imported symbol
 
 ### Optimizer
@@ -90,6 +96,8 @@ One shared IR; backends never see a second IR. `PHI` must be resolved before bac
 - `src/main/java/site/ilemon/ir/BasicBlock.java` — ordered list of instructions
 - `src/main/java/site/ilemon/ir/IrType.java` — type kind for IR
 - `src/main/java/site/ilemon/ir/IrValue.java` — SSA value
+- `src/main/java/site/ilemon/ir/IrVerifier.java` — structural verifier for LemonIR
+- `src/main/java/site/ilemon/ir/ArcOptimizer.java` — eliminates redundant retain/release pairs and dead stores
 - `src/main/java/site/ilemon/ir/AstToIrLowerer.java` — CFG construction via `MethodLoweringContext` (inner class)
   - `loopStack: Deque<LoopContext>`, `scopeStack: Deque<LexicalScope>`, `switchStack: Deque<BasicBlock>`
   - `createBlock(prefix)`, `startBlock(b)`, `emit(inst)` (skips after terminator), `isTerminated(b)`
@@ -101,6 +109,7 @@ One shared IR; backends never see a second IR. `PHI` must be resolved before bac
 - `src/main/java/site/ilemon/arc/RefcountSimulator.java` — refcount simulation
 - `src/main/java/site/ilemon/arc/OwnershipIr.java` — analysis result
 - `src/main/java/site/ilemon/arc/OwnershipBlock.java` — CFG ownership region
+- `src/main/java/site/ilemon/arc/OwnershipFunction.java` — per-function ownership info
 - `src/main/java/site/ilemon/arc/MemoryOp.java` — retain/release op
 
 ### Null flow
@@ -113,9 +122,10 @@ One shared IR; backends never see a second IR. `PHI` must be resolved before bac
 - `src/main/java/site/ilemon/backend/c/CFunctionEmitter.java` — per-function C code, local hoisting, `-Wall -Wextra -Werror` label/unused suppression
 - `src/main/java/site/ilemon/backend/c/CInstructionEmitter.java` — instruction → C code
 - `src/main/java/site/ilemon/backend/c/CTypeEmitter.java` — type mapping, `emitEnumTypedefs` (`LemonC_<Name>` tags)
+- `src/main/java/site/ilemon/backend/c/CModuleEmitter.java` — emits entire C translation unit (includes + types + functions)
 - `src/main/java/site/ilemon/backend/c/ConstantPropagation.java` — compile-time constant folding
 - `src/main/java/site/ilemon/backend/c/DeadStoreElimination.java` — DCE pass
-- `src/main/java/site/ilemon/backend/c/NativeToolchain.java` — C compiler invocation
+- `src/main/java/site/ilemon/backend/c/NativeToolchain.java` — C compiler invocation (gcc/clang discovery)
 
 ### JVM backend
 - `src/main/java/site/ilemon/backend/jvm/JvmBackend.java` — orchestrates JVM emission
@@ -126,13 +136,20 @@ One shared IR; backends never see a second IR. `PHI` must be resolved before bac
 - `src/main/java/site/ilemon/backend/jvm/JvmStackTracker.java` — stack depth tracking
 - `src/main/java/site/ilemon/backend/jvm/JvmTypeMapper.java` — type descriptor mapping
 - `src/main/java/site/ilemon/backend/jvm/JvmClassWriter.java` — .class file writer
+- `src/main/java/site/ilemon/backend/jvm/JvmMethod.java` — method container
 
 ### Diagnostics
 - `src/main/java/site/ilemon/diagnostic/DiagnosticCodes.java` — stable E0001–E9001 constants
 - `src/main/java/site/ilemon/diagnostic/DiagnosticEngine.java` — collects diagnostics
-- `src/main/java/site/ilemon/diagnostic/DiagnosticRenderer.java` — human-readable output
+- `src/main/java/site/ilemon/diagnostic/DiagnosticRenderer.java` — human-readable output with source snippets
 - `src/main/java/site/ilemon/diagnostic/DiagnosticJsonExporter.java` — JSON export
-- `src/main/java/site/ilemon/diagnostic/Severity.java` — ERROR / WARNING
+- `src/main/java/site/ilemon/diagnostic/Severity.java` — ERROR / WARNING / NOTE
+- `src/main/java/site/ilemon/diagnostic/Diagnostic.java` — diagnostic record
+- `src/main/java/site/ilemon/diagnostic/DiagnosticBuilder.java` — fluent builder
+- `src/main/java/site/ilemon/diagnostic/DiagnosticLabel.java` — label metadata
+- `src/main/java/site/ilemon/diagnostic/DiagnosticSuggestion.java` — fix suggestion
+- `src/main/java/site/ilemon/diagnostic/SourceLineProvider.java` — source line lookup
+- `src/main/java/site/ilemon/diagnostic/TypeDiagnosticContext.java` — type context for diagnostics
 
 ### Modules
 - `src/main/java/site/ilemon/compiler/ModuleLoader.java` — import merging, `alias_NAME` re-exports, `collectStatementImports` recurses into Block/If/While/For/Switch
@@ -150,6 +167,9 @@ One shared IR; backends never see a second IR. `PHI` must be resolved before bac
 ### Utils
 - `src/main/java/site/ilemon/util/SourceSpan.java` — source position span
 - `src/main/java/site/ilemon/list/DoublyLinkedList.java` — linked list utility
+
+### Exceptions
+- `src/main/java/site/ilemon/exception/CompilerException.java`, `LexException.java`, `ParseException.java`, `SemanticException.java`
 
 ## 3. How a feature flows through the pipeline
 
@@ -303,9 +323,10 @@ Stage-by-stage:
 Each conceptual area has a focused test class in `src/test/java/`:
 - `ParserTest`, `SemanticTest`, `AstOptimizerTest` — stage-specific
 - `SwitchTest`, `EnumTest`, `StructTest`, `PointerTest`, `ArrayLengthTest` — feature-specific
-- `NullSafetyFlowTest`, `ArcOwnershipTest`, `ArcControlFlowTest` — analysis-specific
+- `NullSafetyFlowTest`, `ArcOwnershipTest`, `ArcControlFlowTest`, `ArcDiagnosticTest` — analysis-specific
 - `ReturnPathAnalysisTest` — return-path verification
 - `DiagnosticTest`, `DiagnosticEngineTest`, `SemanticDiagnosticTest` — error reporting
+- `UninitializedVariableCfgTest` — definite assignment CFG analysis
 
 ### End-to-end tests
 - `AllExamplesJvmTest` — compiles every `.lemon` in `examples/` through the JVM backend
@@ -317,6 +338,8 @@ Each conceptual area has a focused test class in `src/test/java/`:
 - `FullFeatureMatrixTest` — systematic feature coverage
 - `NativeEndToEndTest`, `NativeRuntimeSafetyTest` — C-native end-to-end with runtime checks
 - `LemonCCliTest` — CLI wrapper test
+- `PointerShowcaseTest` — pointer showcase integration test
+- `StructArcTest` — struct ARC tests
 
 ### Diagnostic assertions
 Use `DiagnosticTestSupport` helpers to assert specific diagnostic codes and messages. Pattern:
@@ -352,26 +375,25 @@ src/main/java/site/ilemon/
   ast/            Node definitions
   semantic/       Type checking, scope, diagnostics
   optimizer/      Const-folding, dead code
-  ir/             LemonIR lowerer, verifier
+  ir/             LemonIR lowerer, verifier, ARC optimizer
   arc/            Ownership analysis
   flow/           Null flow analysis
   backend/c/      C code generation
   backend/jvm/    JVM bytecode generation
   compiler/       Module loader, entry point
-  diagnostic/     Error codes, rendering
+  diagnostic/     Error codes, rendering, JSON export
   type/           Type compatibility rules
   visitor/        Visitor interfaces
   util/           SourceSpan, DoublyLinkedList
+  exception/      Compiler exception hierarchy
 
-src/test/java/    JUnit 4 tests (no package)
+src/test/java/    JUnit 4 tests (no package) — 66 test classes, 615 test methods
 examples/         .lemon source files (+ .c expected outputs)
   errors/         Negative test cases
   full_feature_matrix/
   large_benchmark/
   modules/
-  modules_structs/
-  modules_pointers/
-  multi_backend_test/
+  module_struct_scope/
   pointer/
   pointer_full/
   pointer_showcase/
@@ -380,11 +402,13 @@ runtime/          C runtime library
   include/        Headers
   tests/          Runtime smoke tests
 tools/debug/      Debug utilities
+docs/             Feature manual, ARC design, code review report
+document/         Chinese-language project summaries
 ```
 
 ### Build and test commands
 ```bash
-# Full test suite
+# Full test suite (615 tests)
 mvn test
 
 # Focused test classes
@@ -398,6 +422,7 @@ mvn -Dtest=FullFeatureMatrixTest test
 mvn -Dtest=CBackendTest test
 mvn -Dtest=JvmBackendTest test
 mvn -Dtest=MultiBackendTest test
+mvn -Dtest=AllExamplesJvmTest test
 
 # Build assembly jar (for CLI usage)
 mvn package

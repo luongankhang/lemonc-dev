@@ -820,7 +820,7 @@ Following the initial three review rounds, the compiler underwent major feature 
 ### 11.3. Additional Language Capabilities
 - **Lexer enhancements**: Multi-line comments (`/* ... */`) and identifier underscores (`_`) are fully supported.
 - **Diagnostic Engine**: Complete overhaul inspired by modern industrial compilers (Rust/Clang), including standardized error codes (`E0001` - `E9001`), terminal source snippet rendering with `^~~~` underlining, and automated fix suggestions.
-- **Test suite growth**: Expanded to **445 passing automated tests** and **95+ end-to-end verified example programs** (both JVM and Native C backends).
+- **Test suite growth**: Expanded to **615 passing automated tests** across 66 test classes and **~175 end-to-end verified example programs** (both JVM and Native C backends).
 
 ### 11.4. Subsequent Feature Additions (Post-Addendum)
 - **Raw Pointer Types (`int*`, `int**`)**: Address-of (`&`), dereference read/write (`*p`, `*p = val`, `**pp = val`), `null` literal, pointer comparisons (`==`, `!=`), pointer parameters and returns. Static safety enforces no stack-address escaping (`E2008`), no pointer arithmetic (`E3014`), and no indirect pointer reassignment (`E3015`).

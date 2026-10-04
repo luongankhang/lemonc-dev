@@ -1504,8 +1504,8 @@ mvn clean test
 ```
 
 Current Test Baseline:
-- **513 Automated Tests Passing** (0 failures, 0 errors, 0 skipped).
-- **96+ Root & Integration Example Programs** compiled to `.class` files by the JVM backend, executed on a real JVM, and verified byte-for-byte against `examples/example-output-manifest.tsv`.
+- **615 Automated Tests Passing** (0 failures, 0 errors, 0 skipped) across 66 test classes.
+- **~175 Lemon example programs** compiled to `.class` files by the JVM backend, executed on a real JVM, and verified byte-for-byte.
 - **Dual-Backend Parity Tests** (`ModuleStructScopeTest`, `NullSafetyFlowTest`, `OperatorTest`, `PointerMultiBackendTest`, `NativeEndToEndTest`): LemonIR -> JVM and LemonIR -> C produce 100% identical outputs.
 
 ---

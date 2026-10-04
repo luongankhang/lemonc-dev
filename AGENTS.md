@@ -7,29 +7,34 @@ Verified against source on 2026-10-04 (`src/main/java/site/ilemon`, Java 21, Mav
 Single-pass-pipeline compiler for the Lemon language (C-like syntax) with two backends:
 
 ```
-Lexer → Parser → Semantic → AstOptimizer → AstToIrLowerer (LemonIR)
-                                     ↘ ARC (OwnershipAnalyzer on IR)
-                                     ↘ NullFlowAnalyzer
-                                           → { C backend, JVM backend }
+Lexer → Parser → Semantic → AstOptimizer
+                          ↘ ARC (OwnershipAnalyzer)   ─┐
+                          ↘ NullFlowAnalyzer           │
+                          ↘ AstToIrLowerer (LemonIR)  │
+                                                    ↓ │
+                                          { C backend, JVM backend }
 ```
 
 Entry point: `site.ilemon.compiler.LemonC` (main class in assembly jar).
+
+For detailed architecture and per-stage guidance see [`guide.md`](guide.md).
 
 ## Source/test/example layout
 
 | Directory | Contents |
 |---|---|
 | `src/main/java/site/ilemon/` | Compiler source — packages: `lexer`, `parser`, `ast`, `semantic`, `optimizer`, `ir`, `arc`, `flow`, `backend/c`, `backend/jvm`, `compiler`, `diagnostic`, `type`, `visitor`, `util` |
-| `src/test/java/` | JUnit 4 tests (no package) — ~60 test classes |
-| `examples/*.lemon` | Positive examples (≈80 files); exercised by `AllExamplesJvmTest` |
+| `src/test/java/` | JUnit 4 tests (no package) — 66 test classes, 615 test methods |
+| `examples/*.lemon` | Positive examples (~175 files); exercised by `AllExamplesJvmTest` |
 | `examples/*.c` | Expected C output for selected examples |
 | `examples/errors/` | Negative examples expected to produce diagnostics |
 | `examples/full_feature_matrix/` | Multi-file benchmark; `expected.tsv` |
 | `examples/large_benchmark/` | 6-module world-simulation benchmark |
-| `examples/modules/`, `modules_structs/`, `modules_pointers/` | Import/struct/pointer cross-module tests |
-| `examples/pointer/`, `pointer_full/`, `pointer_showcase/` | Pointer tests, incl. invalid subdirs |
+| `examples/modules/`, `module_struct_scope/`, `pointer/`, `pointer_full/`, `pointer_showcase/` | Import/struct/pointer cross-module tests |
 | `runtime/` | C runtime (`lemon_runtime.c`) + headers; source in `runtime/src/`, `runtime/include/` |
 | `tools/debug/` | Debug utilities (class file parser, stack tracer) |
+| `docs/` | Feature manual [`LEMONC_FEATURES.md`](docs/LEMONC_FEATURES.md), ARC design [`ARC_DESIGN.md`](docs/ARC_DESIGN.md), code review [`CODE_REVIEW_REPORT.md`](docs/CODE_REVIEW_REPORT.md) |
+| `document/` | Chinese-language project summaries |
 
 ## Pipeline and key classes
 
@@ -38,37 +43,41 @@ Entry point: `site.ilemon.compiler.LemonC` (main class in assembly jar).
 | Lexer | `lexer` | `Lexer.java` (static `KEYWORDS` map), `TokenKind.java`, `Token.java` |
 | Parser | `parser` | `Parser.java` — recursive descent, `parseStmt()` dispatch, `isStatementStart()`, recovery via `synchronizeToStatementBoundary()` |
 | AST | `ast` | `Ast.java` — `Stmt.T` (abstract, mutable POJO with `lineNum`+`span`), `Expr.T`, `Type.T` (sealed), `Declare.T`, `StructDecl`, `EnumDecl`, `ConstDecl` |
-| Semantic | `semantic` | `SemanticVisitor.java`, `MethodVarTable.java` — single visitor; `loopDepth`, `currMethodLocalVar`, `mTable.enterScope()/exitScope()` |
+| Semantic | `semantic` | `SemanticVisitor.java`, `MethodVarTable.java`, `ScopeManager.java`, `Symbol.java`, `ImportSymbol.java` — single visitor; `loopDepth`, `currMethodLocalVar`, `mTable.enterScope()/exitScope()` |
 | Optimizer | `optimizer` | `AstOptimizer.java` — const-folding, dead branch elimination. Unknown `Stmt` kinds fall through unchanged. |
-| IR lowerer | `ir` | `AstToIrLowerer.java`, `IrInstruction.java`, `IrModule.java`, `IrFunction.java`, `BasicBlock.java` |
-| ARC | `arc` | `OwnershipAnalyzer.java`, `RefcountSimulator.java`, `OwnershipIr.java`, `MemoryOp.java` |
+| ARC | `arc` | `OwnershipAnalyzer.java`, `RefcountSimulator.java`, `OwnershipIr.java`, `MemoryOp.java`, `OwnershipBlock.java`, `OwnershipFunction.java` |
 | Null flow | `flow` | `NullFlowAnalyzer.java`, `NullFlowResult.java`, `Nullability.java` |
-| C backend | `backend/c` | `CBackend.java`, `CFunctionEmitter.java`, `CInstructionEmitter.java`, `CTypeEmitter.java` |
-| JVM backend | `backend/jvm` | `JvmBackend.java`, `JvmMethodEmitter.java`, `JvmInstructionEmitter.java`, `JvmCodeBuilder.java` |
-| Diagnostics | `diagnostic` | `DiagnosticCodes.java` (E0001–E9001), `DiagnosticEngine.java`, `DiagnosticRenderer.java` |
-| Modules | `compiler` | `ModuleLoader.java`, `MethodCallRewriter.java` |
+| IR | `ir` | `AstToIrLowerer.java`, `IrInstruction.java` (record with `Op` enum), `IrModule.java`, `IrFunction.java`, `BasicBlock.java`, `IrType.java`, `IrValue.java`, `IrVerifier.java` |
+| IR optimization | `ir` | `ArcOptimizer.java` — eliminates redundant retain/release pairs and dead stores |
+| C backend | `backend/c` | `CBackend.java`, `CFunctionEmitter.java`, `CInstructionEmitter.java`, `CTypeEmitter.java`, `CModuleEmitter.java`, `ConstantPropagation.java`, `DeadStoreElimination.java`, `NativeToolchain.java` |
+| JVM backend | `backend/jvm` | `JvmBackend.java`, `JvmMethodEmitter.java`, `JvmInstructionEmitter.java`, `JvmCodeBuilder.java`, `JvmLocalAllocator.java`, `JvmStackTracker.java`, `JvmTypeMapper.java`, `JvmClassWriter.java`, `JvmMethod.java` |
+| Diagnostics | `diagnostic` | `DiagnosticCodes.java` (E0001–E9001), `DiagnosticEngine.java`, `DiagnosticRenderer.java`, `DiagnosticJsonExporter.java`, `Severity.java` |
+| Modules | `compiler` | `ModuleLoader.java`, `MethodCallRewriter.java`, `LemonC.java` (entry point), `AstPrinter.java`, `IrPrinter.java` |
 | Visitor interface | `visitor` | `ISemanticVisitor.java` — **only 2 implementors**: `SemanticVisitor`, `MethodCallRewriter` |
 | Type rules | `type` | `TypeRules.java` |
-| Entry point | `compiler` | `LemonC.java` |
+| Backend contract | `backend` | `Backend.java`, `BackendOptions.java`, `BackendResult.java` |
 
 ## Supported language features
 
-- Scalar types: `int`, `long`, `short`, `byte`, `char`, `float`, `double`, `bool`
-- Arrays: fixed-size and dynamic (`int[]`, `string[]`, etc.), `.length` property, initializers
-- Structs: `struct Name { type field; ... }`, value semantics, field access (`.`, `->`), struct arrays
+- Scalar types: `byte`, `short`, `char`, `int`, `long`, `float`, `double`, `bool`
+- Arrays: fixed-size (`int[10]`), dynamic via `new`, `.length` property; all primitive types + `string[]`; `bool[]`, `byte[]`, `short[]`, `char[]`, `long[]`, `float[]`, `double[]`
+- Structs: `struct Name { type field; ... }`, value semantics, field access (`.`, `->`), struct arrays (`struct Point[3]`)
 - Enums: `enum Name { A, B = 2, ... }`, re-exported via module imports as `alias_NAME`
 - Switch/case/default: fallthrough semantics, nested break support
-- Pointers: `*`, `&`, `->` (auto-deref), null literal, pointer arithmetic (add/sub), multi-level pointers
-- ARC: ownership analyzer emits `RETAIN`/`RELEASE` during IR lowering; no separate ARC IR pass
+- Pointers: `*`, `&`, `->` (auto-deref), null literal, multi-level pointers (`int**`). Pointer arithmetic (`p + 1`, `p++`) is **rejected** with `E3014`.
+- ARC: ownership analyzer emits `RETAIN`/`RELEASE` during lowering; no separate ARC IR pass
 - Null safety: flow-sensitive nullability analysis for pointer derefs/field loads
 - Constants: `const int MAX = 10;` at global scope only (literal initializer)
-- Modules: `import Foo;` merging structs/enums/constants, method call rewriting
-- Control flow: `if/else`, `while`, `for`, `break`, `continue`
+- Modules: `import alias = @import("file.lemon");` merging structs/enums/constants, method call rewriting
+- Control flow: `if/else`, `while`, `for` (3-clause), `break`, `continue`
+- Operators: `+ - * / % ~ & | ^ !` (unary), `+= -= *= /= %=`, prefix/postfix `++ --`, ternary `? :`, short-circuit `&& ||`
+- Output: `printf`, `printLine`; `%d` for integer-like types and bools, `%f` for floats
+- Comments: single-line (`//`) and multi-line (`/* ... */`); identifiers may contain `_`
 
 ## C/JVM backend rules
 
 - **Shared IR only.** No backend-specific opcodes. Backends receive the same `IrModule`.
-- **C backend:** hoists all instruction results as C locals; emits `goto <label>` for `BRANCH`/`COND_BRANCH`; labels as `<name>:;`. Must compile clean under `-Wall -Wextra -Werror` (label/unused suppression in `CFunctionEmitter`).
+- **C backend:** hoists all instruction results as C locals; emits `goto <label>` for `BRANCH`/`COND_BRANCH`; labels as `<name>:;`. Runs `ConstantPropagation` and `DeadStoreElimination` before emission. Must compile clean under `-Wall -Wextra -Werror` (label/unused suppression in `CFunctionEmitter`).
 - **JVM backend:** `JvmCodeBuilder` is the **only** place that knows binary bytecode encoding (`label(name)`, `branch(opcode, target)`). Symbolic labels patched in `toBytecode()`. ARC calls dropped (GC). Enum values inlined as ints.
 - `PHI` nodes must be resolved before reaching either backend.
 - C/JVM parity: end-to-end tests (`MultiBackendTest`, `PointerMultiBackendTest`) compile the same `.lemon` through both and compare output.
@@ -85,7 +94,7 @@ Entry point: `site.ilemon.compiler.LemonC` (main class in assembly jar).
 ## Build and test commands
 
 ```
-mvn test                  # full JUnit 4 suite
+mvn test                  # full JUnit 4 suite (615 tests)
 mvn -Dtest=SwitchTest test         # switch suite
 mvn -Dtest=EnumTest test           # enum suite
 mvn -Dtest=ReturnPathAnalysisTest test  # return-path analysis
@@ -94,6 +103,7 @@ mvn -Dtest=FullFeatureMatrixTest test # feature matrix
 mvn -Dtest=CBackendTest test       # C backend parity
 mvn -Dtest=JvmBackendTest test     # JVM backend
 mvn -Dtest=MultiBackendTest test   # C vs JVM parity
+mvn package                       # build fat jar
 ```
 
 Test conventions: JUnit 4 classes in `src/test/java` (no package). Diagnostic assertions use `DiagnosticTestSupport`/`DiagnosticEngine`. Examples in `examples/*.lemon` exercised by `AllExamplesJvmTest`.

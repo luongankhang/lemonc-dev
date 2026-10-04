@@ -50,13 +50,13 @@ mvn clean test
 Expected result:
 
 ```text
-Tests run: 445, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 615, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
 The automated test suite verifies:
-- 445 automated unit and integration tests across frontend, optimizer, ARC analyzer, diagnostics, LemonIR, and both backends.
-- 95+ root and integration example programs (`examples/`), verified byte-for-byte against `examples/example-output-manifest.tsv`.
+- 615 automated unit and integration tests (66 test classes) across frontend, optimizer, ARC analyzer, diagnostics, LemonIR, and both backends.
+- ~175 Lemon example programs (`examples/`), verified byte-for-byte.
 - Dual-backend equivalence tests (`PointerMultiBackendTest`, `NativeEndToEndTest`).
 
 ## Architectural Boundaries

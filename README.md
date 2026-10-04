@@ -11,7 +11,7 @@ LemonC 是一个面向实际编译器工程实践的 C-like 编译器。它不�
 </p>
 
 ```text
-Java 21 | Maven | LemonIR → JVM or C backend | 513 tests passing | 96 examples | MIT License
+Java 21 | Maven | LemonIR → JVM or C backend | 615 tests passing | ~175 examples | MIT License
 ```
 
 ## Why LemonC
@@ -21,7 +21,7 @@ Java 21 | Maven | LemonIR → JVM or C backend | 513 tests passing | 96 examples
 | Complete compiler pipeline | Lexer, parser, semantic analyzer, optimizer, IR translator, bytecode generator |
 | Real JVM execution | Examples compile to `.class` and run on a standard JVM |
 | Compiler engineering fundamentals | Recursive descent parsing, Visitor-based semantic analysis, backpatching, stack-machine codegen |
-| Developer-friendly inspection | CLI can dump tokens, AST, and JVM IR |
+| Developer-friendly inspection | CLI can dump tokens, AST, IR, and ARC analysis |
 | Regression confidence | Example programs are checked against real JVM stdout |
 | Compact and maintainable | A focused codebase for understanding and extending a full compiler |
 
@@ -80,21 +80,21 @@ The same example also demonstrates constant folding, algebraic simplification, b
 | Types | `byte`, `short`, `char`, `int`, `long`, `float`, `double`, `bool`, `string`, `void`, `enum` |
 | Enums | `[pub] enum Name { A, B = 10, C };` declarations, sequential and explicit values, nominal typing, `Enum.A` / `A` / `mod.Enum.A` access, `==` / `!=` comparisons, parameter/return passing, struct fields, pointer to enum, cross-module visibility |
 | Structs | `struct Name { T field; ... };` declarations, value-typed fields (scalars, `bool`, nested structs, `struct*`), field access `obj.field` / `ptr->field`, field assignment, by-value assignment (`b = a`), pass-by-value parameters, struct returns, `&struct` addresses |
-| Pointers | `int*`, `int**`, scalar `T*`, `struct T*`, address-of `&`, dereference `*` (read & write), `null`, identity comparisons (`==`, `!=`), pointer parameters and returns |
+| Pointers | `int*`, `int**`, scalar `T*`, `struct T*`, address-of `&`, dereference `*` (read & write), `null`, identity comparisons (`==`, `!=`), pointer parameters and returns. Pointer arithmetic is disallowed (`E3014`). |
 | Arrays | `int[]`, `byte[]`, `short[]`, `char[]`, `long[]`, `float[]`, `double[]`, `bool[]`, `string[]`, indexed access, indexed assignment, `.length`, ARC memory management |
 | Declarations | Declarations throughout blocks, declarations with initializers (`int x = 10;`), scoped nested blocks (`{ ... }`), for-loop header declarations (`for (int i = 0; ...)`), `const` globals |
 | Arithmetic | `+`, `-`, `*`, `/`, `%`, unary `+`, unary `-`, bitwise `~`, pre/post `++`, pre/post `--`, `+=`, `-=`, `*=`, `/=`, `%=` |
 | Numeric widening | `byte/short/char -> int -> long -> float -> double` |
 | Comparison | `>`, `<`, `>=`, `<=`, `==`, `!=` (scalars and pointers) |
 | Boolean logic | `true`, `false`, `!`, `&&`, `||`, short-circuit control flow |
-| Control flow | `if/else`, `while`, `for`, `break`, `continue`, nested loops, lexical block scoping, ternary `? :` |
+| Control flow | `if/else`, `while`, `for`, `break`, `continue`, nested loops, lexical block scoping, ternary `? :`, `switch/case/default` with fallthrough |
 | Methods | parameters (scalars, arrays, pointers), return values, `void` methods, `return;` in void methods, recursive calls, expression calls, `pub` exports |
-| Modules | compile-time `import alias = @import("file.lemon")`, canonical path loading, public function exports, cycle diagnostics |
+| Modules | compile-time `import alias = @import("file.lemon")`, canonical path loading, public function exports, cycle diagnostics, struct/enum re-export |
 | Output | `printf`, `printLine`, `%d` (including `byte`, `short`, `char`, `int`, `long`, `bool`), `%f`, `\n`, `\t` |
-| Optimization | constant folding, boolean folding, algebraic simplification, constant branch simplification |
+| Optimization | constant folding, boolean folding, algebraic simplification, constant branch simplification, C backend constant propagation and dead store elimination, IR ARC retain/release pair elimination |
 | Memory (ARC) | Automatic Reference Counting for managed heap objects (arrays and strings), ownership analysis, `--arc` verification |
 | Null Safety & Flow Analysis | Flow-sensitive null analysis (`NullFlowAnalyzer`), condition narrowing (`if (p != null)`), short-circuit narrowing, early return pruning, runtime null check elision for proven non-null dereferences, and deterministic traps on unproven null dereferences |
-| Diagnostics | compiler diagnostic engine with error codes (`E0001` - `E4001`, `E8001` - `E8006`), primary/secondary spans, labels, and suggestions |
+| Diagnostics | compiler diagnostic engine with error codes (`E0001` - `E9001`), primary/secondary spans, labels, suggestions, JSON export |
 
 For the complete feature list with source code and real outputs, read [docs/LEMONC_FEATURES.md](docs/LEMONC_FEATURES.md).
 
@@ -140,8 +140,7 @@ void main() {
 }
 ```
 
-Complete examples are available under [examples/modules](examples/modules), [examples/modules_structs](examples/modules_structs), and [examples/module_struct_scope](examples/module_struct_scope).
-Imports are compile-time bindings, resolved relative to the importing file and rejected with diagnostics when:
+Complete examples are available under [examples/modules](examples/modules), [examples/modules_structs](examples/modules_structs), and [examples/module_struct_scope](examples/module_struct_scope). Imports are compile-time bindings, resolved relative to the importing file and rejected with diagnostics when:
 - A module is missing, cyclic, or duplicated.
 - A non-public function or non-public struct is accessed from another module (`E2005`).
 - A private field of a cross-module struct is accessed (`E2005`).
@@ -178,18 +177,20 @@ LemonIR is the single abstraction shared by both backends. It is not shaped afte
 
 | Module | Core classes | Responsibility |
 |---|---|---|
-| `site.ilemon.lexer` | `Lexer`, `Token`, `TokenKind` | Tokenize Lemon source code |
+| `site.ilemon.lexer` | `Lexer`, `Token`, `TokenKind`, `LexerState` | Tokenize Lemon source code |
 | `site.ilemon.parser` | `Parser` | Build frontend AST with recursive descent parsing |
 | `site.ilemon.ast` | `Ast` | Define source-level expressions, statements, types, methods, and programs |
-| `site.ilemon.semantic` | `SemanticVisitor`, `MethodVarTable`, `Symbol` | Type checking, declaration checks, assignment checks, return checks |
+| `site.ilemon.semantic` | `SemanticVisitor`, `MethodVarTable`, `ScopeManager`, `Symbol`, `ImportSymbol` | Type checking, declaration checks, assignment checks, return checks |
 | `site.ilemon.optimizer` | `AstOptimizer` | Perform safe AST-level simplifications |
 | `site.ilemon.arc` | `OwnershipAnalyzer`, `RefcountSimulator`, `OwnershipIr` | Shared ownership/ARC analysis for managed values (used before lowering) |
 | `site.ilemon.flow` | `NullFlowAnalyzer`, `Nullability`, `NullFlowResult` | Flow-sensitive null analysis, condition narrowing, safe dereference proof |
-| `site.ilemon.ir` | `AstToIrLowerer`, `IrModule`, `IrVerifier`, `IrPrinter` | Lower the optimized AST to the backend-neutral LemonIR CFG |
+| `site.ilemon.ir` | `AstToIrLowerer`, `IrModule`, `IrVerifier`, `ArcOptimizer` | Lower the optimized AST to the backend-neutral LemonIR CFG |
 | `site.ilemon.backend` | `Backend`, `BackendOptions`, `BackendResult` | Backend-neutral contract implemented by every backend |
-| `site.ilemon.backend.jvm` | `JvmBackend`, `JvmClassWriter`, `JvmMethodEmitter`, `JvmInstructionEmitter`, `JvmStackTracker`, `JvmTypeMapper` | Lower LemonIR directly to JVM bytecode and write `.class` files (no Jasmin) |
-| `site.ilemon.backend.c` | `CBackend`, `CFunctionEmitter`, `CInstructionEmitter`, `CTypeEmitter` | Lower LemonIR to C source and invoke the native compiler |
-| `site.ilemon.compiler` | `LemonC`, `AstPrinter`, `IrPrinter` | CLI entrypoint and developer-facing diagnostics/dumps |
+| `site.ilemon.backend.jvm` | `JvmBackend`, `JvmClassWriter`, `JvmMethodEmitter`, `JvmInstructionEmitter`, `JvmStackTracker`, `JvmTypeMapper`, `JvmLocalAllocator`, `JvmMethod`, `JvmCodeBuilder` | Lower LemonIR directly to JVM bytecode and write `.class` files (no Jasmin) |
+| `site.ilemon.backend.c` | `CBackend`, `CFunctionEmitter`, `CInstructionEmitter`, `CTypeEmitter`, `CModuleEmitter`, `ConstantPropagation`, `DeadStoreElimination`, `NativeToolchain` | Lower LemonIR to C source and invoke the native compiler |
+| `site.ilemon.compiler` | `LemonC`, `AstPrinter`, `IrPrinter`, `ModuleLoader`, `MethodCallRewriter` | CLI entrypoint, module loading, debug printers |
+| `site.ilemon.diagnostic` | `DiagnosticEngine`, `DiagnosticRenderer`, `DiagnosticJsonExporter`, `Severity` | Error codes, terminal rendering, JSON export |
+| `site.ilemon.visitor` | `ISemanticVisitor`, `IElement` | Visitor interfaces (2 implementors) |
 
 Backend selection is explicit at the CLI:
 
@@ -250,8 +251,8 @@ mvn test
 Current coverage:
 
 ```text
-Tests run: 513, Failures: 0, Errors: 0, Skipped: 0
-96+ example programs verified across backends
+Tests run: 615, Failures: 0, Errors: 0, Skipped: 0
+~175 example programs verified across backends
 ```
 
 ## More Real Examples
@@ -385,7 +386,7 @@ java -cp target/lemonc benchmark_main
 Requirements:
 
 ```text
-JDK 1.8+
+JDK 21+
 Maven 3.3+
 ```
 
@@ -469,6 +470,9 @@ void main() {
                   | "return" <expr>? ";"
                   | "printf" "(" <string> ("," <expr>)* ")" ";"
                   | "printLine" "(" <expr> ")" ";"
+                  | "switch" "(" <expr> ")" "{" (<caseStmt> | <defaultStmt>)* "}"
+<caseStmt>      ::= "case" <constExpr> ":" <stmt>*
+<defaultStmt>   ::= "default" ":" <stmt>*
 <forInit>       ::= <varDecl> | <id> "=" <expr>
 <forUpdate>     ::= <id> "=" <expr>
 <expr>          ::= <andExpr> ("||" <andExpr>)*
@@ -495,9 +499,13 @@ void main() {
 | `JvmBackendTest`, `JvmBackendArcDebugTest` | Structural tests of direct bytecode emission, descriptors, stack frames, and verifier-valid CFG |
 | `CompilerTest` | End-to-end compiler tests across arithmetic, control flow, functions, and arrays |
 | `GlobalConstTest` | Compile-time constants, expressions, immutability, and scoping |
-| `ArcCliTest`, `ArcOwnershipTest`, `ImportScopeArcTest`, `ArcControlFlowTest` | Ownership/ARC analysis, refcount simulation, and import scoping |
+| `ArcCliTest`, `ArcOwnershipTest`, `ImportScopeArcTest`, `ArcControlFlowTest`, `ArcDiagnosticTest` | Ownership/ARC analysis, refcount simulation, and import scoping |
 | `LemonIrTest`, `ModuleSystemTest`, `ModuleStructScopeTest`, `LemonCCliTest` | LemonIR lowering/verification, module imports, multi-module struct scoping, CLI flags |
 | `LexerTest`, `ParserTest`, `ParserRecoveryTest`, `ErrorTest`, `SemanticTest`, `AstOptimizerTest` | Frontend parsing, semantic type rules, and AST optimizations |
+| `SwitchTest`, `EnumTest`, `StructTest`, `StructArcTest`, `StructVisibilityTest` | Feature-specific tests for control flow, enums, structs, and struct ARC |
+| `ReturnPathAnalysisTest`, `UninitializedVariableCfgTest` | Return-path and definite-assignment CFG analysis |
+| `DiagnosticTest`, `DiagnosticEngineTest`, `SemanticDiagnosticTest` | Diagnostic codes, rendering, and semantic error reporting |
+| `OperatorTest`, `ArrayLengthTest`, `ArrayInitializerTest` | Operators, array length, and array initializer tests |
 | `ByteCompilerTest`, `LongCompilerTest`, `ShortArrayCompilerTest`, … | Per-type JVM codegen, ranges, and diagnostics |
 
 ## Repository Map
@@ -510,17 +518,24 @@ src/main/java/site/ilemon
   semantic/         symbol tables and type checking
   optimizer/        AST optimization
   arc/              ownership / ARC analysis (shared)
-  ir/               LemonIR: backend-neutral CFG lowering + verification
+  flow/             null flow analysis
+  ir/               LemonIR: backend-neutral CFG lowering + verification + ARC optimizer
   backend/          backend-neutral Backend contract (Backend, BackendOptions, BackendResult)
   backend/jvm/      JVM backend: LemonIR → direct JVM bytecode → .class
   backend/c/        C backend: LemonIR → C99 source → gcc/clang
-  compiler/         CLI, AST printer, IR printer
+  compiler/         CLI, AST printer, IR printer, module loader, method call rewriter
+  diagnostic/       Error codes, rendering, JSON export, severity
+  type/             Type compatibility rules
+  visitor/          Visitor interfaces (ISemanticVisitor, IElement)
+  util/             SourceSpan, DoublyLinkedList
+  exception/        Compiler exception hierarchy
 
-examples/           95+ Lemon programs and output manifest
+examples/           ~175 Lemon programs and output manifest
 runtime/            C runtime sources used by the C backend
-docs/               feature guide and architecture notes
+docs/               feature guide, ARC design, code review report
+document/           Chinese-language project summaries
 tools/              native backend experiment, kept outside main source
-src/test/java/      automated compiler tests
+src/test/java/      automated compiler tests (66 test classes, 615 tests)
 ```
 
 ## Current Language Boundaries
