@@ -2969,23 +2969,59 @@ public class SemanticVisitor implements ISemanticVisitor {
             this.currType = unknownType();
             return;
         }
-        Ast.Type.T arrayType = mTable.get(obj.getArrayName());
-        if (arrayType == null) {
-            semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE, "undefined array: " + obj.getArrayName(),
-                    obj.getLineNum(), obj.getSpan(), "unknown array",
-                    "the name is not declared in the current method scope", null);
+        // Resolve the receiver expression to get the array type.
+        // For simple Ids this uses the variable table directly.
+        // For ArrayAccess/Field receivers we visit the sub-expression first.
+        Ast.Type.T arrayType = null;
+        if (obj.getReceiver() == null && obj.getArrayName() != null) {
+            // Legacy path: parser created ArrayLength with only arrayName.
+            arrayType = mTable.get(obj.getArrayName());
+        } else if (obj.getReceiver() != null) {
+            this.visit(obj.getReceiver());
+            arrayType = this.currType;
         }
         if (arrayType == null) {
+            String name = obj.getReceiver() != null
+                    ? exprDisplay(obj.getReceiver())
+                    : (obj.getArrayName() != null ? obj.getArrayName() : "expression");
+            semanticError(DiagnosticCodes.SEM_UNKNOWN_VARIABLE,
+                    "undefined variable: " + name,
+                    obj.getLineNum(), obj.getSpan(), "unknown variable",
+                    "the name is not declared in the current method scope", null);
             this.currType = unknownType();
             return;
         }
-        if (getElementType(arrayType) == null) {
+        if (!isArrayType(arrayType)) {
             error(obj.getLineNum(), String.format("variable '%s' is not an array; actual type is %s",
-                    obj.getArrayName(), typeName(arrayType)));
+                    nameOfReceiver(obj), typeName(arrayType)));
             this.currType = unknownType();
             return;
         }
         this.currType = new Ast.Type.Int();
+    }
+
+    /** Returns a human-readable name for the array-length receiver expression. */
+    private String nameOfReceiver(Ast.Expr.ArrayLength obj) {
+        if (obj.getReceiver() instanceof Ast.Expr.Id id) return id.getId();
+        if (obj.getReceiver() instanceof Ast.Expr.ArrayAccess aa) return aa.getArrayName();
+        if (obj.getReceiver() instanceof Ast.Expr.Field f) return exprDisplay(f);
+        if (obj.getArrayName() != null) return obj.getArrayName();
+        return "expression";
+    }
+
+    /** Simple display string for an expression (used in diagnostics). */
+    private String exprDisplay(Ast.Expr.T expr) {
+        if (expr == null) return "null";
+        if (expr instanceof Ast.Expr.Id id) return id.getId();
+        if (expr instanceof Ast.Expr.ArrayAccess aa) return aa.getArrayName() + "[...]";
+        if (expr instanceof Ast.Expr.Field f) {
+            String base = exprDisplay(f.getReceiver());
+            StringBuilder sb = new StringBuilder(base);
+            if (f.isPointerBase()) sb.append("->"); else sb.append(".");
+            for (String part : f.getPath()) sb.append(part).append(".");
+            return sb.toString();
+        }
+        return expr.getClass().getSimpleName();
     }
 
     @Override

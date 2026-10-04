@@ -1331,13 +1331,37 @@ public final class AstToIrLowerer {
             }
             return res;
         } else if (expr instanceof Ast.Expr.ArrayLength arrayLen) {
-            String arrName = arrayLen.getArrayName();
-            IrType arrType = ctx.variableTypes.get(arrName);
-            IrValue arrVal = new IrValue(arrName, arrType);
+            IrValue arrVal;
+            IrType arrType;
+            // Resolve the receiver expression to find the array value.
+            // For simple Id receivers we can read from variableTypes directly.
+            // For ArrayAccess/Field receivers we lower the sub-expression.
+            if (arrayLen.getReceiver() instanceof Ast.Expr.Id idExpr) {
+                String arrName = idExpr.getId();
+                arrType = ctx.variableTypes.get(arrName);
+                arrVal = new IrValue(arrName, arrType);
+            } else if (arrayLen.getReceiver() instanceof Ast.Expr.ArrayAccess aa) {
+                // For nested array access like matrix[0], lower the inner array access
+                // to get the element type (which is itself an array for multi-dim).
+                IrValue elemVal = lowerExpr(aa, ctx);
+                arrType = elemVal.type();
+                arrVal = elemVal;
+            } else if (arrayLen.getReceiver() instanceof Ast.Expr.Field field) {
+                // For struct-field-to-array access: myPath.points.length
+                IrValue arrayBase = lowerFieldLoad(field, ctx);
+                arrType = arrayBase.type();
+                arrVal = arrayBase;
+            } else {
+                // Fallback: lower the receiver expression and use its type.
+                IrValue recvVal = lowerExpr(arrayLen.getReceiver(), ctx);
+                arrType = recvVal.type();
+                arrVal = recvVal;
+            }
             IrValue res = ctx.newTemp(IrType.scalar(IrType.Kind.INT));
             
             // ArrayLength on pointer types is not supported - pointers don't have length
             if (arrType != null && arrType.kind() == IrType.Kind.POINTER) {
+                String arrName = arrayLen.getReceiver() instanceof Ast.Expr.Id idExpr ? idExpr.getId() : "expression";
                 throw new CompilerException("cannot get length of pointer type: " + arrName);
             }
             

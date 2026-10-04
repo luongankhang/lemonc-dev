@@ -1724,8 +1724,15 @@ public class Parser {
 				String member = look.lexeme;
 				match(new Token(TokenKind.Id));
 				if ("length".equals(member)) {
-					expr = new Ast.Expr.ArrayLength(baseName, lineNum);
+					// Build a receiver expression so the semantic phase can
+					// resolve the type for both simple Ids and chained
+					// expressions like matrix[0].length.
+					Ast.Expr.T receiver = buildIdOrAccessExpr(baseName, lineNum, temp);
+					expr = new Ast.Expr.ArrayLength(receiver, lineNum);
 					expr.setSpan(tokenSpan(temp));
+					if (receiver instanceof Ast.Expr.Id idExpr) {
+						idExpr.setType(null);
+					}
 				} else if (importAliases.contains(baseName)) {
 					// Module-qualified read: alias.MEMBER -> alias_MEMBER
 					// Or alias.Color.MEMBER -> alias_Color_MEMBER
@@ -1741,22 +1748,39 @@ public class Parser {
 				} else {
 					// Struct field access: parsed as a chain and validated by the
 					// semantic phase (field existence/type of the actual struct).
+					// Special case: if the chain ends in .length, produce an
+					// ArrayLength expression instead (e.g. b.data.length).
 					ArrayList<String> path = new ArrayList<>();
 					path.add(member);
+					boolean sawDotLength = false;
 					while (look.kind == TokenKind.Dot || look.kind == TokenKind.Arrow) {
-						move(); // '.' or '->'
+						// Peek ahead BEFORE consuming: if this link is '.length',
+						// stop the field chain and let the caller handle it.
+						Token nextId = lexer.lookahead(1);
+						if (look.kind == TokenKind.Dot
+								&& nextId != null && "length".equals(nextId.lexeme)) {
+							sawDotLength = true;
+							break;
+						}
+						move(); // consume '.' or '->'
 						if (look.kind != TokenKind.Id) {
 							error("expected a field name after '.'");
 							return null;
 						}
 						path.add(look.lexeme);
-						move();
+						move(); // consume field name
 					}
 					Ast.Expr.Id base = new Ast.Expr.Id(baseName, lineNum);
 					base.setSpan(tokenSpan(temp));
 					Ast.Expr.Field fieldObj = new Ast.Expr.Field(base, path, false, lineNum);
 					fieldObj.setSpan(tokenSpan(temp));
-					if (look.kind == TokenKind.Lbracket) {
+					if (sawDotLength) {
+						// Consume the trailing '.length'
+						move(); // consume '.'
+						match(new Token(TokenKind.Id)); // consume 'length'
+						expr = new Ast.Expr.ArrayLength(fieldObj, lineNum);
+						expr.setSpan(tokenSpan(temp));
+					} else if (look.kind == TokenKind.Lbracket) {
 						move(); // consume '['
 						Ast.Expr.T index = parseExpr();
 						match("]");
@@ -1846,6 +1870,27 @@ public class Parser {
 	}
 
 
+
+	/**
+	 * Builds an expression representing the base of a dot-chain:
+	 * simple Id, or ArrayAccess if the id is followed by [...].
+	 */
+	private Ast.Expr.T buildIdOrAccessExpr(String baseName, int lineNum, Token baseToken) throws IOException {
+		Ast.Expr.T expr = new Ast.Expr.Id(baseName, lineNum);
+		expr.setSpan(tokenSpan(baseToken));
+		// Check if there's an array access: matrix[0]
+		Token ahead = lexer.lookahead(0);
+		// We already consumed the id token, so lookahead from current position
+		if (look.kind == TokenKind.Lbracket) {
+			move(); // consume '['
+			Ast.Expr.T index = parseExpr();
+			match("]");
+			Ast.Expr.ArrayAccess access = new Ast.Expr.ArrayAccess(baseName, index, lineNum);
+			access.setSpan(tokenSpan(baseToken));
+			return access;
+		}
+		return expr;
+	}
 
 	private String qualifiedName() throws IOException {
 		String name = look.lexeme;

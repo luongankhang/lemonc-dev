@@ -87,7 +87,11 @@ public final class MethodCallRewriter implements ISemanticVisitor {
     @Override
     public void visit(Ast.Expr.False obj) { }
     @Override
-    public void visit(Ast.Expr.ArrayLength obj) { }
+    public void visit(Ast.Expr.ArrayLength obj) {
+        if (obj.getReceiver() != null) {
+            visit(obj.getReceiver());
+        }
+    }
     @Override
     public void visit(Ast.Expr.Null obj) { }
     @Override

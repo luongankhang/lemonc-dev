@@ -1747,14 +1747,24 @@ public class Ast {
             }
         }
 
-        // Array length expression: arr.length
+        // Array length expression: <expr>.length
         public static class ArrayLength extends T {
+            /** The receiver expression (may be an Id, ArrayAccess, or Field). */
+            private Expr.T receiver;
+            public Expr.T getReceiver() { return this.receiver; }
+            public void setReceiver(Expr.T receiver) { this.receiver = receiver; }
+            /** Deprecated: the bare array name when receiver is a simple Id. */
             private String arrayName;
             public String getArrayName() { return this.arrayName; }
             public void setArrayName(String arrayName) { this.arrayName = arrayName; }
 
             public ArrayLength(String arrayName, int lineNum) {
                 this.arrayName = arrayName;
+                this.setLineNum(lineNum);
+            }
+
+            public ArrayLength(Expr.T receiver, int lineNum) {
+                this.receiver = receiver;
                 this.setLineNum(lineNum);
             }
 
